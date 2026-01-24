@@ -1,0 +1,100 @@
+# ===================
+# Python
+# ===================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# ===================
+# Node.js
+# ===================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# ===================
+# IDE and Editor
+# ===================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ===================
+# Claude Code temporary files
+# ===================
+.claude/
+.claude-system/
+tmpclaude-*
+nul
+
+# ===================
+# Logs and temp files
+# ===================
+*.log
+temp/
+archive/
+*.tmp
+*.temp
+
+# ===================
+# OS generated files
+# ===================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===================
+# Environment files
+# ===================
+.env
+.env.local
+.env.*.local
+*.env
+
+# ===================
+# Build outputs
+# ===================
+*.exe
+*.dll
+*.o
+*.obj

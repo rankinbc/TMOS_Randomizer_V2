@@ -1,0 +1,60 @@
+# da65 info file for The Magic of Scheherazade
+# Fixed bank (Bank 15) - maps to $E000-$FFFF
+# This bank contains reset code and interrupt vectors
+
+GLOBAL {
+    INPUTOFFS    $1E000;     # Offset in PRG-ROM file for bank 15
+    STARTADDR    $E000;      # CPU address this bank maps to
+    CPU          "6502";
+    COMMENTS     2;          # Add comments with hex bytes
+};
+
+# NES Hardware Registers
+LABEL { NAME "PPU_CTRL";       ADDR $2000; };
+LABEL { NAME "PPU_MASK";       ADDR $2001; };
+LABEL { NAME "PPU_STATUS";     ADDR $2002; };
+LABEL { NAME "OAM_ADDR";       ADDR $2003; };
+LABEL { NAME "OAM_DATA";       ADDR $2004; };
+LABEL { NAME "PPU_SCROLL";     ADDR $2005; };
+LABEL { NAME "PPU_ADDR";       ADDR $2006; };
+LABEL { NAME "PPU_DATA";       ADDR $2007; };
+
+LABEL { NAME "SQ1_VOL";        ADDR $4000; };
+LABEL { NAME "SQ1_SWEEP";      ADDR $4001; };
+LABEL { NAME "SQ1_LO";         ADDR $4002; };
+LABEL { NAME "SQ1_HI";         ADDR $4003; };
+LABEL { NAME "SQ2_VOL";        ADDR $4004; };
+LABEL { NAME "SQ2_SWEEP";      ADDR $4005; };
+LABEL { NAME "SQ2_LO";         ADDR $4006; };
+LABEL { NAME "SQ2_HI";         ADDR $4007; };
+LABEL { NAME "TRI_LINEAR";     ADDR $4008; };
+LABEL { NAME "TRI_LO";         ADDR $400A; };
+LABEL { NAME "TRI_HI";         ADDR $400B; };
+LABEL { NAME "NOISE_VOL";      ADDR $400C; };
+LABEL { NAME "NOISE_LO";       ADDR $400E; };
+LABEL { NAME "NOISE_HI";       ADDR $400F; };
+LABEL { NAME "DMC_FREQ";       ADDR $4010; };
+LABEL { NAME "DMC_RAW";        ADDR $4011; };
+LABEL { NAME "DMC_START";      ADDR $4012; };
+LABEL { NAME "DMC_LEN";        ADDR $4013; };
+LABEL { NAME "OAM_DMA";        ADDR $4014; };
+LABEL { NAME "APU_STATUS";     ADDR $4015; };
+LABEL { NAME "JOY1";           ADDR $4016; };
+LABEL { NAME "JOY2_FRAME";     ADDR $4017; };
+
+# MMC1 Registers
+LABEL { NAME "MMC1_CTRL";      ADDR $8000; COMMENT "MMC1 Control Register"; };
+LABEL { NAME "MMC1_CHR0";      ADDR $A000; COMMENT "MMC1 CHR Bank 0"; };
+LABEL { NAME "MMC1_CHR1";      ADDR $C000; COMMENT "MMC1 CHR Bank 1"; };
+LABEL { NAME "MMC1_PRG";       ADDR $E000; COMMENT "MMC1 PRG Bank"; };
+
+# Interrupt Vectors (identified from ROM)
+LABEL { NAME "NMI_Handler";    ADDR $E3C9; COMMENT "VBlank interrupt handler"; };
+LABEL { NAME "RESET_Handler";  ADDR $E19B; COMMENT "Power-on/Reset entry point"; };
+LABEL { NAME "IRQ_Handler";    ADDR $E19B; COMMENT "IRQ/BRK handler (shares with RESET?)"; };
+
+# Vector table
+RANGE { START $FFFA; END $FFFF; TYPE ByteTable; };
+LABEL { NAME "Vector_NMI";     ADDR $FFFA; };
+LABEL { NAME "Vector_RESET";   ADDR $FFFC; };
+LABEL { NAME "Vector_IRQ";     ADDR $FFFE; };

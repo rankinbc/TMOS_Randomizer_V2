@@ -1,0 +1,11 @@
+# TMOS AI Project - Root Dependencies
+# ====================================
+# Install with: pip install -r requirements.txt
+
+# Core randomizer package (editable install from local source)
+-e ./projects/TMOS_Randomizer_V2[all]
+
+# The above installs:
+# - pyyaml>=6.0 (core dependency)
+# - pytest>=7.0, pytest-cov>=4.0 (dev)
+# - fastapi>=0.109.0, uvicorn[standard]>=0.27.0, python-multipart>=0.0.6 (api)

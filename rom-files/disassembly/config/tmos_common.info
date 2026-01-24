@@ -1,0 +1,44 @@
+# da65 common info file for The Magic of Scheherazade
+# Common labels for all banks
+
+GLOBAL {
+    CPU          "6502";
+    COMMENTS     2;
+};
+
+# NES Hardware Registers - PPU
+LABEL { NAME "PPU_CTRL";       ADDR $2000; };
+LABEL { NAME "PPU_MASK";       ADDR $2001; };
+LABEL { NAME "PPU_STATUS";     ADDR $2002; };
+LABEL { NAME "OAM_ADDR";       ADDR $2003; };
+LABEL { NAME "OAM_DATA";       ADDR $2004; };
+LABEL { NAME "PPU_SCROLL";     ADDR $2005; };
+LABEL { NAME "PPU_ADDR";       ADDR $2006; };
+LABEL { NAME "PPU_DATA";       ADDR $2007; };
+
+# NES Hardware Registers - APU
+LABEL { NAME "SQ1_VOL";        ADDR $4000; };
+LABEL { NAME "SQ1_SWEEP";      ADDR $4001; };
+LABEL { NAME "SQ1_LO";         ADDR $4002; };
+LABEL { NAME "SQ1_HI";         ADDR $4003; };
+LABEL { NAME "SQ2_VOL";        ADDR $4004; };
+LABEL { NAME "SQ2_SWEEP";      ADDR $4005; };
+LABEL { NAME "SQ2_LO";         ADDR $4006; };
+LABEL { NAME "SQ2_HI";         ADDR $4007; };
+LABEL { NAME "TRI_LINEAR";     ADDR $4008; };
+LABEL { NAME "TRI_LO";         ADDR $400A; };
+LABEL { NAME "TRI_HI";         ADDR $400B; };
+LABEL { NAME "NOISE_VOL";      ADDR $400C; };
+LABEL { NAME "NOISE_LO";       ADDR $400E; };
+LABEL { NAME "NOISE_HI";       ADDR $400F; };
+LABEL { NAME "DMC_FREQ";       ADDR $4010; };
+LABEL { NAME "DMC_RAW";        ADDR $4011; };
+LABEL { NAME "DMC_START";      ADDR $4012; };
+LABEL { NAME "DMC_LEN";        ADDR $4013; };
+LABEL { NAME "OAM_DMA";        ADDR $4014; };
+LABEL { NAME "APU_STATUS";     ADDR $4015; };
+LABEL { NAME "JOY1";           ADDR $4016; };
+LABEL { NAME "JOY2_FRAME";     ADDR $4017; };
+
+# MMC1 Registers (directly accessible via writes to ROM space)
+# Note: MMC1 uses serial writes, so these addresses represent write targets
