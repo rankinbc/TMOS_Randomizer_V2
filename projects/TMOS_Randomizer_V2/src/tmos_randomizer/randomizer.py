@@ -398,6 +398,7 @@ class Randomizer:
             world_population=world_population,
             seed=plan.seed,
             preserve_buildings=True,
+            rom_data=rom_data,
         )
         plan.world_navigation = world_navigation
         validation_context["world_navigation"] = world_navigation

@@ -479,6 +479,8 @@ def parse_validation_config(raw: Dict[str, Any]) -> ValidationConfig:
     # Screen Traversability
     if "screen_traversability" in raw:
         st = raw["screen_traversability"]
+        # Note: treat_hazards_as_blocking is deprecated - tile walkability is now
+        # determined by category (DEADLY blocks, HAZARDOUS doesn't)
         config.screen_traversability = ScreenTraversabilityConfig(
             enabled=st.get("enabled", True),
             severity=st.get("severity", "warning"),
@@ -486,7 +488,6 @@ def parse_validation_config(raw: Dict[str, Any]) -> ValidationConfig:
             algorithm=st.get("algorithm", "bfs"),
             require_entry_to_exit=st.get("require_entry_to_exit", True),
             allow_partial_exits=st.get("allow_partial_exits", True),
-            treat_hazards_as_blocking=st.get("treat_hazards_as_blocking", False),
         )
 
     # DataPointer-ObjectSet

@@ -969,6 +969,254 @@ async def get_chapter_section_map(chapter_num: int):
     }
 
 
+@app.get("/api/debug/validate")
+async def debug_validate_rom():
+    """Run comprehensive validation tests on the current ROM state.
+
+    This runs ALL validators from the validation criteria document:
+    - R-001: Navigation integrity
+    - R-002: Time period boundaries
+    - R-003: Reachability
+    - R-004: World connectivity
+    - R-010-R-022: Post-randomization validators (if plan applied)
+
+    Returns detailed structured results for each chapter.
+    """
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    from ..testing.validators import (
+        validate_navigation_integrity,
+        validate_time_period_boundaries,
+        find_time_door_screens,
+        run_all_chapter_validators,
+        IssueSeverity,
+    )
+    from ..core.enums import get_time_period_for_screen, PAST_SCREEN_INDICES
+
+    results = {
+        "status": "completed",
+        "rom_filename": _rom_filename,
+        "has_plan": _current_plan is not None,
+        "chapters": [],
+        "summary": {
+            "total_errors": 0,
+            "total_warnings": 0,
+            "all_passed": True,
+            "error_breakdown": {},  # requirement -> count
+        },
+    }
+
+    for chapter_num in range(1, 6):
+        chapter = _game_world.chapters.get(chapter_num)
+        if chapter is None:
+            continue
+
+        chapter_result = {
+            "chapter_num": chapter_num,
+            "total_screens": len(chapter),
+            "errors": [],  # List of issue dicts
+            "warnings": [],  # List of issue dicts
+            "passed": True,
+            "metrics": {},
+        }
+
+        all_issues = []
+
+        # If plan is applied, run all validators
+        if _current_plan is not None:
+            chapter_plan = _current_plan.world_plan.get_chapter(chapter_num)
+            chapter_shape = _current_plan.world_shape.get_chapter(chapter_num)
+            chapter_connections = _current_plan.world_connections.get_chapter(chapter_num)
+            chapter_population = getattr(_current_plan, 'world_population', None)
+
+            if chapter_population:
+                chapter_pop = chapter_population.get_chapter(chapter_num)
+            else:
+                chapter_pop = None
+
+            if chapter_plan and chapter_pop:
+                # Get time doors for this chapter
+                time_door_screens = find_time_door_screens(chapter)
+
+                # Run all validators
+                all_issues = run_all_chapter_validators(
+                    chapter=chapter,
+                    chapter_plan=chapter_plan,
+                    chapter_population=chapter_pop,
+                    chapter_connections=chapter_connections,
+                    rom_data=_rom_data,
+                    time_door_screens=time_door_screens,
+                )
+
+                # Add metrics
+                chapter_result["metrics"]["section_count_planned"] = len(chapter_plan.sections)
+                chapter_result["metrics"]["section_count_assigned"] = len([
+                    s for s in chapter_plan.sections
+                    if len(chapter_pop.screen_assignments.get(s.section_id, [])) > 0
+                ])
+        else:
+            # No plan - just run basic validators
+            nav_issues = validate_navigation_integrity(chapter)
+            time_issues = validate_time_period_boundaries(chapter)
+            all_issues = nav_issues + time_issues
+
+        # Categorize issues
+        for issue in all_issues:
+            issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else {
+                "severity": issue.severity.value,
+                "category": issue.category,
+                "message": issue.message,
+                "requirement": getattr(issue, 'requirement', None),
+            }
+
+            if issue.severity == IssueSeverity.ERROR:
+                chapter_result["errors"].append(issue_dict)
+                # Track error breakdown by requirement
+                req = getattr(issue, 'requirement', 'unknown')
+                if req not in results["summary"]["error_breakdown"]:
+                    results["summary"]["error_breakdown"][req] = 0
+                results["summary"]["error_breakdown"][req] += 1
+            else:
+                chapter_result["warnings"].append(issue_dict)
+
+        # Enhanced reachability analysis
+        reachability = _analyze_full_reachability(chapter)
+        chapter_result["reachability"] = reachability
+        chapter_result["metrics"]["reachability_percent"] = reachability["percent"]
+        chapter_result["nav_components"] = reachability["nav_components"]
+        chapter_result["full_components"] = reachability["full_components"]
+
+        if reachability["percent"] < 95.0:
+            chapter_result["warnings"].append({
+                "severity": "warning",
+                "category": "reachability",
+                "message": f"Low reachability: {reachability['percent']:.1f}%",
+                "requirement": "R-003",
+            })
+
+        if reachability["full_components"] > 1:
+            chapter_result["errors"].append({
+                "severity": "error",
+                "category": "connectivity",
+                "message": f"World fragmented into {reachability['full_components']} regions",
+                "requirement": "R-004",
+            })
+
+        # Time period stats
+        time_doors = find_time_door_screens(chapter)
+        past_screens = PAST_SCREEN_INDICES.get(chapter_num, set())
+        chapter_result["time_period"] = {
+            "past_count": len(past_screens),
+            "present_count": len(chapter) - len(past_screens),
+            "time_doors": sorted(time_doors),
+        }
+
+        chapter_result["stairways"] = reachability["stairway_count"]
+
+        # Count time period violations in metrics
+        time_violations = [e for e in chapter_result["errors"]
+                          if e.get("requirement") == "R-002" or e.get("category") == "time_period_violation"]
+        chapter_result["metrics"]["time_period_violations"] = len(time_violations)
+
+        # Count grid overlaps in metrics
+        grid_overlaps = [e for e in chapter_result["errors"]
+                        if e.get("requirement") == "R-016" or e.get("category") == "grid_overlap"]
+        chapter_result["metrics"]["grid_overlap_count"] = len(grid_overlaps)
+
+        # Determine pass/fail
+        chapter_result["passed"] = len(chapter_result["errors"]) == 0
+
+        # Update summary
+        results["summary"]["total_errors"] += len(chapter_result["errors"])
+        results["summary"]["total_warnings"] += len(chapter_result["warnings"])
+        if not chapter_result["passed"]:
+            results["summary"]["all_passed"] = False
+
+        results["chapters"].append(chapter_result)
+
+    return results
+
+
+def _analyze_full_reachability(chapter) -> dict:
+    """Analyze reachability including stairways and time doors.
+
+    Returns dict with reachability stats accounting for all connection types.
+    """
+    from collections import deque
+
+    screen_count = len(chapter)
+
+    # Build adjacency including stairways
+    adjacency: dict[int, set[int]] = {i: set() for i in range(screen_count)}
+    stairway_count = 0
+
+    for screen in chapter:
+        idx = screen.relative_index
+
+        # Direct navigation
+        for nav in [screen.screen_index_up, screen.screen_index_down,
+                    screen.screen_index_left, screen.screen_index_right]:
+            if nav < screen_count:  # Valid screen index (not 0xFF or 0xFE)
+                adjacency[idx].add(nav)
+
+        # Stairway connections (Event=0x40, Content=destination)
+        if screen.event == 0x40 and screen.content < screen_count:
+            adjacency[idx].add(screen.content)
+            adjacency[screen.content].add(idx)  # Bidirectional
+            stairway_count += 1
+
+        # Time door connections (Content=0xC0)
+        # Time doors connect to the other time door in the chapter
+        if screen.content == 0xC0:
+            # Find the other time door
+            for other in chapter:
+                if other.content == 0xC0 and other.relative_index != idx:
+                    adjacency[idx].add(other.relative_index)
+                    break
+
+    # BFS from screen 0 with full connections
+    visited = set()
+    queue = deque([0])
+    visited.add(0)
+
+    while queue:
+        current = queue.popleft()
+        for neighbor in adjacency[current]:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+    # Find connected components (full graph)
+    all_visited = set()
+    full_components = 0
+    for start in range(screen_count):
+        if start in all_visited:
+            continue
+        full_components += 1
+        comp_queue = deque([start])
+        all_visited.add(start)
+        while comp_queue:
+            current = comp_queue.popleft()
+            for neighbor in adjacency[current]:
+                if neighbor not in all_visited:
+                    all_visited.add(neighbor)
+                    comp_queue.append(neighbor)
+
+    # Count nav-only components for comparison
+    from ..logic.navigation import find_connected_components
+    nav_components = len(find_connected_components(chapter))
+
+    return {
+        "reachable_count": len(visited),
+        "total_count": screen_count,
+        "percent": 100.0 * len(visited) / screen_count if screen_count > 0 else 0,
+        "nav_components": nav_components,
+        "full_components": full_components,
+        "stairway_count": stairway_count,
+    }
+
+
 @app.get("/api/debug/navigation/{chapter_num}")
 async def debug_navigation(chapter_num: int):
     """Debug endpoint: Dump complete navigation state for a chapter.
@@ -1030,6 +1278,257 @@ async def debug_navigation(chapter_num: int):
         "component_count": len(components),
         "component_sizes": [len(c) for c in components],
         "screens": screens_data,
+    }
+
+
+@app.get("/api/debug/section-validation/{chapter_num}")
+async def debug_section_validation(chapter_num: int):
+    """Validate that randomization output matches the plan.
+
+    Compares:
+    - Planned sections vs actual screen assignments
+    - Intra-section connectivity (screens within a section should be connected)
+    - Inter-section connectivity (sections should be connected as planned)
+
+    This is the KEY diagnostic tool for debugging randomization issues.
+    """
+    global _current_plan, _game_world
+
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    if _current_plan is None:
+        raise HTTPException(status_code=400, detail="No plan created. Call POST /api/plan first.")
+
+    if _current_plan.world_population is None:
+        raise HTTPException(status_code=400, detail="Plan not applied. Call POST /api/plan/apply-preview first.")
+
+    chapter = _game_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+
+    # Get plan, population, and connections data
+    chapter_plan = _current_plan.world_plan.get_chapter(chapter_num)
+    chapter_pop = _current_plan.world_population.get_chapter(chapter_num)
+    chapter_conn = _current_plan.world_connections.get_chapter(chapter_num)
+
+    if chapter_plan is None or chapter_pop is None:
+        raise HTTPException(status_code=400, detail="Plan data missing for this chapter")
+
+    # Import helper function
+    from ..logic.navigation import find_components_in_subset
+
+    issues = []
+    section_details = []
+
+    # Analyze each planned section
+    for section_plan in chapter_plan.sections:
+        section_id = section_plan.section_id
+        section_type = section_plan.section_type.name
+        planned_screens = section_plan.target_screen_count
+
+        # Get assigned screens from population
+        assigned_screens = chapter_pop.screen_assignments.get(section_id, [])
+        assigned_count = len(assigned_screens)
+
+        # Find connected components WITHIN this section's screens
+        screen_set = set(assigned_screens)
+        internal_components = find_components_in_subset(chapter, screen_set)
+        component_count = len(internal_components)
+        component_sizes = sorted([len(c) for c in internal_components], reverse=True)
+
+        # Determine status
+        if assigned_count == 0:
+            status = "EMPTY"
+            issues.append(f"Section {section_id} ({section_type}): No screens assigned")
+        elif component_count > 1:
+            status = "FRAGMENTED"
+            issues.append(f"Section {section_id} ({section_type}): Fragmented into {component_count} components {component_sizes}")
+        else:
+            status = "OK"
+
+        section_details.append({
+            "section_id": section_id,
+            "type": section_type,
+            "planned_screens": planned_screens,
+            "assigned_screens": assigned_count,
+            "screen_indices": assigned_screens[:20],  # Limit for readability
+            "internal_components": component_count,
+            "component_sizes": component_sizes,
+            "status": status,
+        })
+
+    # Analyze inter-section connections
+    connection_details = []
+    if chapter_conn:
+        for conn in chapter_conn.connections:
+            from_section = conn.from_section_id
+            to_section = conn.to_section_id
+
+            # Get the actual screens used for this connection
+            from_screens = chapter_pop.screen_assignments.get(from_section, [])
+            to_screens = chapter_pop.screen_assignments.get(to_section, [])
+
+            # Check if ANY screen from from_section connects to ANY screen in to_section
+            connected = False
+            connecting_screen = None
+            target_screen = None
+            direction_used = None
+
+            for from_idx in from_screens:
+                screen = chapter.get_screen(from_idx)
+                if screen is None:
+                    continue
+
+                for direction in ["right", "left", "down", "up"]:
+                    attr = f"screen_index_{direction}"
+                    target = getattr(screen, attr)
+                    if target in to_screens:
+                        connected = True
+                        connecting_screen = from_idx
+                        target_screen = target
+                        direction_used = direction
+                        break
+                if connected:
+                    break
+
+            status = "OK" if connected else "MISSING"
+            if not connected:
+                issues.append(f"Connection Section {from_section} -> Section {to_section}: No navigation path found")
+
+            connection_details.append({
+                "from_section": from_section,
+                "to_section": to_section,
+                "expected": True,
+                "actual": connected,
+                "from_screen": connecting_screen,
+                "to_screen": target_screen,
+                "direction": direction_used,
+                "status": status,
+            })
+
+    # Overall status
+    overall_status = "PASS" if not issues else "FAIL"
+
+    return {
+        "chapter_num": chapter_num,
+        "plan_summary": {
+            "planned_sections": len(chapter_plan.sections),
+            "total_planned_screens": chapter_plan.planned_screens,
+        },
+        "population_summary": {
+            "sections_with_assignments": len(chapter_pop.screen_assignments),
+            "total_assigned_screens": len(chapter_pop.assignments),
+        },
+        "section_details": section_details,
+        "connection_details": connection_details,
+        "overall_status": overall_status,
+        "issues": issues,
+    }
+
+
+@app.get("/api/debug/spatial-analysis/{chapter_num}")
+async def debug_spatial_analysis(chapter_num: int):
+    """Analyze spatial layout of screens and detect grid conflicts.
+
+    Builds a coordinate grid via BFS from the start screen, assigning
+    (x, y) positions based on navigation direction. Detects when multiple
+    screens from different sections occupy the same grid position.
+
+    Returns:
+        - screen_positions: Map of screen_idx -> (x, y)
+        - position_screens: Map of (x, y) -> [screen_indices]
+        - conflicts: Positions with multiple screens
+        - section_grids: Per-section grid data for visualization
+    """
+    global _current_plan, _game_world
+
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    chapter = _game_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+
+    # Import spatial analysis from validator
+    from ..validation.validators.spatial_consistency import (
+        SpatialConsistencyValidator,
+        SpatialConsistencyConfig,
+    )
+
+    # Build screen -> section mapping
+    screen_to_section: Dict[int, int] = {}
+    section_screens: Dict[int, List[int]] = {}
+
+    if _current_plan and _current_plan.world_population:
+        chapter_pop = _current_plan.world_population.get_chapter(chapter_num)
+        if chapter_pop:
+            for section_id, screens in chapter_pop.screen_assignments.items():
+                section_screens[section_id] = list(screens)
+                for screen_idx in screens:
+                    screen_to_section[screen_idx] = section_id
+
+    # Run spatial analysis
+    validator = SpatialConsistencyValidator(SpatialConsistencyConfig())
+    analysis = validator.analyze_spatial_layout(chapter, screen_to_section)
+
+    # Build per-section grid data for UI visualization
+    section_grids = {}
+    for section_id, screens in section_screens.items():
+        section_positions = []
+        for screen_idx in screens:
+            if screen_idx in analysis.screen_positions:
+                x, y = analysis.screen_positions[screen_idx]
+                section_positions.append({
+                    "screen_idx": screen_idx,
+                    "x": x,
+                    "y": y,
+                })
+        section_grids[section_id] = {
+            "screen_count": len(screens),
+            "positions": section_positions,
+        }
+
+    # Convert position_screens for JSON (tuple keys not allowed)
+    position_screens_list = [
+        {
+            "position": [x, y],
+            "screens": screens,
+            "sections": list(set(screen_to_section.get(s, -1) for s in screens)),
+            "is_conflict": len(screens) > 1 and len(set(screen_to_section.get(s, -1) for s in screens)) > 1,
+        }
+        for (x, y), screens in analysis.position_screens.items()
+    ]
+
+    # Convert screen_positions for JSON
+    screen_positions_list = [
+        {"screen_idx": idx, "x": pos[0], "y": pos[1], "section": screen_to_section.get(idx, -1)}
+        for idx, pos in analysis.screen_positions.items()
+    ]
+
+    return {
+        "chapter_num": chapter_num,
+        "total_screens_mapped": analysis.total_screens_mapped,
+        "grid_bounds": {
+            "min_x": analysis.grid_bounds[0],
+            "min_y": analysis.grid_bounds[1],
+            "max_x": analysis.grid_bounds[2],
+            "max_y": analysis.grid_bounds[3],
+            "width": analysis.grid_bounds[2] - analysis.grid_bounds[0] + 1,
+            "height": analysis.grid_bounds[3] - analysis.grid_bounds[1] + 1,
+        },
+        "screen_positions": screen_positions_list,
+        "position_screens": position_screens_list,
+        "conflicts": [
+            {
+                "position": [c.x, c.y],
+                "screens": c.screens,
+                "sections": c.sections,
+            }
+            for c in analysis.conflicts
+        ],
+        "conflict_count": len(analysis.conflicts),
+        "section_grids": section_grids,
     }
 
 
@@ -1259,6 +1758,101 @@ async def update_tile_bank_tile(tile_index: int, update: TileBankUpdate):
     }
 
 
+@app.get("/api/rom/tilebank/{tile_index}/render")
+async def render_tile_from_chr(tile_index: int, chr: int = 0x0F, scale: int = 4):
+    """Dynamically render a tile from ROM CHR data.
+
+    This renders the tile by reading its minitile IDs from the Tile Table,
+    then looking up and compositing the 8x8 patterns from CHR ROM.
+
+    Args:
+        tile_index: Tile index (0-255)
+        chr: CHR bank index (0-63), default 0x0F (overworld)
+        scale: Scale factor for output (1=16x16, 4=64x64), default 4
+    """
+    if _rom_data is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    if tile_index < 0 or tile_index >= TILE_COUNT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tile index must be 0-{TILE_COUNT - 1}"
+        )
+
+    if chr < 0 or chr > 63:
+        raise HTTPException(status_code=400, detail="CHR bank must be 0-63")
+
+    try:
+        from PIL import Image
+        from io import BytesIO
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="PIL/Pillow not installed - required for tile rendering"
+        )
+
+    # NES ROM layout: 16-byte header + 128KB PRG + 128KB CHR
+    # CHR ROM starts at offset 0x20010 (after header + PRG)
+    CHR_ROM_START = 0x20010
+    CHR_BANK_SIZE = 0x2000  # 8KB per bank
+    PATTERN_SIZE = 16  # bytes per 8x8 pattern
+
+    # Get the 4 minitile IDs for this tile
+    tile_offset = TILE_TABLE_ADDR + (tile_index * TILE_SIZE)
+    minitiles = list(_rom_data[tile_offset:tile_offset + TILE_SIZE])
+
+    # Calculate CHR bank offset in ROM
+    chr_offset = CHR_ROM_START + (chr * CHR_BANK_SIZE)
+
+    # NES default grayscale palette
+    PALETTE = [(0, 0, 0), (85, 85, 85), (170, 170, 170), (255, 255, 255)]
+
+    def decode_pattern(pattern_index: int) -> list:
+        """Decode an 8x8 NES pattern from CHR ROM."""
+        addr = chr_offset + (pattern_index * PATTERN_SIZE)
+        if addr + PATTERN_SIZE > len(_rom_data):
+            return [[0] * 8 for _ in range(8)]  # Out of bounds
+
+        plane0 = _rom_data[addr:addr + 8]
+        plane1 = _rom_data[addr + 8:addr + 16]
+
+        pixels = []
+        for row in range(8):
+            row_pixels = []
+            for col in range(8):
+                bit0 = (plane0[row] >> (7 - col)) & 1
+                bit1 = (plane1[row] >> (7 - col)) & 1
+                color_idx = bit0 | (bit1 << 1)
+                row_pixels.append(PALETTE[color_idx])
+            pixels.append(row_pixels)
+        return pixels
+
+    # Render the 4 minitiles into a 16x16 image
+    img = Image.new('RGB', (16, 16), (0, 0, 0))
+    positions = [(0, 0), (8, 0), (0, 8), (8, 8)]  # TL, TR, BL, BR
+
+    for i, (mini_id, (x, y)) in enumerate(zip(minitiles, positions)):
+        pattern = decode_pattern(mini_id)
+        for py, row in enumerate(pattern):
+            for px, color in enumerate(row):
+                img.putpixel((x + px, y + py), color)
+
+    # Scale up
+    if scale > 1:
+        img = img.resize((16 * scale, 16 * scale), Image.NEAREST)
+
+    # Return as PNG
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
+
+
 # =============================================================================
 # API Endpoints - Assets
 # =============================================================================
@@ -1281,8 +1875,8 @@ def configure_asset_paths(
     ASSET_PATHS["sprites"] = sprites_dir or (base / "images" / "sprites")
     ASSET_PATHS["maps"] = maps_dir or (base / "images" / "maps")
 
-    # Tiles are in temp folder from github clone
-    temp_base = base.parent / "temp" / "github-clones" / "TMOS_Romhack1"
+    # Tiles are in temp folder from github clone (need to go up one more level from projects/)
+    temp_base = base.parent.parent / "temp" / "github-clones" / "TMOS_Romhack1"
     ASSET_PATHS["tiles"] = tiles_dir or (temp_base / "Images" / "TileImages")
 
 
@@ -1326,16 +1920,48 @@ async def get_sprite(filename: str):
 
 
 @app.get("/api/assets/tiles/{filename}")
-async def get_tile(filename: str):
-    """Get a tile image."""
+async def get_tile(filename: str, chr: Optional[int] = None):
+    """Get a tile image.
+
+    Args:
+        filename: The tile image filename (e.g., "00.png")
+        chr: Optional CHR bank index for bank-specific tile graphics
+    """
     if not ASSET_PATHS:
         configure_asset_paths()
 
-    file_path = ASSET_PATHS["tiles"] / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"Tile not found: {filename}")
+    tiles_base = ASSET_PATHS["tiles"]
+    file_path = None
 
-    return FileResponse(file_path)
+    # If CHR bank specified, try to find a bank-specific version first
+    if chr is not None:
+        # Try CHR-specific directory: tiles/chr_0F/00.png
+        chr_dir = tiles_base / f"chr_{chr:02X}"
+        chr_file = chr_dir / filename
+        if chr_file.exists():
+            file_path = chr_file
+        else:
+            # Try alternate naming: tiles/00_chr0F.png
+            base_name = filename.rsplit('.', 1)[0]
+            ext = filename.rsplit('.', 1)[1] if '.' in filename else 'png'
+            alt_file = tiles_base / f"{base_name}_chr{chr:02X}.{ext}"
+            if alt_file.exists():
+                file_path = alt_file
+
+    # Fall back to default tile (no CHR bank suffix)
+    if file_path is None:
+        file_path = tiles_base / filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail=f"Tile not found: {filename}")
+
+    # Return with cache headers - cache by chr param since URL includes it
+    return FileResponse(
+        file_path,
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Vary": "Accept-Encoding"
+        }
+    )
 
 
 @app.get("/api/assets/maps/{filename}")

@@ -200,7 +200,6 @@ export function TileBankView() {
             tiles={tileBankData}
             selectedIndex={selectedTileIndex}
             onSelectTile={setSelectedTileIndex}
-            chrBank={chrBankIndex}
           />
         </div>
 
@@ -210,7 +209,6 @@ export function TileBankView() {
             <TileEditor
               tile={selectedTile}
               onSave={(minitiles) => updateTileBankTile(selectedTile.index, minitiles)}
-              chrBank={chrBankIndex}
             />
           ) : (
             <div className="text-center text-slate-500 py-8">

@@ -1,4 +1,5 @@
 import type { ScreenData } from '../../api/client';
+import { formatScreenId } from '../../utils/formatters';
 
 interface ScreenRendererProps {
   screen: ScreenData;
@@ -19,8 +20,21 @@ const BASE_HEIGHT = 384; // 6 tiles * 64px
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Get the rendered screen image URL
-function getScreenRenderUrl(chapterNum: number, screenIndex: number, scale: number = 4): string {
-  return `${API_BASE}/api/rom/render/${chapterNum}/${screenIndex}?scale=${scale}`;
+// Include tile data as cache-busting params to force refresh when screen data changes
+function getScreenRenderUrl(
+  chapterNum: number,
+  screenIndex: number,
+  scale: number = 4,
+  topTiles?: number,
+  bottomTiles?: number,
+  datapointer?: number
+): string {
+  let url = `${API_BASE}/api/rom/render/${chapterNum}/${screenIndex}?scale=${scale}`;
+  // Add cache-busting params based on tile data
+  if (topTiles !== undefined) url += `&t=${topTiles}`;
+  if (bottomTiles !== undefined) url += `&b=${bottomTiles}`;
+  if (datapointer !== undefined) url += `&d=${datapointer}`;
+  return url;
 }
 
 export function ScreenRenderer({
@@ -34,7 +48,15 @@ export function ScreenRenderer({
 }: ScreenRendererProps) {
   // Use API scale of 1 (gives 512x384), then CSS scale for display
   const apiScale = 1;
-  const renderUrl = getScreenRenderUrl(chapterNum, screen.index, apiScale);
+  const renderUrl = getScreenRenderUrl(
+    chapterNum,
+    screen.index,
+    apiScale,
+    screen.top_tiles,
+    screen.bottom_tiles,
+    screen.datapointer
+  );
+  const screenId = formatScreenId(screen.index, screen.global_index, chapterNum);
 
   // Display dimensions - scale from base size
   const displayWidth = BASE_WIDTH * scale;
@@ -45,13 +67,13 @@ export function ScreenRenderer({
       className={`relative inline-block cursor-pointer transition-all ${
         selected ? 'ring-2 ring-yellow-400 z-10' : 'hover:ring-2 hover:ring-white/50'
       }`}
-      style={{ 
-        width: displayWidth, 
+      style={{
+        width: displayWidth,
         height: displayHeight,
         backgroundColor: getGroundColor(screen.worldscreen_color),
       }}
       onClick={onClick}
-      title={`Screen ${screen.index} (0x${screen.index.toString(16).toUpperCase()})`}
+      title={screenId.full}
     >
       {/* Rendered screen image from API */}
       <img
@@ -81,7 +103,7 @@ export function ScreenRenderer({
       {showOverlay && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
           <span className="text-white font-mono text-sm font-bold drop-shadow-lg">
-            {screen.index.toString(16).toUpperCase()}
+            {screenId.compact}
           </span>
         </div>
       )}
@@ -89,7 +111,7 @@ export function ScreenRenderer({
       {/* Info panel */}
       {showInfo && (
         <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-white text-[8px] p-1 font-mono">
-          <div>0x{screen.index.toString(16).toUpperCase()} ({screen.index})</div>
+          <div>{screenId.short}</div>
           <div>DP:{screen.datapointer} Top:{screen.top_tiles.toString(16).toUpperCase()}</div>
           <div>Bot:{screen.bottom_tiles.toString(16).toUpperCase()} OS:{screen.objectset}</div>
         </div>
@@ -116,7 +138,15 @@ export function ScreenMini({
 }) {
   // Use API scale 1 (512x384), CSS will resize to thumbnail
   const apiScale = 1;
-  const renderUrl = getScreenRenderUrl(chapterNum, screen.index, apiScale);
+  const renderUrl = getScreenRenderUrl(
+    chapterNum,
+    screen.index,
+    apiScale,
+    screen.top_tiles,
+    screen.bottom_tiles,
+    screen.datapointer
+  );
+  const screenId = formatScreenId(screen.index, screen.global_index, chapterNum);
 
   // Aspect ratio: 512x384 base (4:3)
   const width = size;
@@ -127,17 +157,17 @@ export function ScreenMini({
       className={`relative cursor-pointer transition-all ${
         selected ? 'ring-2 ring-yellow-400 z-10' : 'hover:ring-1 hover:ring-white/50'
       }`}
-      style={{ 
-        width, 
+      style={{
+        width,
         height,
         backgroundColor: getGroundColor(screen.worldscreen_color),
       }}
       onClick={onClick}
-      title={`Screen ${screen.index} (0x${screen.index.toString(16).toUpperCase()})`}
+      title={screenId.full}
     >
       <img
         src={renderUrl}
-        alt={`Screen ${screen.index}`}
+        alt={`Screen ${screenId.short}`}
         className="w-full h-full object-cover"
         style={{ imageRendering: 'pixelated' }}
         onError={(e) => {
@@ -151,12 +181,12 @@ export function ScreenMini({
         className="absolute inset-0 items-center justify-center text-white text-[10px] font-bold hidden"
         style={{ backgroundColor: getParentWorldColor(screen.parent_world) }}
       >
-        {screen.index.toString(16).toUpperCase().padStart(2, '0')}
+        {screenId.compact}
       </div>
       {/* Screen index overlay - always visible */}
       {showIndex && (
         <div className="absolute top-0 left-0 bg-black/70 text-white text-[8px] font-mono px-1 leading-tight">
-          {screen.index.toString(16).toUpperCase().padStart(2, '0')}
+          {screenId.compact}
         </div>
       )}
     </div>

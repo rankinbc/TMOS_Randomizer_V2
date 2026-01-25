@@ -243,7 +243,55 @@ class EdgeCompatibilityValidator(Validator):
                 },
             ))
 
-        # Check minimum walkable tiles requirement
+        # Check if source edge is completely blocked (can't even exit)
+        source_walkable = sum(1 for t in edge_a if is_walkable(t))
+        if source_walkable == 0:
+            issues.append(ValidationIssue(
+                validator_id=self.VALIDATOR_ID,
+                severity=Severity.ERROR,
+                message=(
+                    f"BLOCKED EXIT: screen {screen_a.relative_index} has navigation "
+                    f"{direction} → screen {screen_b.relative_index}, but the {direction} edge "
+                    f"is completely blocked (0 walkable tiles). Player cannot exit."
+                ),
+                screen_index=screen_a.relative_index,
+                chapter_num=chapter_num,
+                details={
+                    "source_screen": screen_a.relative_index,
+                    "target_screen": screen_b.relative_index,
+                    "direction": direction,
+                    "source_walkable": 0,
+                    "edge_tiles": edge_a,
+                    "issue_type": "blocked_exit",
+                },
+            ))
+            return issues  # No point checking further if exit is blocked
+
+        # Check if target edge is completely blocked (can't enter)
+        target_walkable = sum(1 for t in edge_b if is_walkable(t))
+        if target_walkable == 0:
+            issues.append(ValidationIssue(
+                validator_id=self.VALIDATOR_ID,
+                severity=Severity.ERROR,
+                message=(
+                    f"BLOCKED ENTRY: screen {screen_a.relative_index} {direction} → "
+                    f"screen {screen_b.relative_index}, but screen {screen_b.relative_index}'s "
+                    f"entry edge is completely blocked (0 walkable tiles). Player cannot enter."
+                ),
+                screen_index=screen_a.relative_index,
+                chapter_num=chapter_num,
+                details={
+                    "source_screen": screen_a.relative_index,
+                    "target_screen": screen_b.relative_index,
+                    "direction": direction,
+                    "target_walkable": 0,
+                    "edge_tiles": edge_b,
+                    "issue_type": "blocked_entry",
+                },
+            ))
+            return issues  # No point checking further if entry is blocked
+
+        # Check minimum walkable tiles requirement (tiles walkable on BOTH sides)
         walkable_count = sum(
             1 for ta, tb in zip(edge_a, edge_b)
             if is_walkable(ta) and is_walkable(tb)
@@ -267,6 +315,8 @@ class EdgeCompatibilityValidator(Validator):
                     "direction": direction,
                     "walkable_count": walkable_count,
                     "min_required": self.config.min_walkable_tiles,
+                    "source_walkable": source_walkable,
+                    "target_walkable": target_walkable,
                 },
             ))
 

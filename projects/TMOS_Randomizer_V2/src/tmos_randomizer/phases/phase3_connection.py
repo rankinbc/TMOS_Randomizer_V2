@@ -125,7 +125,7 @@ def determine_section_order(
     Args:
         chapter_plan: The chapter plan from phase 1
         chapter_shape: The chapter shape from phase 2
-        dungeon_last: If True, dungeon is always last
+        dungeon_last: If True, dungeon is always last (before boss/victory)
         randomize_order: If True, randomize non-dungeon order
         rng: Random number generator
 
@@ -140,45 +140,76 @@ def determine_section_order(
         if section.section_id not in section_ids:
             section_ids.append(section.section_id)
 
-    # Separate dungeon from others
+    # Separate sections by type
+    overworld_ids = []
+    town_ids = []
     dungeon_ids = []
+    boss_ids = []
+    victory_ids = []
     other_ids = []
 
     for sid in section_ids:
-        # Find section type
-        for section in chapter_plan.sections:
-            if section.section_id == sid:
-                if section.section_type == SectionType.DUNGEON:
-                    dungeon_ids.append(sid)
-                else:
-                    other_ids.append(sid)
-                break
-
-    # Randomize non-dungeon order if configured
-    if randomize_order:
-        rng.shuffle(other_ids)
-
-    # Put overworld first
-    overworld_ids = []
-    remaining_ids = []
-    for sid in other_ids:
         for section in chapter_plan.sections:
             if section.section_id == sid:
                 if section.section_type == SectionType.OVERWORLD:
                     overworld_ids.append(sid)
+                elif section.section_type == SectionType.TOWN:
+                    town_ids.append(sid)
+                elif section.section_type == SectionType.DUNGEON:
+                    dungeon_ids.append(sid)
+                elif section.section_type == SectionType.BOSS:
+                    boss_ids.append(sid)
+                elif section.section_type == SectionType.VICTORY:
+                    victory_ids.append(sid)
                 else:
-                    remaining_ids.append(sid)
+                    other_ids.append(sid)
                 break
 
-    # Final order: overworld(s), other sections, dungeon(s)
-    order = overworld_ids + remaining_ids
+    # Randomize middle sections if configured
+    if randomize_order:
+        rng.shuffle(town_ids)
+        rng.shuffle(other_ids)
+
+    # Build order: overworld(s) first, then towns/others, then dungeon, boss, victory
+    # Overworld always first
+    order = overworld_ids[:]
+
+    # Add towns and other sections, ensuring TOWNS ARE NEVER ADJACENT
+    # Towns should connect through other section types (overworld, dungeon, maze, special)
+    # Strategy: interleave towns with non-town sections
+    non_town_middle = other_ids[:]
+    if not dungeon_last:
+        # Include dungeons in the pool for interleaving
+        non_town_middle.extend(dungeon_ids)
+        dungeon_ids = []  # Clear so they're not added again later
+
+    if randomize_order:
+        rng.shuffle(non_town_middle)
+
+    # Interleave: place towns between non-town sections
+    # If we have more towns than gaps, some towns will need to connect through overworld
+    middle_sections = []
+
+    # Add non-town sections first, then insert towns between them
+    for i, nts in enumerate(non_town_middle):
+        middle_sections.append(nts)
+        # Insert a town after this non-town section if we have towns left
+        if town_ids:
+            middle_sections.append(town_ids.pop(0))
+
+    # Any remaining towns go at the end (but this means they'll connect to dungeon/boss)
+    middle_sections.extend(town_ids)
+
+    order.extend(middle_sections)
+
+    # Dungeon comes before boss/victory (if dungeon_last is True, they weren't added above)
     if dungeon_last:
-        order = order + dungeon_ids
-    else:
-        # Insert dungeons at random positions
-        for did in dungeon_ids:
-            pos = rng.randint(1, len(order))  # Not at start
-            order.insert(pos, did)
+        order.extend(dungeon_ids)
+
+    # BOSS and VICTORY are ALWAYS at the very end, in that order
+    # Each has exactly 1 incoming connection
+    order.extend(boss_ids)
+    order.extend(victory_ids)
 
     return order
 

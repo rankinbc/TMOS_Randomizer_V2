@@ -38,16 +38,18 @@ def build_walkability_grid(
     top_tiles: int,
     bottom_tiles: int,
     datapointer: int,
-    treat_hazards_as_blocking: bool = False,
 ) -> List[List[bool]]:
     """Build 8x6 walkability grid from TileSection data.
+
+    Walkability is determined by tile category:
+    - WALKABLE and HAZARDOUS tiles are traversable (True)
+    - DEADLY and COLLIDABLE tiles block movement (False)
 
     Args:
         rom_data: Full ROM data
         top_tiles: TileSection index for top
         bottom_tiles: TileSection index for bottom
         datapointer: DataPointer value
-        treat_hazards_as_blocking: If True, hazards block movement
 
     Returns:
         8x6 grid of booleans (True = walkable)
@@ -55,7 +57,7 @@ def build_walkability_grid(
     tile_grid = build_tile_grid(rom_data, top_tiles, bottom_tiles, datapointer)
 
     return [
-        [is_walkable(tile, treat_hazards_as_blocking) for tile in row]
+        [is_walkable(tile) for tile in row]
         for row in tile_grid
     ]
 

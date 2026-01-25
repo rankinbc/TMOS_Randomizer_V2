@@ -1,9 +1,13 @@
 import type { ScreenData } from '../../api/client';
 import { ScreenRenderer } from './ScreenRenderer';
+import { Tooltip } from '../shared/Tooltip';
+import { formatScreenId } from '../../utils/formatters';
 
 interface ScreenDetailPanelProps {
   screen: ScreenData;
   chapterNum: number;
+  screens?: ScreenData[];  // All screens for lookup
+  onScreenSelect?: (index: number) => void;  // Navigate to screen
   onClose?: () => void;
 }
 
@@ -144,28 +148,86 @@ const EVENT_TYPES: Record<number, { name: string; description: string }> = {
   0xC0: { name: 'Time Door', description: 'Time door event' },
 };
 
-// Parent world/section types
+// Parent world/section types - CORRECTED naming per ROM analysis
+// NOTE: ParentWorld values vary by chapter - same value can mean different things
+// WARNING: Towns (0x10, 0x20) share same ParentWorld on BOTH sides of Time Door
 const PARENT_WORLD_TYPES: Record<number, { name: string; color: string }> = {
-  0x00: { name: 'Overworld (Present)', color: '#22c55e' },
-  0x01: { name: 'Overworld (Past)', color: '#84cc16' },
-  0x10: { name: 'Overworld', color: '#10b981' },
-  0x20: { name: 'Town', color: '#3b82f6' },
-  0x30: { name: 'Town (Alt)', color: '#6366f1' },
-  0x40: { name: 'Dungeon', color: '#a855f7' },
-  0x50: { name: 'Dungeon (Deep)', color: '#8b5cf6' },
-  0x60: { name: 'Palace', color: '#ec4899' },
-  0x70: { name: 'Maze', color: '#f97316' },
+  0x00: { name: 'Overworld', color: '#22c55e' },
+  0x10: { name: 'Town A', color: '#3b82f6' },
+  0x20: { name: 'Town B', color: '#6366f1' },
+  0x40: { name: 'Overworld', color: '#22c55e' },  // Ch1/3: Overworld, Ch4: Past area
+  0x50: { name: 'Maze', color: '#f97316' },       // Was incorrectly "Dungeon (Deep)"
+  0x60: { name: 'Dungeon', color: '#a855f7' },    // Was incorrectly "Palace"
+  0x70: { name: 'Special', color: '#eab308' },
   0x80: { name: 'Special', color: '#eab308' },
+  0xA0: { name: 'Boss Area', color: '#ef4444' },
+  0xAC: { name: 'Boss Area', color: '#ef4444' },
+  0xC0: { name: 'Boss Area', color: '#ef4444' },
+  0xE0: { name: 'Overworld', color: '#22c55e' },  // Ch2 overworld present
 };
 
-export function ScreenDetailPanel({ screen, chapterNum, onClose }: ScreenDetailPanelProps) {
+// Past screen indices by chapter - time period determined by SCREEN INDEX, not ParentWorld
+const PAST_SCREEN_INDICES: Record<number, Set<number>> = {
+  1: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+              123, 124, 125, 126]),
+  2: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
+              136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
+              149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
+              162, 163, 164, 165, 166, 167, 168, 169, 170]),
+  3: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
+              136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
+              149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
+              162, 163, 164]),
+  4: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
+              136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
+              149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
+              162, 163, 164, 165]),
+  5: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134]),
+};
+
+// Determine if a screen is in the PAST based on its index
+function isScreenInPast(screenIndex: number, chapterNum: number): boolean {
+  return PAST_SCREEN_INDICES[chapterNum]?.has(screenIndex) ?? false;
+}
+
+export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect, onClose }: ScreenDetailPanelProps) {
   const contentInfo = getContentInfo(screen.content, chapterNum);
   const eventInfo = getEventInfo(screen.event);
   const parentInfo = getParentWorldInfo(screen.parent_world);
+  const screenId = formatScreenId(screen.index, screen.global_index, chapterNum);
+
+  // Determine time period (PRESENT or PAST) based on screen index
+  const isPast = isScreenInPast(screen.index, chapterNum);
+  const timePeriod = isPast ? 'PAST' : 'PRESENT';
 
   // Determine if this is a stairway
   const isStairway = screen.event === 0x40;
   const stairwayDest = isStairway ? screen.content : null;
+  const stairwayDestScreen = stairwayDest !== null ? screens?.find(s => s.index === stairwayDest) : null;
 
   // Determine CHR bank info from datapointer
   const chrBankIndex = screen.datapointer & 0x3F;
@@ -177,11 +239,20 @@ export function ScreenDetailPanel({ screen, chapterNum, onClose }: ScreenDetailP
       {/* Header */}
       <div className="sticky top-0 bg-slate-800 z-10 flex items-center justify-between p-3 border-b border-slate-700">
         <div>
-          <h3 className="font-semibold text-slate-200">
-            Screen {screen.index}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-slate-200">
+              Screen {screenId.short}
+            </h3>
+            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+              isPast
+                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+            }`}>
+              {timePeriod}
+            </span>
+          </div>
           <span className="text-xs text-slate-500 font-mono">
-            0x{screen.index.toString(16).toUpperCase().padStart(2, '0')} | Global: {screen.global_index}
+            {screenId.global}
           </span>
         </div>
         {onClose && (
@@ -224,7 +295,17 @@ export function ScreenDetailPanel({ screen, chapterNum, onClose }: ScreenDetailP
           <div className="text-xs text-amber-300/80 mt-1">{eventInfo.description}</div>
           {isStairway && stairwayDest !== null && (
             <div className="text-xs text-amber-400 mt-1">
-              Leads to Screen {stairwayDest} (0x{stairwayDest.toString(16).toUpperCase()})
+              Leads to{' '}
+              {onScreenSelect ? (
+                <button
+                  onClick={() => onScreenSelect(stairwayDest)}
+                  className="underline hover:text-amber-200 transition-colors"
+                >
+                  Screen {formatScreenId(stairwayDest, stairwayDestScreen?.global_index ?? stairwayDest).short}
+                </button>
+              ) : (
+                <span>Screen {formatScreenId(stairwayDest, stairwayDestScreen?.global_index ?? stairwayDest).short}</span>
+              )}
             </div>
           )}
         </div>
@@ -234,6 +315,13 @@ export function ScreenDetailPanel({ screen, chapterNum, onClose }: ScreenDetailP
       <div className="p-4 space-y-4">
         {/* Section/World Info */}
         <DataSection title="Section Info">
+          {/* Time Period - prominent display */}
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-slate-500">Time Period</span>
+            <span className={`font-bold ${isPast ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {timePeriod}
+            </span>
+          </div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-slate-500">Parent World</span>
             <div className="flex items-center gap-2">
@@ -245,25 +333,50 @@ export function ScreenDetailPanel({ screen, chapterNum, onClose }: ScreenDetailP
             </div>
           </div>
           <DataRow label="Parent World ID" value={`0x${screen.parent_world.toString(16).toUpperCase()}`} />
+          <DataRow label="Screen Index" value={screen.index.toString()} />
         </DataSection>
 
         {/* Navigation */}
         <DataSection title="Navigation">
           <div className="grid grid-cols-3 gap-2 text-center mb-3">
             <div />
-            <NavCell direction="Up" value={screen.nav_up} />
+            <NavCell
+              direction="Up"
+              value={screen.nav_up}
+              screens={screens}
+              chapterNum={chapterNum}
+              onScreenSelect={onScreenSelect}
+            />
             <div />
-            <NavCell direction="Left" value={screen.nav_left} />
+            <NavCell
+              direction="Left"
+              value={screen.nav_left}
+              screens={screens}
+              chapterNum={chapterNum}
+              onScreenSelect={onScreenSelect}
+            />
             <div className="bg-blue-500/20 rounded p-2 text-xs text-blue-300 font-mono">
-              {screen.index}
+              {screenId.compact}
             </div>
-            <NavCell direction="Right" value={screen.nav_right} />
+            <NavCell
+              direction="Right"
+              value={screen.nav_right}
+              screens={screens}
+              chapterNum={chapterNum}
+              onScreenSelect={onScreenSelect}
+            />
             <div />
-            <NavCell direction="Down" value={screen.nav_down} />
+            <NavCell
+              direction="Down"
+              value={screen.nav_down}
+              screens={screens}
+              chapterNum={chapterNum}
+              onScreenSelect={onScreenSelect}
+            />
             <div />
           </div>
           <div className="text-xs text-slate-500 text-center">
-            0xFF = Blocked | 0xFE = Building Entrance
+            Click a direction to navigate
           </div>
         </DataSection>
 
@@ -409,13 +522,33 @@ function DataRow({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function NavCell({ direction, value }: { direction: string; value: number }) {
+interface NavCellProps {
+  direction: string;
+  value: number;
+  screens?: ScreenData[];
+  chapterNum?: number;
+  onScreenSelect?: (index: number) => void;
+}
+
+function NavCell({ direction, value, screens, chapterNum, onScreenSelect }: NavCellProps) {
   const isBlocked = value === 0xFF;
   const isBuilding = value === 0xFE;
+  const isValid = !isBlocked && !isBuilding;
+
+  // Get destination screen info for tooltip
+  const destScreen = isValid && screens ? screens.find(s => s.index === value) : null;
+  const destScreenId = destScreen
+    ? formatScreenId(destScreen.index, destScreen.global_index, chapterNum)
+    : isValid
+    ? formatScreenId(value, value)
+    : null;
+  const destContentInfo = destScreen ? getContentInfo(destScreen.content, chapterNum ?? 1) : null;
+  const destParentInfo = destScreen ? getParentWorldInfo(destScreen.parent_world) : null;
+  const destIsPast = destScreen && chapterNum ? isScreenInPast(destScreen.index, chapterNum) : false;
 
   let bgColor = 'bg-slate-700';
   let textColor = 'text-slate-300';
-  let displayValue: string = value.toString();
+  let displayValue: string;
 
   if (isBlocked) {
     bgColor = 'bg-red-500/20';
@@ -428,12 +561,60 @@ function NavCell({ direction, value }: { direction: string; value: number }) {
   } else {
     bgColor = 'bg-green-500/20';
     textColor = 'text-green-400';
+    displayValue = destScreenId?.compact ?? value.toString();
   }
 
-  return (
-    <div className={`${bgColor} rounded p-2`}>
+  const isClickable = isValid && onScreenSelect;
+
+  // Build tooltip content
+  const tooltipContent = isBlocked ? (
+    <span>Blocked (no exit)</span>
+  ) : isBuilding ? (
+    <div>
+      <div className="font-medium">Building Entrance</div>
+      <div className="text-slate-400 text-xs">Enter building interior</div>
+    </div>
+  ) : destScreen ? (
+    <div className="space-y-1">
+      <div className="font-medium">Screen {destScreenId?.short}</div>
+      <div className="text-slate-400 text-xs">{destScreenId?.global}</div>
+      {destParentInfo && (
+        <div className="flex items-center gap-1.5 text-xs">
+          <div
+            className="w-2 h-2 rounded"
+            style={{ backgroundColor: destParentInfo.color }}
+          />
+          <span className="text-slate-300">{destParentInfo.name}</span>
+        </div>
+      )}
+      {destContentInfo && (
+        <div className="text-xs text-slate-300">
+          {getCategoryIcon(destContentInfo.category)} {destContentInfo.name}
+        </div>
+      )}
+      {isClickable && (
+        <div className="text-xs text-blue-400 mt-1">Click to navigate</div>
+      )}
+    </div>
+  ) : (
+    <span>Screen {destScreenId?.short}</span>
+  );
+
+  const cell = (
+    <div
+      className={`${bgColor} rounded p-2 transition-all ${
+        isClickable ? 'cursor-pointer hover:ring-2 hover:ring-blue-400' : ''
+      }`}
+      onClick={isClickable ? () => onScreenSelect(value) : undefined}
+    >
       <div className="text-[10px] text-slate-500 mb-0.5">{direction}</div>
       <div className={`${textColor} font-mono text-xs`}>{displayValue}</div>
     </div>
+  );
+
+  return (
+    <Tooltip content={tooltipContent} position="top" delay={150}>
+      {cell}
+    </Tooltip>
   );
 }

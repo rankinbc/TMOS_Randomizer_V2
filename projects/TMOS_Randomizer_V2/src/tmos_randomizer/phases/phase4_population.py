@@ -16,7 +16,13 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.chapter import Chapter, GameWorld
 from ..core.constants import get_chr_index, get_compatible_objectsets
-from ..core.enums import SectionType, DO_NOT_RANDOMIZE, PARENTWORLD_TO_SECTION
+from ..core.enums import (
+    SectionType,
+    DO_NOT_RANDOMIZE,
+    PARENTWORLD_TO_SECTION,
+    BOSS_SCREENS_BY_CHAPTER,
+    VICTORY_SCREENS_BY_CHAPTER,
+)
 from ..core.worldscreen import WorldScreen
 from ..logic.exclusions import is_excluded, get_randomizable_screens
 from ..logic.compatibility import can_swap_screens, validate_screen_compatibility
@@ -43,6 +49,7 @@ class ScreenAssignment:
     section_id: int             # Section this screen belongs to
     local_id: int               # Position within section (from SectionShape)
     original_section_type: SectionType  # Original section type of this screen
+    grid_position: Tuple[int, int] = (0, 0)  # (x, y) grid position from shape
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -50,6 +57,7 @@ class ScreenAssignment:
             "section_id": self.section_id,
             "local_id": self.local_id,
             "original_type": self.original_section_type.name,
+            "grid_position": {"x": self.grid_position[0], "y": self.grid_position[1]},
         }
 
 
@@ -62,6 +70,12 @@ class ChapterPopulation:
 
     # Maps section_id -> list of real screen indices in order
     screen_assignments: Dict[int, List[int]] = field(default_factory=dict)
+
+    # Maps section_id -> {(x, y) -> screen_index} for grid layout
+    section_grid_positions: Dict[int, Dict[Tuple[int, int], int]] = field(default_factory=dict)
+
+    # Maps screen_index -> (x, y) grid position
+    screen_to_position: Dict[int, Tuple[int, int]] = field(default_factory=dict)
 
     # Tracks TileSection swaps: (screen_idx, new_top_tile, new_bottom_tile)
     tilesection_swaps: List[Tuple[int, int, int]] = field(default_factory=list)
@@ -80,11 +94,28 @@ class ChapterPopulation:
                 return assignment
         return None
 
+    def get_grid_position(self, screen_index: int) -> Optional[Tuple[int, int]]:
+        """Get grid position for a screen index."""
+        return self.screen_to_position.get(screen_index)
+
+    def get_screen_at_position(self, section_id: int, position: Tuple[int, int]) -> Optional[int]:
+        """Get screen index at a grid position within a section."""
+        section_grid = self.section_grid_positions.get(section_id, {})
+        return section_grid.get(position)
+
     def to_dict(self) -> Dict[str, Any]:
+        # Convert tuple keys to strings for JSON serialization
+        section_grids_serialized = {}
+        for section_id, grid in self.section_grid_positions.items():
+            section_grids_serialized[section_id] = {
+                f"{x},{y}": screen_idx for (x, y), screen_idx in grid.items()
+            }
+
         return {
             "chapter_num": self.chapter_num,
             "assignments": [a.to_dict() for a in self.assignments],
             "screen_assignments": self.screen_assignments,
+            "section_grid_positions": section_grids_serialized,
             "tilesection_swaps": self.tilesection_swaps,
             "objectset_changes": self.objectset_changes,
         }
@@ -109,6 +140,99 @@ class WorldPopulation:
             "seed": self.seed,
             "chapters": [c.to_dict() for c in self.chapters],
         }
+
+
+# =============================================================================
+# Grid Position Helpers
+# =============================================================================
+
+def _derive_grid_from_navigation(
+    chapter: Chapter,
+    screen_indices: Set[int],
+) -> Dict[int, Tuple[int, int]]:
+    """Derive grid positions from original navigation layout using BFS.
+
+    Traverses the navigation links starting from the first screen
+    and assigns (x, y) positions based on direction traveled.
+
+    Args:
+        chapter: Chapter with screen data
+        screen_indices: Set of screen indices to map
+
+    Returns:
+        Dict mapping screen_index -> (x, y) grid position
+    """
+    if not screen_indices:
+        return {}
+
+    from collections import deque
+
+    positions: Dict[int, Tuple[int, int]] = {}
+    visited: Set[int] = set()
+
+    # Start from the first screen (sorted for consistency)
+    start_idx = min(screen_indices)
+    queue = deque([(start_idx, 0, 0)])  # (screen_idx, x, y)
+    visited.add(start_idx)
+    positions[start_idx] = (0, 0)
+
+    # Direction -> (dx, dy)
+    direction_deltas = {
+        "right": (1, 0),
+        "left": (-1, 0),
+        "down": (0, 1),
+        "up": (0, -1),
+    }
+
+    while queue:
+        current_idx, cx, cy = queue.popleft()
+        screen = chapter.get_screen(current_idx)
+        if screen is None:
+            continue
+
+        # Check all navigation directions
+        for direction, (dx, dy) in direction_deltas.items():
+            nav_attr = f"screen_index_{direction}"
+            neighbor_idx = getattr(screen, nav_attr, 0xFF)
+
+            # Skip blocked/building/invalid
+            if neighbor_idx >= 0xFE:
+                continue
+
+            # Only process screens in our set
+            if neighbor_idx not in screen_indices:
+                continue
+
+            if neighbor_idx in visited:
+                continue
+
+            # Calculate new position
+            nx, ny = cx + dx, cy + dy
+
+            # Check for collision - if position already taken, try to find alternative
+            if (nx, ny) in [p for p in positions.values()]:
+                # Position collision - skip this link
+                # This can happen with complex mazes
+                continue
+
+            visited.add(neighbor_idx)
+            positions[neighbor_idx] = (nx, ny)
+            queue.append((neighbor_idx, nx, ny))
+
+    # For any screens not reached via navigation, assign fallback positions
+    used_positions = set(positions.values())
+    fallback_x = max((p[0] for p in used_positions), default=0) + 1
+
+    for screen_idx in screen_indices:
+        if screen_idx not in positions:
+            # Find a free position
+            while (fallback_x, 0) in used_positions:
+                fallback_x += 1
+            positions[screen_idx] = (fallback_x, 0)
+            used_positions.add((fallback_x, 0))
+            fallback_x += 1
+
+    return positions
 
 
 # =============================================================================
@@ -200,8 +324,29 @@ def assign_screens_to_sections(
     # Track which screens have been assigned
     assigned_screens: Set[int] = set()
 
+    # Identify section types that are preserved (shouldn't be stolen by other sections)
+    preserved_types: Set[SectionType] = set()
+    for section_plan in chapter_plan.sections:
+        if section_plan.preserve_original:
+            preserved_types.add(section_plan.section_type)
+
     # Process each section in the plan
     for section_plan in chapter_plan.sections:
+        # Handle BOSS and VICTORY sections specially (fixed screen indices)
+        if section_plan.section_type == SectionType.BOSS:
+            _assign_fixed_index_section(
+                chapter, section_plan, population, assigned_screens,
+                BOSS_SCREENS_BY_CHAPTER.get(chapter.chapter_num, set())
+            )
+            continue
+
+        if section_plan.section_type == SectionType.VICTORY:
+            _assign_fixed_index_section(
+                chapter, section_plan, population, assigned_screens,
+                VICTORY_SCREENS_BY_CHAPTER.get(chapter.chapter_num, set())
+            )
+            continue
+
         if section_plan.preserve_original:
             # For preserved sections (mazes), keep original screens
             _assign_preserved_section(
@@ -219,12 +364,13 @@ def assign_screens_to_sections(
         if section_shape is None:
             continue
 
-        # Get candidate screens
+        # Get candidate screens (excluding preserved section types from fallback)
         candidates = _get_candidate_screens(
             screen_pools,
             section_plan.section_type,
             assigned_screens,
             prefer_matching_type,
+            preserved_types,
         )
 
         # Assign screens to section
@@ -246,7 +392,11 @@ def _assign_preserved_section(
     population: ChapterPopulation,
     assigned_screens: Set[int],
 ) -> None:
-    """Assign screens for a preserved section (keep original layout)."""
+    """Assign screens for a preserved section (keep original layout).
+
+    For preserved sections, we derive grid positions from the original
+    navigation layout using BFS from the first screen.
+    """
     # Find screens of this section type in the original ROM
     section_screens = []
 
@@ -262,16 +412,100 @@ def _assign_preserved_section(
     # Limit to target count
     section_screens = section_screens[:section_plan.target_screen_count]
 
+    # If no screens found for this preserved section type, skip it entirely
+    # (e.g., Chapter 3/4 have no MAZE-type screens in the original ROM)
+    if not section_screens:
+        return
+
+    # Derive grid positions from original navigation using BFS
+    section_grid = _derive_grid_from_navigation(chapter, set(section_screens))
+
     # Record assignments
     for i, screen_idx in enumerate(section_screens):
+        grid_pos = section_grid.get(screen_idx, (i, 0))  # Fallback to linear if not in grid
+
         population.assignments.append(ScreenAssignment(
             real_screen_index=screen_idx,
             section_id=section_plan.section_id,
             local_id=i,
             original_section_type=section_plan.section_type,
+            grid_position=grid_pos,
         ))
+        population.screen_to_position[screen_idx] = grid_pos
         assigned_screens.add(screen_idx)
 
+    population.section_grid_positions[section_plan.section_id] = {
+        pos: idx for idx, pos in section_grid.items()
+    }
+    population.screen_assignments[section_plan.section_id] = section_screens
+
+
+def _assign_fixed_index_section(
+    chapter: Chapter,
+    section_plan: SectionPlan,
+    population: ChapterPopulation,
+    assigned_screens: Set[int],
+    fixed_screen_indices: Set[int],
+) -> None:
+    """Assign screens for a fixed-index section (boss, victory).
+
+    These sections use explicit screen indices rather than ParentWorld matching.
+    They are NOT excluded even though they're in DO_NOT_RANDOMIZE because
+    we want them to be part of the section flow.
+
+    Args:
+        chapter: Chapter with screen data
+        section_plan: Plan for this section
+        population: Population to add assignments to
+        assigned_screens: Set of already-assigned screens (modified in place)
+        fixed_screen_indices: The specific screen indices for this section
+    """
+    if not fixed_screen_indices:
+        return
+
+    section_screens = []
+
+    for screen_idx in sorted(fixed_screen_indices):
+        # Check the screen exists in this chapter
+        screen = chapter.get_screen(screen_idx)
+        if not screen:
+            continue
+
+        # Check not already assigned (shouldn't happen, but be safe)
+        if screen_idx in assigned_screens:
+            continue
+
+        section_screens.append(screen_idx)
+
+    if not section_screens:
+        return
+
+    # Derive grid positions from original navigation
+    section_grid = _derive_grid_from_navigation(chapter, set(section_screens))
+
+    # Record assignments
+    section_grid_mapping: Dict[Tuple[int, int], int] = {}
+    for i, screen_idx in enumerate(section_screens):
+        screen = chapter.get_screen(screen_idx)
+        original_type = PARENTWORLD_TO_SECTION.get(
+            screen.parent_world, SectionType.UNKNOWN
+        ) if screen else SectionType.UNKNOWN
+
+        # Get grid position (fallback to linear layout)
+        grid_pos = section_grid.get(screen_idx, (i, 0))
+
+        population.assignments.append(ScreenAssignment(
+            real_screen_index=screen_idx,
+            section_id=section_plan.section_id,
+            local_id=i,
+            original_section_type=original_type,
+            grid_position=grid_pos,
+        ))
+        population.screen_to_position[screen_idx] = grid_pos
+        section_grid_mapping[grid_pos] = screen_idx
+        assigned_screens.add(screen_idx)
+
+    population.section_grid_positions[section_plan.section_id] = section_grid_mapping
     population.screen_assignments[section_plan.section_id] = section_screens
 
 
@@ -280,9 +514,21 @@ def _get_candidate_screens(
     target_type: SectionType,
     assigned_screens: Set[int],
     prefer_matching: bool,
+    preserved_types: Optional[Set[SectionType]] = None,
 ) -> List[int]:
-    """Get candidate screens for assignment."""
+    """Get candidate screens for assignment.
+
+    Args:
+        screen_pools: Screens grouped by section type
+        target_type: Target section type
+        assigned_screens: Already assigned screens
+        prefer_matching: If True, prefer screens of matching type first
+        preserved_types: Section types that are preserved and should not be
+                        used as fallback by other section types
+    """
     candidates = []
+    if preserved_types is None:
+        preserved_types = set()
 
     if prefer_matching:
         # First add screens of matching type
@@ -290,9 +536,12 @@ def _get_candidate_screens(
         candidates.extend([s for s in matching if s not in assigned_screens])
 
     # Then add screens of other types as fallback
+    # BUT skip preserved types (they should keep their own screens)
     for section_type, screens in screen_pools.items():
         if section_type == target_type and prefer_matching:
             continue  # Already added
+        if section_type in preserved_types and section_type != target_type:
+            continue  # Don't steal from preserved section types
         for screen in screens:
             if screen not in assigned_screens and screen not in candidates:
                 candidates.append(screen)
@@ -308,20 +557,35 @@ def _assign_section_screens(
     assigned_screens: Set[int],
     rng: random.Random,
 ) -> List[int]:
-    """Assign screens to a section from candidates."""
+    """Assign screens to a section from candidates.
+
+    Each screen is assigned to a unique grid position from the shape.
+    The grid positions are stored for navigation phase to use.
+    """
     # Shuffle candidates for randomness
     rng.shuffle(candidates)
 
     # Determine how many screens to assign
     target_count = min(section_shape.screen_count, len(candidates))
 
-    # Assign screens
+    # Initialize section grid mapping
+    section_grid: Dict[Tuple[int, int], int] = {}
+
+    # Assign screens to shape nodes (which have grid positions)
     assigned = []
     for i, screen_node in enumerate(section_shape.screens[:target_count]):
         if i >= len(candidates):
             break
 
         screen_idx = candidates[i]
+
+        # Get grid position from shape node
+        grid_pos = (screen_node.position.x, screen_node.position.y)
+
+        # Verify no overlap (should not happen with valid shapes, but check anyway)
+        if grid_pos in section_grid:
+            # Skip this assignment if position already taken
+            continue
 
         # Determine original section type
         # (We'd need the chapter here, but for now assume UNKNOWN)
@@ -332,11 +596,18 @@ def _assign_section_screens(
             section_id=section_plan.section_id,
             local_id=screen_node.local_id,
             original_section_type=original_type,
+            grid_position=grid_pos,
         ))
+
+        # Update grid mappings
+        section_grid[grid_pos] = screen_idx
+        population.screen_to_position[screen_idx] = grid_pos
 
         assigned_screens.add(screen_idx)
         assigned.append(screen_idx)
 
+    # Store section grid
+    population.section_grid_positions[section_plan.section_id] = section_grid
     population.screen_assignments[section_plan.section_id] = assigned
     return assigned
 

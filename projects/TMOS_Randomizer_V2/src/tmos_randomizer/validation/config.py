@@ -58,7 +58,10 @@ class ScreenTraversabilityConfig:
         algorithm: Pathfinding algorithm (bfs or astar)
         require_entry_to_exit: Require path from any entry to any exit
         allow_partial_exits: OK if some exits are unreachable
-        treat_hazards_as_blocking: Hazards block movement (stricter)
+
+    Note: Tile walkability is now determined by category:
+        - WALKABLE and HAZARDOUS (damages but doesn't kill) = traversable
+        - DEADLY (water, lava) and COLLIDABLE = blocks movement
     """
 
     enabled: bool = True
@@ -71,9 +74,6 @@ class ScreenTraversabilityConfig:
     # What to validate
     require_entry_to_exit: bool = True
     allow_partial_exits: bool = True
-
-    # Hazard handling
-    treat_hazards_as_blocking: bool = False
 
 
 @dataclass
@@ -142,6 +142,38 @@ class ReachabilityConfig:
 
 
 @dataclass
+class SectionFlowConfig:
+    """Configuration for section flow validation.
+
+    Ensures the actual navigation structure matches the planned section flow.
+    This is critical for verifying the randomization actually works.
+
+    Attributes:
+        enabled: Whether to run this validator
+        severity: Default severity for issues
+        max_issues: Maximum issues to report (0=unlimited)
+        max_fragments_per_section: Max fragments before ERROR (1=must be unified)
+        require_inter_section_connections: Planned connections must exist
+        auto_repair: Attempt to repair fragmented sections
+        max_repair_attempts: Maximum repair iterations
+    """
+
+    enabled: bool = True
+    severity: str = "error"
+    max_issues: int = 100
+
+    # Section unity requirements
+    max_fragments_per_section: int = 1  # 1 = section must be one connected piece
+
+    # Inter-section connection requirements
+    require_inter_section_connections: bool = True
+
+    # Repair settings
+    auto_repair: bool = True
+    max_repair_attempts: int = 10
+
+
+@dataclass
 class ValidationConfig:
     """Complete validation configuration.
 
@@ -180,6 +212,9 @@ class ValidationConfig:
     reachability: ReachabilityConfig = field(
         default_factory=ReachabilityConfig
     )
+    section_flow: SectionFlowConfig = field(
+        default_factory=SectionFlowConfig
+    )
 
     # Validator enable/disable overrides
     enabled_validators: Optional[Set[str]] = None  # None = all enabled
@@ -212,6 +247,7 @@ class ValidationConfig:
             "datapointer_objectset": self.datapointer_objectset,
             "navigation": self.navigation,
             "reachability": self.reachability,
+            "section_flow": self.section_flow,
         }
 
         if validator_id in config_map:
@@ -239,6 +275,7 @@ class ValidationConfig:
             "datapointer_objectset": self.datapointer_objectset,
             "navigation": self.navigation,
             "reachability": self.reachability,
+            "section_flow": self.section_flow,
         }
 
         if validator_id in config_map:
@@ -263,6 +300,7 @@ class ValidationConfig:
             "datapointer_objectset": self.datapointer_objectset,
             "navigation": self.navigation,
             "reachability": self.reachability,
+            "section_flow": self.section_flow,
         }
 
         if validator_id not in config_map:
@@ -322,6 +360,8 @@ class ValidationConfig:
             config.navigation = NavigationConfig(**data["navigation"])
         if "reachability" in data:
             config.reachability = ReachabilityConfig(**data["reachability"])
+        if "section_flow" in data:
+            config.section_flow = SectionFlowConfig(**data["section_flow"])
 
         return config
 
@@ -344,4 +384,5 @@ class ValidationConfig:
             "datapointer_objectset": vars(self.datapointer_objectset),
             "navigation": vars(self.navigation),
             "reachability": vars(self.reachability),
+            "section_flow": vars(self.section_flow),
         }

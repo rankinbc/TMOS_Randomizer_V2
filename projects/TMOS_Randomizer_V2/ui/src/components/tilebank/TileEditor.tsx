@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { TileBankEntry } from '../../api/client';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
 // Tile ID to image filename mapping (from TMOS_Romhack1)
 function getTileFileName(tileValue: number): string {
   const mapping: Record<number, string> = {
@@ -56,19 +54,18 @@ function getTileFileName(tileValue: number): string {
   return filename ? filename + '.png' : tileValue.toString(16).toUpperCase().padStart(2, '0') + '.png';
 }
 
-function getTileImageUrl(tileId: number, chrBank?: number): string {
+function getTileImageUrl(tileId: number): string {
   const filename = getTileFileName(tileId);
-  const bankParam = chrBank !== undefined ? `?chr=${chrBank}` : '';
-  return `${API_BASE}/api/assets/tiles/${filename}${bankParam}`;
+  // Use static tiles from ui/public/tiles (served by Vite dev server)
+  return `/tiles/${filename}`;
 }
 
 interface TileEditorProps {
   tile: TileBankEntry;
   onSave: (minitiles: [number, number, number, number]) => Promise<void>;
-  chrBank?: number;
 }
 
-export function TileEditor({ tile, onSave, chrBank }: TileEditorProps) {
+export function TileEditor({ tile, onSave }: TileEditorProps) {
   const [minitiles, setMinitiles] = useState<[string, string, string, string]>([
     tile.minitiles[0].toString(16).toUpperCase().padStart(2, '0'),
     tile.minitiles[1].toString(16).toUpperCase().padStart(2, '0'),
@@ -79,7 +76,7 @@ export function TileEditor({ tile, onSave, chrBank }: TileEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
 
-  // Reset form when tile or chrBank changes
+  // Reset form when tile changes
   useEffect(() => {
     setMinitiles([
       tile.minitiles[0].toString(16).toUpperCase().padStart(2, '0'),
@@ -89,7 +86,7 @@ export function TileEditor({ tile, onSave, chrBank }: TileEditorProps) {
     ]);
     setError(null);
     setImgError(false);
-  }, [tile.index, tile.minitiles, chrBank]);
+  }, [tile.index, tile.minitiles]);
 
   const handleChange = (index: number, value: string) => {
     // Only allow hex characters
@@ -168,7 +165,7 @@ export function TileEditor({ tile, onSave, chrBank }: TileEditorProps) {
         <div className="p-3 bg-slate-900 rounded">
           {!imgError ? (
             <img
-              src={getTileImageUrl(tile.index, chrBank)}
+              src={getTileImageUrl(tile.index)}
               alt={`Tile ${tile.hex_index}`}
               className="w-24 h-24 border border-slate-600 rounded"
               style={{ imageRendering: 'pixelated' }}

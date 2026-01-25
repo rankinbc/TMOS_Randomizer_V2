@@ -365,6 +365,54 @@ def find_connected_components(chapter: Chapter) -> List[FrozenSet[int]]:
     return components
 
 
+def find_components_in_subset(chapter: Chapter, screen_indices: Set[int]) -> List[Set[int]]:
+    """Find connected components within a specific subset of screens.
+
+    This checks connectivity ONLY among the specified screens, ignoring
+    connections to screens outside the subset.
+
+    Args:
+        chapter: Chapter with screen data
+        screen_indices: Set of screen indices to analyze
+
+    Returns:
+        List of sets, each containing connected screen indices within the subset
+    """
+    if not screen_indices:
+        return []
+
+    # Build graph restricted to the subset
+    graph = build_navigation_graph(chapter)
+    visited: Set[int] = set()
+    components: List[Set[int]] = []
+
+    for start in screen_indices:
+        if start in visited:
+            continue
+
+        # BFS to find component within subset
+        component: Set[int] = set()
+        queue = [start]
+
+        while queue:
+            node = queue.pop(0)
+            if node in visited or node not in screen_indices:
+                continue
+
+            visited.add(node)
+            component.add(node)
+
+            # Add neighbors that are also in the subset
+            for direction, neighbor in graph.get(node, {}).items():
+                if neighbor is not None and neighbor in screen_indices and neighbor not in visited:
+                    queue.append(neighbor)
+
+        if component:
+            components.append(component)
+
+    return components
+
+
 def is_fully_connected(chapter: Chapter) -> bool:
     """Check if all screens in the chapter are connected.
 

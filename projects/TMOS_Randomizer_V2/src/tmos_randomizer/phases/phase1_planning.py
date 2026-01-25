@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..core.constants import CHAPTER_OFFSETS
-from ..core.enums import SectionType
+from ..core.enums import SectionType, BOSS_SCREENS_BY_CHAPTER, VICTORY_SCREENS_BY_CHAPTER
 from ..io.config_loader import RandomizerConfig
 
 
@@ -33,6 +33,7 @@ class SectionPlan:
     shape: str = "blob"  # blob, linear, branching, grid
     is_required: bool = False
     preserve_original: bool = False  # For mazes, boss areas
+    is_past: bool = False  # True if section is in PAST time period (accessed via Time Door)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
@@ -45,6 +46,7 @@ class SectionPlan:
             "shape": self.shape,
             "is_required": self.is_required,
             "preserve_original": self.preserve_original,
+            "is_past": self.is_past,
         }
 
 
@@ -114,6 +116,7 @@ SECTION_DEFAULTS: Dict[str, Dict[str, int]] = {
     "overworld": {"min": 15, "default": 30, "max": 60},
     "town": {"min": 4, "default": 6, "max": 12},
     "dungeon": {"min": 8, "default": 20, "max": 40},
+    "mini_dungeon": {"min": 5, "default": 15, "max": 40},  # Smaller dungeons, pre-boss areas
     "maze": {"min": 4, "default": 10, "max": 20},
     "special": {"min": 2, "default": 5, "max": 15},
 }
@@ -180,7 +183,17 @@ def _add_required_sections(
     config: RandomizerConfig,
     rng: random.Random,
 ) -> None:
-    """Add required sections (minimum one of each type) to the plan."""
+    """Add required sections (minimum one of each type) to the plan.
+
+    Time period assignment (is_past):
+    - First overworld: PRESENT (is_past=False)
+    - Second+ overworld: PAST (is_past=True)
+    - First town: PRESENT (is_past=False)
+    - Second+ town: PAST (is_past=True)
+    - Maze: PAST (is_past=True) - typically accessed via Time Door
+    - Dungeon: PRESENT by default
+    - Boss/Victory: PRESENT by default
+    """
     section_id = 0
 
     # Add required overworld sections
@@ -188,6 +201,8 @@ def _add_required_sections(
     for i in range(overworld_count):
         defaults = SECTION_DEFAULTS["overworld"]
         section_id += 1
+        # First overworld is PRESENT, additional overworlds are PAST
+        is_past = i > 0
         plan.sections.append(SectionPlan(
             section_type=SectionType.OVERWORLD,
             section_id=section_id,
@@ -196,6 +211,7 @@ def _add_required_sections(
             max_screens=defaults["max"],
             shape=_get_shape_for_section(SectionType.OVERWORLD, config),
             is_required=True,
+            is_past=is_past,
         ))
 
     # Add required town sections
@@ -203,6 +219,8 @@ def _add_required_sections(
     for i in range(town_count):
         defaults = SECTION_DEFAULTS["town"]
         section_id += 1
+        # First town is PRESENT, second+ towns are PAST
+        is_past = i > 0
         plan.sections.append(SectionPlan(
             section_type=SectionType.TOWN,
             section_id=section_id,
@@ -211,6 +229,7 @@ def _add_required_sections(
             max_screens=defaults["max"],
             shape="linear",
             is_required=True,
+            is_past=is_past,
         ))
 
     # Add required dungeon section
@@ -226,9 +245,11 @@ def _add_required_sections(
             max_screens=defaults["max"],
             shape=_get_shape_for_section(SectionType.DUNGEON, config),
             is_required=True,
+            is_past=False,  # Dungeon typically in PRESENT
         ))
 
     # Add maze section (preserved by default)
+    # Mazes are typically in PAST (accessed via Time Door)
     maze_enabled = config.shuffling.get("mazes", None)
     if maze_enabled is None or not maze_enabled.enabled:
         defaults = SECTION_DEFAULTS["maze"]
@@ -241,6 +262,41 @@ def _add_required_sections(
             max_screens=defaults["max"],
             shape="maze",
             preserve_original=True,
+            is_past=True,  # Mazes are typically in PAST
+        ))
+
+    # Add BOSS section (fixed screens, preserve original navigation)
+    # Boss can be in either time period depending on chapter design
+    boss_screens = BOSS_SCREENS_BY_CHAPTER.get(plan.chapter_num, set())
+    if boss_screens:
+        section_id += 1
+        plan.sections.append(SectionPlan(
+            section_type=SectionType.BOSS,
+            section_id=section_id,
+            target_screen_count=len(boss_screens),
+            min_screens=len(boss_screens),
+            max_screens=len(boss_screens),
+            shape="linear",
+            preserve_original=True,
+            is_required=True,
+            is_past=False,  # Boss typically in PRESENT (can vary by chapter)
+        ))
+
+    # Add VICTORY section (fixed screens, preserve original navigation)
+    # Victory screen is typically in PRESENT
+    victory_screens = VICTORY_SCREENS_BY_CHAPTER.get(plan.chapter_num, set())
+    if victory_screens:
+        section_id += 1
+        plan.sections.append(SectionPlan(
+            section_type=SectionType.VICTORY,
+            section_id=section_id,
+            target_screen_count=len(victory_screens),
+            min_screens=len(victory_screens),
+            max_screens=len(victory_screens),
+            shape="linear",
+            preserve_original=True,
+            is_required=True,
+            is_past=False,  # Victory always in PRESENT
         ))
 
 
@@ -334,9 +390,11 @@ def _name_to_section_type(name: str) -> Optional[SectionType]:
         "overworld": SectionType.OVERWORLD,
         "town": SectionType.TOWN,
         "dungeon": SectionType.DUNGEON,
+        "mini_dungeon": SectionType.MINI_DUNGEON,
         "maze": SectionType.MAZE,
         "special": SectionType.SPECIAL,
         "boss": SectionType.BOSS,
+        "victory": SectionType.VICTORY,
     }
     return name_map.get(name.lower())
 

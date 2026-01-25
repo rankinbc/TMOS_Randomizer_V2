@@ -2,10 +2,25 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { ScreenData, ChapterData } from '../../api/client';
 import { ScreenMini } from './ScreenRenderer';
 import { useRandomizerStore } from '../../store';
+import { formatScreenId, formatHex } from '../../utils/formatters';
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
+
+// Section color palette for multi-section view
+const SECTION_COLORS = [
+  { bg: 'rgba(37, 99, 235, 0.3)', border: '#2563eb', text: 'text-blue-300' },    // Blue
+  { bg: 'rgba(22, 163, 74, 0.3)', border: '#16a34a', text: 'text-green-300' },   // Green
+  { bg: 'rgba(220, 38, 38, 0.3)', border: '#dc2626', text: 'text-red-300' },     // Red
+  { bg: 'rgba(147, 51, 234, 0.3)', border: '#9333ea', text: 'text-purple-300' }, // Purple
+  { bg: 'rgba(245, 158, 11, 0.3)', border: '#f59e0b', text: 'text-amber-300' },  // Amber
+  { bg: 'rgba(6, 182, 212, 0.3)', border: '#06b6d4', text: 'text-cyan-300' },    // Cyan
+  { bg: 'rgba(236, 72, 153, 0.3)', border: '#ec4899', text: 'text-pink-300' },   // Pink
+  { bg: 'rgba(132, 204, 22, 0.3)', border: '#84cc16', text: 'text-lime-300' },   // Lime
+  { bg: 'rgba(249, 115, 22, 0.3)', border: '#f97316', text: 'text-orange-300' }, // Orange
+  { bg: 'rgba(20, 184, 166, 0.3)', border: '#14b8a6', text: 'text-teal-300' },   // Teal
+];
 
 interface NavigationMapViewProps {
   chapter: ChapterData;
@@ -27,7 +42,6 @@ interface ConnectedSection {
   buildingDestinations: number[]; // Screen indices reachable via building entrance
 }
 
-const NAV_BLOCKED = 0xFF;
 const NAV_BUILDING = 0xFE;
 
 interface DragState {
@@ -124,7 +138,7 @@ function buildNavigationMap(
   const screenMap = new Map(allScreens.map(s => [s.index, s]));
 
   // Find first screen in section
-  const startIdx = sectionScreenIndices.values().next().value;
+  const startIdx = sectionScreenIndices.values().next().value as number;
   const queue: { index: number; x: number; y: number }[] = [
     { index: startIdx, x: 0, y: 0 }
   ];
@@ -221,6 +235,58 @@ export function NavigationMapView({
   const [zoom, setZoom] = useState(1.0);
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
+  // Multi-section view mode
+  const [multiSectionMode, setMultiSectionMode] = useState(false);
+  const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
+  const [spatialData, setSpatialData] = useState<{
+    screen_positions: Array<{ screen_idx: number; x: number; y: number; section: number }>;
+    conflicts: Array<{ position: number[]; screens: number[]; sections: number[] }>;
+    grid_bounds: { min_x: number; min_y: number; max_x: number; max_y: number };
+  } | null>(null);
+
+  // Fetch spatial analysis data when multi-section mode is enabled
+  useEffect(() => {
+    if (multiSectionMode && chapter) {
+      fetch(`/api/debug/spatial-analysis/${chapter.chapter_num}`)
+        .then(res => res.json())
+        .then(data => {
+          setSpatialData(data);
+          // Default to all sections visible
+          const allSections = new Set(sections.map((_, idx) => idx));
+          setVisibleSections(allSections);
+        })
+        .catch(err => console.error('Failed to fetch spatial data:', err));
+    }
+  }, [multiSectionMode, chapter?.chapter_num]);
+
+  // Build connected sections (respecting building boundaries)
+  // IMPORTANT: Must be declared before callbacks that use it
+  const sections = useMemo(() => {
+    return buildConnectedSections(chapter.screens);
+  }, [chapter.screens]);
+
+  // Toggle section visibility
+  const toggleSectionVisibility = useCallback((sectionIdx: number) => {
+    setVisibleSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionIdx)) {
+        next.delete(sectionIdx);
+      } else {
+        next.add(sectionIdx);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle all sections
+  const toggleAllSections = useCallback((visible: boolean) => {
+    if (visible) {
+      setVisibleSections(new Set(sections.map((_, idx) => idx)));
+    } else {
+      setVisibleSections(new Set());
+    }
+  }, [sections]);
+
   // Zoom handlers
   const handleZoomIn = useCallback(() => {
     setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP));
@@ -242,11 +308,6 @@ export function NavigationMapView({
       setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta)));
     }
   }, []);
-
-  // Build connected sections (respecting building boundaries)
-  const sections = useMemo(() => {
-    return buildConnectedSections(chapter.screens);
-  }, [chapter.screens]);
 
   // Auto-select first section, or the section containing selected screen
   const [selectedSectionId, setSelectedSectionId] = useState<number>(0);
@@ -628,14 +689,78 @@ export function NavigationMapView({
           </div>
         </div>
 
-        {/* Section Buttons */}
+        {/* Multi-Section Toggle */}
+        <div className="flex items-center gap-4 mb-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={multiSectionMode}
+              onChange={(e) => setMultiSectionMode(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+            />
+            <span className="text-xs text-slate-300">Multi-Section View</span>
+          </label>
+          {multiSectionMode && (
+            <>
+              <button
+                onClick={() => toggleAllSections(true)}
+                className="px-2 py-0.5 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600"
+              >
+                Show All
+              </button>
+              <button
+                onClick={() => toggleAllSections(false)}
+                className="px-2 py-0.5 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600"
+              >
+                Hide All
+              </button>
+              {spatialData && spatialData.conflicts.length > 0 && (
+                <span className="text-xs text-red-400">
+                  ⚠ {spatialData.conflicts.length} spatial conflicts detected
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Section Buttons/Checkboxes */}
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-xs text-slate-500 mr-2">Sections:</span>
           {sections.map((section, idx) => {
             const isCurrentSection = selectedSectionId === idx;
             const isOriginalSection = dragState.originalSectionId === idx;
             const canDropHere = dragState.isDragging && !isOriginalSection;
+            const sectionColor = SECTION_COLORS[idx % SECTION_COLORS.length];
+            const isVisible = visibleSections.has(idx);
 
+            if (multiSectionMode) {
+              // Checkbox mode for multi-section view
+              return (
+                <label
+                  key={section.id}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded cursor-pointer transition-colors ${
+                    isVisible
+                      ? 'bg-slate-700 text-slate-200'
+                      : 'bg-slate-800 text-slate-500'
+                  }`}
+                  style={{
+                    borderLeft: `3px solid ${sectionColor.border}`,
+                    backgroundColor: isVisible ? sectionColor.bg : undefined,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isVisible}
+                    onChange={() => toggleSectionVisibility(idx)}
+                    className="w-3 h-3 rounded border-slate-600"
+                  />
+                  <span>{idx + 1}</span>
+                  <span className="text-slate-400">({section.screens.size})</span>
+                </label>
+              );
+            }
+
+            // Button mode for single-section view
             return (
               <button
                 key={section.id}
@@ -656,15 +781,15 @@ export function NavigationMapView({
                 }}
                 title={
                   canDropHere
-                    ? `Drag here to move to section ${idx + 1} (parent_world: ${section.parentWorld})`
-                    : `Parent World: ${section.parentWorld}`
+                    ? `Drag here to move to section ${idx + 1} (parent_world: ${formatHex(section.parentWorld)})`
+                    : `Parent World: ${formatHex(section.parentWorld)}`
                 }
               >
                 {idx + 1} ({section.screens.size})
               </button>
             );
           })}
-          {dragState.isDragging && (
+          {dragState.isDragging && !multiSectionMode && (
             <span className="text-xs text-green-400 ml-2">
               Drag over a section to move screen there
             </span>
@@ -675,19 +800,29 @@ export function NavigationMapView({
         {buildingLinks.length > 0 && (
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500">Buildings:</span>
-            {buildingLinks.map((link, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setSelectedSectionId(link.toSectionId);
-                  onScreenSelect(link.toSection);
-                }}
-                className="px-2 py-0.5 text-xs bg-amber-600/30 text-amber-300 rounded hover:bg-amber-600/50 transition-colors"
-                title={`From screen ${link.fromScreen} to screen ${link.toSection}`}
-              >
-                Screen {link.fromScreen} → Section {link.toSectionId + 1}
-              </button>
-            ))}
+            {buildingLinks.map((link, idx) => {
+              const fromScreen = chapter.screens.find(s => s.index === link.fromScreen);
+              const toScreen = chapter.screens.find(s => s.index === link.toSection);
+              const fromId = fromScreen
+                ? formatScreenId(fromScreen.index, fromScreen.global_index)
+                : formatScreenId(link.fromScreen, link.fromScreen);
+              const toId = toScreen
+                ? formatScreenId(toScreen.index, toScreen.global_index)
+                : formatScreenId(link.toSection, link.toSection);
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setSelectedSectionId(link.toSectionId);
+                    onScreenSelect(link.toSection);
+                  }}
+                  className="px-2 py-0.5 text-xs bg-amber-600/30 text-amber-300 rounded hover:bg-amber-600/50 transition-colors"
+                  title={`From ${fromId.full} to ${toId.full}`}
+                >
+                  {fromId.compact} → Sec {link.toSectionId + 1}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -718,101 +853,218 @@ export function NavigationMapView({
         className="flex-1 overflow-auto p-4 bg-slate-950"
         onWheel={handleWheel}
       >
-        <div
-          className="relative origin-top-left transition-transform duration-100"
-          style={{
-            // Expand grid bounds to include edge drop zones
-            width: (gridWidth + 2) * tileWidth,
-            height: (gridHeight + 2) * tileHeight,
-            minWidth: (gridWidth + 2) * tileWidth,
-            minHeight: (gridHeight + 2) * tileHeight,
-            transform: `scale(${zoom})`,
-          }}
-        >
-          {/* Drop zones (empty cells and edges) */}
-          {dragState.isDragging && dropZones.map(zone => {
-            const isHovered = dragOverPos?.x === zone.x && dragOverPos?.y === zone.y;
-            return (
-              <div
-                key={`zone-${zone.x}-${zone.y}`}
-                className={`absolute border-2 border-dashed transition-colors ${
-                  isHovered
-                    ? 'border-green-400 bg-green-400/20'
-                    : zone.type === 'edge'
-                    ? 'border-slate-600 bg-slate-800/30'
-                    : 'border-slate-500 bg-slate-700/30'
-                }`}
-                style={{
-                  left: (zone.x + 1) * tileWidth,
-                  top: (zone.y + 1) * tileHeight,
-                  width: tileWidth - 2,
-                  height: tileHeight - 2,
-                }}
-                onDragOver={(e) => handleDragOver(e, zone)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, zone)}
-              >
-                {zone.type === 'edge' && (
-                  <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
-                    +
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Screens */}
-          {sectionScreens.map(screen => {
-            const pos = positions.get(screen.index);
-            if (!pos) return null;
-
-            // Check if this screen has building entrances
-            const hasBuildingNav =
-              screen.nav_up === NAV_BUILDING ||
-              screen.nav_down === NAV_BUILDING ||
-              screen.nav_left === NAV_BUILDING ||
-              screen.nav_right === NAV_BUILDING;
-
-            const isBeingDragged = dragState.screenIndex === screen.index;
-
-            return (
-              <div
-                key={screen.index}
-                className={`absolute cursor-grab active:cursor-grabbing transition-opacity ${
-                  isBeingDragged ? 'opacity-50' : ''
-                }`}
-                style={{
-                  left: (pos.x + 1) * tileWidth,
-                  top: (pos.y + 1) * tileHeight,
-                  width: tileWidth,
-                  height: tileHeight,
-                }}
-                draggable
-                onDragStart={(e) => handleDragStart(e, screen.index)}
-                onDragEnd={handleDragEnd}
-              >
-                <ScreenMini
-                  screen={screen}
-                  chapterNum={chapter.chapter_num}
-                  size={tileWidth}
-                  selected={selectedScreen === screen.index}
-                  onClick={() => onScreenSelect(screen.index)}
+        {/* Multi-Section View */}
+        {multiSectionMode && spatialData ? (
+          <div
+            className="relative origin-top-left transition-transform duration-100"
+            style={{
+              width: (spatialData.grid_bounds.max_x - spatialData.grid_bounds.min_x + 3) * tileWidth,
+              height: (spatialData.grid_bounds.max_y - spatialData.grid_bounds.min_y + 3) * tileHeight,
+              transform: `scale(${zoom})`,
+            }}
+          >
+            {/* Conflict highlights */}
+            {spatialData.conflicts.map((conflict, idx) => {
+              const x = conflict.position[0] - spatialData.grid_bounds.min_x + 1;
+              const y = conflict.position[1] - spatialData.grid_bounds.min_y + 1;
+              return (
+                <div
+                  key={`conflict-${idx}`}
+                  className="absolute border-2 border-red-500 bg-red-500/20 pointer-events-none z-10"
+                  style={{
+                    left: x * tileWidth - 2,
+                    top: y * tileHeight - 2,
+                    width: tileWidth + 4,
+                    height: tileHeight + 4,
+                  }}
+                  title={`Conflict: ${conflict.screens.length} screens from sections ${conflict.sections.join(', ')}`}
                 />
-                {/* Building indicator */}
-                {hasBuildingNav && (
+              );
+            })}
+
+            {/* Screens from visible sections */}
+            {spatialData.screen_positions
+              .filter(sp => {
+                // Find which section this screen belongs to
+                const sectionIdx = sections.findIndex(s => s.screens.has(sp.screen_idx));
+                return sectionIdx !== -1 && visibleSections.has(sectionIdx);
+              })
+              .map(sp => {
+                const screen = chapter.screens.find(s => s.index === sp.screen_idx);
+                if (!screen) return null;
+
+                const sectionIdx = sections.findIndex(s => s.screens.has(sp.screen_idx));
+                const sectionColor = SECTION_COLORS[sectionIdx % SECTION_COLORS.length];
+
+                const x = sp.x - spatialData.grid_bounds.min_x + 1;
+                const y = sp.y - spatialData.grid_bounds.min_y + 1;
+
+                // Check if this position has a conflict
+                const hasConflict = spatialData.conflicts.some(
+                  c => c.position[0] === sp.x && c.position[1] === sp.y
+                );
+
+                const hasBuildingNav =
+                  screen.nav_up === NAV_BUILDING ||
+                  screen.nav_down === NAV_BUILDING ||
+                  screen.nav_left === NAV_BUILDING ||
+                  screen.nav_right === NAV_BUILDING;
+
+                return (
                   <div
-                    className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-bl text-[8px] flex items-center justify-center text-black font-bold"
-                    title="Has building entrance"
+                    key={`multi-${screen.index}`}
+                    className="absolute"
+                    style={{
+                      left: x * tileWidth,
+                      top: y * tileHeight,
+                      width: tileWidth,
+                      height: tileHeight,
+                    }}
                   >
-                    B
+                    <div
+                      className="relative w-full h-full"
+                      style={{
+                        boxShadow: `inset 0 0 0 3px ${sectionColor.border}`,
+                      }}
+                    >
+                      <ScreenMini
+                        screen={screen}
+                        chapterNum={chapter.chapter_num}
+                        size={tileWidth}
+                        selected={selectedScreen === screen.index}
+                        onClick={() => onScreenSelect(screen.index)}
+                      />
+                      {/* Section label */}
+                      <div
+                        className="absolute bottom-0 left-0 px-1 text-[10px] font-bold"
+                        style={{
+                          backgroundColor: sectionColor.border,
+                          color: 'white',
+                        }}
+                      >
+                        S{sectionIdx + 1}
+                      </div>
+                      {/* Building indicator */}
+                      {hasBuildingNav && (
+                        <div
+                          className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-bl text-[8px] flex items-center justify-center text-black font-bold"
+                          title="Has building entrance"
+                        >
+                          B
+                        </div>
+                      )}
+                      {/* Conflict warning */}
+                      {hasConflict && (
+                        <div
+                          className="absolute top-0 left-0 w-4 h-4 bg-red-600 rounded-br text-[10px] flex items-center justify-center text-white font-bold"
+                          title="Spatial conflict - multiple screens at this position"
+                        >
+                          !
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-                {/* Drag handle indicator */}
-                <div className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-t from-black/30 to-transparent pointer-events-none" />
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+          </div>
+        ) : (
+          /* Single-Section View */
+          <div
+            className="relative origin-top-left transition-transform duration-100"
+            style={{
+              // Expand grid bounds to include edge drop zones
+              width: (gridWidth + 2) * tileWidth,
+              height: (gridHeight + 2) * tileHeight,
+              minWidth: (gridWidth + 2) * tileWidth,
+              minHeight: (gridHeight + 2) * tileHeight,
+              transform: `scale(${zoom})`,
+            }}
+          >
+            {/* Drop zones (empty cells and edges) */}
+            {dragState.isDragging && dropZones.map(zone => {
+              const isHovered = dragOverPos?.x === zone.x && dragOverPos?.y === zone.y;
+              return (
+                <div
+                  key={`zone-${zone.x}-${zone.y}`}
+                  className={`absolute border-2 border-dashed transition-colors ${
+                    isHovered
+                      ? 'border-green-400 bg-green-400/20'
+                      : zone.type === 'edge'
+                      ? 'border-slate-600 bg-slate-800/30'
+                      : 'border-slate-500 bg-slate-700/30'
+                  }`}
+                  style={{
+                    left: (zone.x + 1) * tileWidth,
+                    top: (zone.y + 1) * tileHeight,
+                    width: tileWidth - 2,
+                    height: tileHeight - 2,
+                  }}
+                  onDragOver={(e) => handleDragOver(e, zone)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, zone)}
+                >
+                  {zone.type === 'edge' && (
+                    <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
+                      +
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Screens */}
+            {sectionScreens.map(screen => {
+              const pos = positions.get(screen.index);
+              if (!pos) return null;
+
+              // Check if this screen has building entrances
+              const hasBuildingNav =
+                screen.nav_up === NAV_BUILDING ||
+                screen.nav_down === NAV_BUILDING ||
+                screen.nav_left === NAV_BUILDING ||
+                screen.nav_right === NAV_BUILDING;
+
+              const isBeingDragged = dragState.screenIndex === screen.index;
+
+              return (
+                <div
+                  key={screen.index}
+                  className={`absolute cursor-grab active:cursor-grabbing transition-opacity ${
+                    isBeingDragged ? 'opacity-50' : ''
+                  }`}
+                  style={{
+                    left: (pos.x + 1) * tileWidth,
+                    top: (pos.y + 1) * tileHeight,
+                    width: tileWidth,
+                    height: tileHeight,
+                  }}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, screen.index)}
+                  onDragEnd={handleDragEnd}
+                >
+                  <ScreenMini
+                    screen={screen}
+                    chapterNum={chapter.chapter_num}
+                    size={tileWidth}
+                    selected={selectedScreen === screen.index}
+                    onClick={() => onScreenSelect(screen.index)}
+                  />
+                  {/* Building indicator */}
+                  {hasBuildingNav && (
+                    <div
+                      className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-bl text-[8px] flex items-center justify-center text-black font-bold"
+                      title="Has building entrance"
+                    >
+                      B
+                    </div>
+                  )}
+                  {/* Drag handle indicator */}
+                  <div className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-t from-black/30 to-transparent pointer-events-none" />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Orphan Pool */}
@@ -885,7 +1137,7 @@ export function NavigationMapView({
             <span className="text-slate-400">Orphan</span>
           </div>
           <div className="text-slate-500">
-            Parent World: {selectedSection?.parentWorld ?? '-'}
+            Parent World: {selectedSection ? formatHex(selectedSection.parentWorld) : '-'}
           </div>
           <div className="text-slate-500 ml-auto">
             Drag screens to rearrange | Hover over section buttons to move between sections

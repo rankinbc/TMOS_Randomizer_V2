@@ -8,7 +8,7 @@ This package provides utilities for analyzing tiles:
 
 from .categories import (
     TileCategory,
-    HAZARD_TILES,
+    HAZARDOUS_TILES,
     COLLIDABLE_TILES,
     get_tile_category,
     is_walkable,
@@ -17,7 +17,7 @@ from .categories import (
 
 __all__ = [
     "TileCategory",
-    "HAZARD_TILES",
+    "HAZARDOUS_TILES",
     "COLLIDABLE_TILES",
     "get_tile_category",
     "is_walkable",

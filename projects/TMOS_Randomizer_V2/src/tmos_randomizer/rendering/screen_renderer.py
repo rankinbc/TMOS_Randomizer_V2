@@ -244,16 +244,42 @@ class ScreenRenderer:
         self.rom_data = rom_data
         self.tile_images_path = Path(tile_images_path)
         self.tile_mapping = load_tile_mapping(tiles_txt_path)
-        self._tile_cache: Dict[int, Image.Image] = {}
+        # Cache keyed by (tile_id, chr_bank) tuple
+        self._tile_cache: Dict[Tuple[int, Optional[int]], Image.Image] = {}
 
-    def _load_tile_image(self, tile_id: int) -> Optional[Image.Image]:
-        """Load a tile image (64x64 metatile), with caching."""
-        if tile_id in self._tile_cache:
-            return self._tile_cache[tile_id]
+    def _load_tile_image(self, tile_id: int, chr_bank: Optional[int] = None) -> Optional[Image.Image]:
+        """Load a tile image (64x64 metatile), with caching.
+
+        Args:
+            tile_id: The tile ID (0x00-0xFF)
+            chr_bank: Optional CHR bank index for bank-specific graphics
+        """
+        cache_key = (tile_id, chr_bank)
+        if cache_key in self._tile_cache:
+            return self._tile_cache[cache_key]
 
         # Get image filename from mapping
         filename = self.tile_mapping.get(tile_id, f"{tile_id:02X}.png")
-        filepath = self.tile_images_path / filename
+        filepath = None
+
+        # Try CHR-bank-specific paths first
+        if chr_bank is not None:
+            # Try: tiles/chr_0F/00.png
+            chr_dir = self.tile_images_path / f"chr_{chr_bank:02X}"
+            chr_file = chr_dir / filename
+            if chr_file.exists():
+                filepath = chr_file
+            else:
+                # Try: tiles/00_chr0F.png
+                base_name = filename.rsplit('.', 1)[0]
+                ext = filename.rsplit('.', 1)[1] if '.' in filename else 'png'
+                alt_file = self.tile_images_path / f"{base_name}_chr{chr_bank:02X}.{ext}"
+                if alt_file.exists():
+                    filepath = alt_file
+
+        # Fall back to default tile
+        if filepath is None:
+            filepath = self.tile_images_path / filename
 
         if filepath.exists():
             try:
@@ -261,7 +287,7 @@ class ScreenRenderer:
                 # Tile images should be 64x64, resize if needed
                 if img.size != (TILE_PIXEL_SIZE, TILE_PIXEL_SIZE):
                     img = img.resize((TILE_PIXEL_SIZE, TILE_PIXEL_SIZE), Image.NEAREST)
-                self._tile_cache[tile_id] = img
+                self._tile_cache[cache_key] = img
                 return img
             except Exception:
                 pass
@@ -306,6 +332,9 @@ class ScreenRenderer:
             datapointer
         )
 
+        # Extract CHR bank index from datapointer (bits 0-5)
+        chr_bank = datapointer & 0x3F
+
         # Create output image
         width = SCREEN_WIDTH_PX * scale
         height = SCREEN_HEIGHT_PX * scale
@@ -314,7 +343,7 @@ class ScreenRenderer:
         # Render each tile
         for row_idx, row in enumerate(tile_grid):
             for col_idx, tile_id in enumerate(row):
-                tile_img = self._load_tile_image(tile_id)
+                tile_img = self._load_tile_image(tile_id, chr_bank)
                 if tile_img is None:
                     tile_img = self._create_fallback_tile(tile_id)
 

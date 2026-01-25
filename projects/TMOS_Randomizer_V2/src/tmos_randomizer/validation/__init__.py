@@ -44,6 +44,7 @@ from .config import (
     DataPointerObjectSetConfig,
     NavigationConfig,
     ReachabilityConfig,
+    SectionFlowConfig,
 )
 from .runner import ValidationRunner, ValidationResult
 
@@ -67,6 +68,7 @@ __all__ = [
     "DataPointerObjectSetConfig",
     "NavigationConfig",
     "ReachabilityConfig",
+    "SectionFlowConfig",
     # Runner
     "ValidationRunner",
     "ValidationResult",

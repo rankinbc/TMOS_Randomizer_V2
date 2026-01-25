@@ -180,6 +180,8 @@ export function MainContent() {
                 <ScreenDetailPanel
                   screen={selectedScreenData}
                   chapterNum={chapterData.chapter_num}
+                  screens={chapterData.screens}
+                  onScreenSelect={setSelectedScreen}
                   onClose={() => setSelectedScreen(null)}
                 />
               </div>

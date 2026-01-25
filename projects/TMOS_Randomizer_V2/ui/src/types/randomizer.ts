@@ -201,6 +201,7 @@ export interface SimplifiedChapterPlan {
     screen_count: number;
     shape: string;
     screens?: unknown[];
+    is_past?: boolean;  // True if section is in PAST time period (accessed via Time Door)
   }[];
   connections: {
     from_section: string;

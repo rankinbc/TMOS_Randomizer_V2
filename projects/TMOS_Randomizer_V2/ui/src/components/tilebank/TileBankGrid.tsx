@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TileBankEntry } from '../../api/client';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
 // Tile ID to image filename mapping (from TMOS_Romhack1)
 function getTileFileName(tileValue: number): string {
   const mapping: Record<number, string> = {
@@ -56,17 +54,16 @@ function getTileFileName(tileValue: number): string {
   return filename ? filename + '.png' : tileValue.toString(16).toUpperCase().padStart(2, '0') + '.png';
 }
 
-function getTileImageUrl(tileId: number, chrBank?: number): string {
+function getTileImageUrl(tileId: number): string {
   const filename = getTileFileName(tileId);
-  const bankParam = chrBank !== undefined ? `?chr=${chrBank}` : '';
-  return `${API_BASE}/api/assets/tiles/${filename}${bankParam}`;
+  // Use static tiles from ui/public/tiles (served by Vite dev server)
+  return `/tiles/${filename}`;
 }
 
 interface TileBankGridProps {
   tiles: TileBankEntry[];
   selectedIndex: number | null;
   onSelectTile: (index: number) => void;
-  chrBank?: number;
 }
 
 function TileCell({
@@ -74,21 +71,14 @@ function TileCell({
   isSelected,
   onSelect,
   cellRef,
-  chrBank,
 }: {
   tile: TileBankEntry;
   isSelected: boolean;
   onSelect: () => void;
   cellRef: React.RefObject<HTMLButtonElement> | null;
-  chrBank?: number;
 }) {
   const [imgError, setImgError] = useState(false);
   const hex = tile.index.toString(16).toUpperCase().padStart(2, '0');
-
-  // Reset error state when chrBank changes
-  useEffect(() => {
-    setImgError(false);
-  }, [chrBank]);
 
   return (
     <button
@@ -106,20 +96,20 @@ function TileCell({
     >
       {!imgError ? (
         <img
-          src={getTileImageUrl(tile.index, chrBank)}
-          alt={`Tile ${hex}`}
+          src={getTileImageUrl(tile.index)}
+          alt={`Tile 0x${hex}`}
           className="w-full h-full object-cover"
           style={{ imageRendering: 'pixelated' }}
           onError={() => setImgError(true)}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-xs font-mono bg-slate-700 text-slate-400">
-          {hex}
+          0x{hex}
         </div>
       )}
       {/* Hex overlay on hover */}
       <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-        <span className="text-white text-xs font-mono">{hex}</span>
+        <span className="text-white text-xs font-mono">0x{hex}</span>
       </div>
       {/* Selection indicator */}
       {isSelected && (
@@ -129,7 +119,7 @@ function TileCell({
   );
 }
 
-export function TileBankGrid({ tiles, selectedIndex, onSelectTile, chrBank }: TileBankGridProps) {
+export function TileBankGrid({ tiles, selectedIndex, onSelectTile }: TileBankGridProps) {
   const selectedRef = useRef<HTMLButtonElement>(null);
 
   // Scroll selected tile into view when it changes
@@ -148,7 +138,6 @@ export function TileBankGrid({ tiles, selectedIndex, onSelectTile, chrBank }: Ti
           isSelected={tile.index === selectedIndex}
           onSelect={() => onSelectTile(tile.index)}
           cellRef={tile.index === selectedIndex ? selectedRef : null}
-          chrBank={chrBank}
         />
       ))}
     </div>

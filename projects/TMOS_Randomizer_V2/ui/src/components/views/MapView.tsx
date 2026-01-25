@@ -1,8 +1,10 @@
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import * as d3 from 'd3';
 import type { SimplifiedChapterPlan } from '../../types/randomizer';
 import { getSectionColor } from '../../utils/colors';
 import { useRandomizerStore } from '../../store';
+import { SectionMiniMap } from '../shared/SectionMiniMap';
+import type { ScreenData } from '../../api/client';
 
 interface MapViewProps {
   chapter: SimplifiedChapterPlan;
@@ -15,6 +17,7 @@ interface GraphNode extends d3.SimulationNodeDatum {
   screen_count: number;
   actual_screen_count?: number;
   shape: string;
+  is_past: boolean;  // True if section is in PAST time period
 }
 
 interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
@@ -29,11 +32,25 @@ interface ContextMenuState {
   node: GraphNode | null;
 }
 
+interface HoverState {
+  visible: boolean;
+  x: number;
+  y: number;
+  node: GraphNode | null;
+}
+
 export function MapView({ chapter }: MapViewProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { selectedSection, setSelectedSection, setSelectedTab, sectionMap } = useRandomizerStore();
+  const hoverTimeoutRef = useRef<number | null>(null);
+  const { selectedSection, setSelectedSection, setSelectedTab, setSelectedScreen, sectionMap, chapterData } = useRandomizerStore();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    node: null,
+  });
+  const [hoverState, setHoverState] = useState<HoverState>({
     visible: false,
     x: 0,
     y: 0,
@@ -58,19 +75,60 @@ export function MapView({ chapter }: MapViewProps) {
     return counts;
   }, [sectionMap, chapter.chapter_num]);
 
+  // Get screens for a given section
+  const getScreensForSection = useCallback((sectionId: string): ScreenData[] => {
+    if (!sectionMap?.applied || !sectionMap.chapters?.[chapter.chapter_num] || !chapterData) {
+      return [];
+    }
+
+    const sectionIdNum = parseInt(sectionId.split('_').pop() || '0');
+    const chapterScreenMap = sectionMap.chapters[chapter.chapter_num].screens;
+
+    const screenIndices: number[] = [];
+    for (const [indexStr, data] of Object.entries(chapterScreenMap)) {
+      if (data.section_id === sectionIdNum) {
+        screenIndices.push(parseInt(indexStr));
+      }
+    }
+
+    return chapterData.screens.filter(s => screenIndices.includes(s.index));
+  }, [sectionMap, chapter.chapter_num, chapterData]);
+
+  // Get connection info for a section
+  const getConnectionInfo = useCallback((sectionId: string): string[] => {
+    const connections: string[] = [];
+    for (const conn of chapter.connections) {
+      if (conn.from_section === sectionId) {
+        const targetSection = chapter.sections.find(s => s.section_id === conn.to_section);
+        if (targetSection) {
+          connections.push(`→ ${formatSectionLabel(targetSection.section_id, targetSection.type)} (${conn.method})`);
+        }
+      }
+      if (conn.to_section === sectionId) {
+        const sourceSection = chapter.sections.find(s => s.section_id === conn.from_section);
+        if (sourceSection) {
+          connections.push(`← ${formatSectionLabel(sourceSection.section_id, sourceSection.type)} (${conn.method})`);
+        }
+      }
+    }
+    return connections;
+  }, [chapter.connections, chapter.sections]);
+
   const { nodes, links } = useMemo(() => {
     const nodes: GraphNode[] = chapter.sections.map((section) => {
       // Try to get actual screen count from section map
       const sectionIdNum = parseInt(section.section_id.split('_').pop() || '0');
       const actualCount = actualScreenCounts?.[sectionIdNum];
+      const isPast = section.is_past ?? false;
 
       return {
         id: section.section_id,
-        label: formatSectionLabel(section.section_id, section.type),
+        label: formatSectionLabel(section.section_id, section.type, isPast),
         section_type: section.type,
         screen_count: section.screen_count,
         actual_screen_count: actualCount,
         shape: section.shape,
+        is_past: isPast,
       };
     });
 
@@ -144,8 +202,34 @@ export function MapView({ chapter }: MapViewProps) {
       .enter()
       .append('g')
       .attr('cursor', 'pointer')
+      .on('mouseenter', (event, d) => {
+        // Delay showing hover card
+        if (hoverTimeoutRef.current) {
+          clearTimeout(hoverTimeoutRef.current);
+        }
+        hoverTimeoutRef.current = window.setTimeout(() => {
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          if (containerRect) {
+            setHoverState({
+              visible: true,
+              x: event.clientX - containerRect.left + 10,
+              y: event.clientY - containerRect.top + 10,
+              node: d,
+            });
+          }
+        }, 300);
+      })
+      .on('mouseleave', () => {
+        if (hoverTimeoutRef.current) {
+          clearTimeout(hoverTimeoutRef.current);
+          hoverTimeoutRef.current = null;
+        }
+        setHoverState(prev => ({ ...prev, visible: false }));
+      })
       .on('click', (event, d) => {
         event.stopPropagation();
+        // Hide hover on click
+        setHoverState(prev => ({ ...prev, visible: false }));
         const containerRect = containerRef.current?.getBoundingClientRect();
         if (containerRect) {
           setContextMenu({
@@ -229,6 +313,9 @@ export function MapView({ chapter }: MapViewProps) {
     // Cleanup
     return () => {
       simulation.stop();
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
     };
   }, [nodes, links, selectedSection, setSelectedSection]);
   const handleGoToScreens = () => {
@@ -265,6 +352,73 @@ export function MapView({ chapter }: MapViewProps) {
       <div ref={containerRef} className="flex-1 relative">
         <svg ref={svgRef} className="w-full h-full" />
 
+        {/* Hover Card */}
+        {hoverState.visible && hoverState.node && !contextMenu.visible && (
+          <div
+            className="absolute bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-40 p-3 pointer-events-none"
+            style={{
+              left: Math.min(hoverState.x, (containerRef.current?.clientWidth ?? 400) - 280),
+              top: Math.min(hoverState.y, (containerRef.current?.clientHeight ?? 300) - 250),
+              maxWidth: 260,
+            }}
+          >
+            {/* Section Info */}
+            <div className="mb-2">
+              <div className="font-medium text-slate-200">{hoverState.node.label}</div>
+              <div className="text-xs text-slate-400">
+                Type: {hoverState.node.section_type} | Shape: {hoverState.node.shape}
+              </div>
+              <div className="text-xs text-slate-400">
+                {hoverState.node.actual_screen_count !== undefined
+                  ? `${hoverState.node.actual_screen_count} screens`
+                  : `${hoverState.node.screen_count} screens (target)`}
+              </div>
+            </div>
+
+            {/* Connections */}
+            {(() => {
+              const connections = getConnectionInfo(hoverState.node.id);
+              if (connections.length > 0) {
+                return (
+                  <div className="mb-2 text-xs">
+                    <div className="text-slate-500 mb-1">Connections:</div>
+                    {connections.slice(0, 3).map((conn, i) => (
+                      <div key={i} className="text-slate-400">{conn}</div>
+                    ))}
+                    {connections.length > 3 && (
+                      <div className="text-slate-500">+{connections.length - 3} more</div>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Mini Map */}
+            {(() => {
+              const screens = getScreensForSection(hoverState.node.id);
+              if (screens.length > 0) {
+                return (
+                  <div className="border-t border-slate-700 pt-2">
+                    <div className="text-xs text-slate-500 mb-1">Preview:</div>
+                    <SectionMiniMap
+                      screens={screens}
+                      chapterNum={chapter.chapter_num}
+                      maxWidth={230}
+                      maxHeight={120}
+                    />
+                  </div>
+                );
+              }
+              return (
+                <div className="text-xs text-slate-500 italic">
+                  No screens assigned yet
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Context Menu */}
         {contextMenu.visible && contextMenu.node && (
           <div
@@ -283,6 +437,24 @@ export function MapView({ chapter }: MapViewProps) {
             >
               <span>View in Screens Tab</span>
             </button>
+            {(() => {
+              const screens = getScreensForSection(contextMenu.node.id);
+              if (screens.length > 0) {
+                return (
+                  <button
+                    onClick={() => {
+                      setSelectedScreen(screens[0].index);
+                      setSelectedTab('map');
+                      setContextMenu(prev => ({ ...prev, visible: false }));
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2"
+                  >
+                    <span>Go to First Screen</span>
+                  </button>
+                );
+              }
+              return null;
+            })()}
             <button
               onClick={() => setContextMenu(prev => ({ ...prev, visible: false }))}
               className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:bg-slate-700 flex items-center gap-2"
@@ -311,17 +483,29 @@ export function MapView({ chapter }: MapViewProps) {
   );
 }
 
-// Helper to format section label from section_id and type
-function formatSectionLabel(sectionId: string, sectionType: string): string {
+// Helper to format section label from section_id, type, and time period
+function formatSectionLabel(sectionId: string, sectionType: string, isPast: boolean = false): string {
   // Extract meaningful part of section_id
   const parts = sectionId.split('_');
+  let label: string;
+
   if (parts.length >= 2) {
     const typeWord = sectionType.charAt(0).toUpperCase() + sectionType.slice(1);
     const index = parts[parts.length - 1];
     if (/^\d+$/.test(index)) {
-      return `${typeWord} ${index}`;
+      label = `${typeWord}`;
+    } else {
+      label = sectionType.charAt(0).toUpperCase() + sectionType.slice(1);
     }
+  } else {
+    // Fallback: capitalize type
+    label = sectionType.charAt(0).toUpperCase() + sectionType.slice(1);
   }
-  // Fallback: capitalize type
-  return sectionType.charAt(0).toUpperCase() + sectionType.slice(1);
+
+  // Add (TD) suffix for sections in the PAST time period
+  if (isPast) {
+    label += ' (TD)';
+  }
+
+  return label;
 }

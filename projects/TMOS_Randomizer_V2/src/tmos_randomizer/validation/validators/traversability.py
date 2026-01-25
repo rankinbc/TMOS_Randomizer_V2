@@ -120,13 +120,15 @@ class ScreenTraversabilityValidator(Validator):
         issues: List[ValidationIssue] = []
 
         # Build walkability grid
+        # Walkability is determined by tile category:
+        # - WALKABLE and HAZARDOUS = traversable
+        # - DEADLY (water, lava) and COLLIDABLE = blocks
         try:
             walkability_grid = build_walkability_grid(
                 rom_data,
                 screen.top_tiles,
                 screen.bottom_tiles,
                 screen.datapointer,
-                treat_hazards_as_blocking=self.config.treat_hazards_as_blocking,
             )
         except Exception as e:
             issues.append(ValidationIssue(

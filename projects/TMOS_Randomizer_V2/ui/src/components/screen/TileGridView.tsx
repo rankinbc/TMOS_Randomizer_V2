@@ -110,15 +110,19 @@ function getGroundColor(wsColorValue: number): string {
 
 
 
-// Get individual tile image URL
+// Get individual tile image URL - uses static tiles from ui/public/tiles
 function getTileImageUrl(tileId: number): string {
   const filename = getTileFileName(tileId);
-  return `${API_BASE}/api/assets/tiles/${filename}`;
+  return `/tiles/${filename}`;
 }
 
-// Hazard tiles (water, lava - can enter but deadly)
-const HAZARD_TILES = new Set([
-  0x2F, 0x30, 0x3F, 0x40, 0x41, 0x42, 0x6F, 0xEC
+// Deadly tiles (water, lava - kills instantly, treated as blocking for navigation)
+const DEADLY_TILES = new Set([
+  0x2F, 0x30,  // Lava/fire
+  0x3F, 0x40, 0x41, 0x42,  // Water
+  0x6F,  // Water hazard
+  0xE9,  // Lake entry - underwater section entrance
+  0xEC,  // Special deadly
 ]);
 
 // Collidable tiles (cannot walk through)
@@ -130,12 +134,13 @@ const COLLIDABLE_TILES = new Set([
   0x22, 0x23,
   // Dark world
   0x4C, 0x4F, 0x50, 0x51, 0x52,
-  // Dungeon walls
-  0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
+  // Dungeon walls (0x5F is walkable dungeon floor)
+  0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E,
   0x60, 0x61, 0x62, 0x63, 0x64, 0x67, 0x68, 0x6B,
   // Trees
   0x47,
   // Elevated terrain
+  0x73,
   0x77, 0x78, 0x7A, 0x7B, 0x7C, 0x7D, 0x7F,
   0x80, 0x81, 0x82, 0x83, 0x84,
   // Building walls
@@ -147,18 +152,18 @@ const COLLIDABLE_TILES = new Set([
   0xB2, 0xB3, 0xB5, 0xB8, 0xB9, 0xBC, 0xBD, 0xBE, 0xBF,
   0xC0, 0xC1, 0xCB, 0xCC, 0xCF,
   0xD5, 0xD6, 0xDE,
-  0xE2,
-  0xF4, 0xF6, 0xF7, 0xF8, 0xF9, 0xFB, 0xFC, 0xFE
+  0xE2, 0xE6, 0xE7, 0xEA, 0xEB, 0xEF,
+  0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE,
 ]);
 
-// Check if a tile is non-walkable (collidable or hazard)
+// Check if a tile is non-walkable (collidable or deadly)
 function isNonWalkable(tileId: number): boolean {
-  return HAZARD_TILES.has(tileId) || COLLIDABLE_TILES.has(tileId);
+  return DEADLY_TILES.has(tileId) || COLLIDABLE_TILES.has(tileId);
 }
 
 // Get tile category for display
-function getTileCategory(tileId: number): 'walkable' | 'hazard' | 'collidable' {
-  if (HAZARD_TILES.has(tileId)) return 'hazard';
+function getTileCategory(tileId: number): 'walkable' | 'deadly' | 'collidable' {
+  if (DEADLY_TILES.has(tileId)) return 'deadly';
   if (COLLIDABLE_TILES.has(tileId)) return 'collidable';
   return 'walkable';
 }
@@ -403,7 +408,7 @@ export function TileGridView({ chapter, selectedScreen, onScreenSelect }: TileGr
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 bg-orange-500/50 border border-orange-500 rounded" />
-                    <span className="text-slate-400">Hazard</span>
+                    <span className="text-slate-400">Deadly</span>
                   </div>
                 </div>
               )}
@@ -514,21 +519,21 @@ function TileGrid({
 }
 
 // Tooltip component for tile info
-function TileTooltip({ tileId, row, col, romAddress, category, visible, position }: {
+function TileTooltip({ tileId, row, col, romAddress, category, visible, position, chrBank }: {
   tileId: number; row: number; col: number; romAddress: number;
-  category: 'walkable' | 'hazard' | 'collidable'; visible: boolean; position: { x: number; y: number };
+  category: 'walkable' | 'deadly' | 'collidable'; visible: boolean; position: { x: number; y: number }; chrBank?: number;
 }) {
   if (!visible) return null;
   const hex = tileId.toString(16).toUpperCase().padStart(2, '0');
   const isTop = row < 4;
-  const categoryColors: Record<string, string> = { walkable: 'text-green-400', hazard: 'text-orange-400', collidable: 'text-red-400' };
+  const categoryColors: Record<string, string> = { walkable: 'text-green-400', deadly: 'text-orange-400', collidable: 'text-red-400' };
 
   return (
     <div className="fixed z-50 pointer-events-none" style={{ left: position.x + 10, top: position.y - 10, transform: 'translateY(-100%)' }}>
       <div className="bg-slate-900 border border-slate-600 rounded-lg shadow-xl p-3 min-w-[200px]">
         <div className="flex gap-3">
           <div className="flex-shrink-0">
-            <img src={getTileImageUrl(tileId)} alt={`Tile ${hex}`} className="w-16 h-16 border border-slate-600 rounded" style={{ imageRendering: 'pixelated' }} />
+            <img src={getTileImageUrl(tileId)} alt={`Tile 0x${hex}`} className="w-16 h-16 border border-slate-600 rounded" style={{ imageRendering: 'pixelated' }} />
           </div>
           <div className="flex-1 text-xs space-y-1">
             <div className="text-slate-200 font-semibold text-sm">Tile 0x{hex}</div>
@@ -630,11 +635,12 @@ function TileCell({
   const hex = tileId.toString(16).toUpperCase().padStart(2, '0');
   const category = getTileCategory(tileId);
   const romAddress = getTileRomAddress(row, col, topTiles, bottomTiles, datapointer);
+  const chrBankIndex = datapointer & 0x3F;  // Extract CHR bank from datapointer
 
   const getOverlayStyle = () => {
     if (!highlightNonWalkable) return {};
     if (category === 'collidable') return { backgroundColor: 'rgba(239, 68, 68, 0.5)' };
-    if (category === 'hazard') return { backgroundColor: 'rgba(249, 115, 22, 0.5)' };
+    if (category === 'deadly') return { backgroundColor: 'rgba(249, 115, 22, 0.5)' };
     return {};
   };
 
@@ -654,17 +660,17 @@ function TileCell({
         onMouseEnter={handleMouseEnter} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}>
         {showImage && !imgError ? (
-          <img src={getTileImageUrl(tileId)} alt={`Tile ${hex}`} className="w-full h-full object-cover"
+          <img src={getTileImageUrl(tileId)} alt={`Tile 0x${hex}`} className="w-full h-full object-cover"
             style={{ imageRendering: 'pixelated' }} onError={() => setImgError(true)} />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-sm text-white font-mono" style={{ backgroundColor: groundColor }}>{hex}</div>
+          <div className="w-full h-full flex items-center justify-center text-sm text-white font-mono" style={{ backgroundColor: groundColor }}>0x{hex}</div>
         )}
         {highlightNonWalkable && isNonWalkable(tileId) && <div className="absolute inset-0 pointer-events-none" style={getOverlayStyle()} />}
         <div className="absolute inset-0 bg-blue-500/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="bg-black/80 text-white text-xs px-1 rounded font-mono">{hex}</span>
+          <span className="bg-black/80 text-white text-xs px-1 rounded font-mono">0x{hex}</span>
         </div>
       </div>
-      <TileTooltip tileId={tileId} row={row} col={col} romAddress={romAddress} category={category} visible={showTooltip} position={tooltipPos} />
+      <TileTooltip tileId={tileId} row={row} col={col} romAddress={romAddress} category={category} visible={showTooltip} position={tooltipPos} chrBank={chrBankIndex} />
       <TileContextMenu
         visible={contextMenu.visible}
         position={{ x: contextMenu.x, y: contextMenu.y }}

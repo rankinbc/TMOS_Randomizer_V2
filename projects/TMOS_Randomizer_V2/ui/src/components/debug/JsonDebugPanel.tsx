@@ -1,10 +1,41 @@
 import { useState } from 'react';
 import { useRandomizerStore } from '../../store';
 
+interface ValidationResult {
+  status: string;
+  rom_filename: string | null;
+  chapters: Array<{
+    chapter_num: number;
+    total_screens: number;
+    errors: string[];
+    warnings: string[];
+    passed: boolean;
+    reachability: {
+      reachable_count: number;
+      total_count: number;
+      percent: number;
+    };
+    nav_components: number;
+    time_period: {
+      past_count: number;
+      present_count: number;
+      time_doors: number[];
+    };
+  }>;
+  summary: {
+    total_errors: number;
+    total_warnings: number;
+    all_passed: boolean;
+  };
+}
+
 export function JsonDebugPanel() {
   const { chapterData, plan, selectedChapter, sectionMap } = useRandomizerStore();
-  const [activeSection, setActiveSection] = useState<'chapter' | 'plan' | 'screens' | 'sectionMap'>('chapter');
+  const [activeSection, setActiveSection] = useState<'chapter' | 'plan' | 'screens' | 'sectionMap' | 'validation'>('chapter');
   const [copied, setCopied] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const getJsonData = () => {
     switch (activeSection) {
@@ -31,6 +62,25 @@ export function JsonDebugPanel() {
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
+    }
+  };
+
+  const runValidation = async () => {
+    setValidationLoading(true);
+    setValidationError(null);
+    try {
+      const response = await fetch('http://localhost:8000/api/debug/validate');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Validation failed');
+      }
+      const result = await response.json();
+      setValidationResult(result);
+      setActiveSection('validation');
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setValidationLoading(false);
     }
   };
 
@@ -102,15 +152,38 @@ export function JsonDebugPanel() {
           >
             Section Map
           </button>
+          <button
+            onClick={() => setActiveSection('validation')}
+            className={`px-3 py-1.5 text-sm rounded ${
+              activeSection === 'validation'
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            Validation
+          </button>
         </div>
 
-        {/* Copy button */}
-        <button
-          onClick={handleCopy}
-          className="px-4 py-2 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
-        >
-          {copied ? 'Copied!' : 'Copy JSON to Clipboard'}
-        </button>
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleCopy}
+            className="px-4 py-2 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+          >
+            {copied ? 'Copied!' : 'Copy JSON'}
+          </button>
+          <button
+            onClick={runValidation}
+            disabled={validationLoading}
+            className={`px-4 py-2 text-sm rounded transition-colors ${
+              validationLoading
+                ? 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                : 'bg-green-700 hover:bg-green-600 text-white'
+            }`}
+          >
+            {validationLoading ? 'Running...' : 'Run Validation Tests'}
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -251,6 +324,130 @@ export function JsonDebugPanel() {
             <p className="text-amber-300 text-sm">
               Section map not available. Generate a plan and click Randomize to populate section assignments.
             </p>
+          </div>
+        )}
+
+        {/* Validation Results */}
+        {activeSection === 'validation' && (
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
+              ROM Validation Results
+            </h3>
+
+            {validationError && (
+              <div className="p-4 bg-red-500/10 border border-red-500/20 rounded mb-4">
+                <p className="text-red-400 text-sm">{validationError}</p>
+              </div>
+            )}
+
+            {!validationResult && !validationError && (
+              <div className="p-4 bg-slate-800 rounded">
+                <p className="text-slate-400 text-sm">
+                  Click "Run Validation Tests" to validate the current ROM state against all test criteria.
+                </p>
+              </div>
+            )}
+
+            {validationResult && (
+              <>
+                {/* Summary */}
+                <div className={`p-4 rounded mb-4 ${
+                  validationResult.summary.all_passed
+                    ? 'bg-green-500/10 border border-green-500/20'
+                    : 'bg-red-500/10 border border-red-500/20'
+                }`}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className={`text-2xl ${validationResult.summary.all_passed ? 'text-green-400' : 'text-red-400'}`}>
+                      {validationResult.summary.all_passed ? '✓' : '✗'}
+                    </span>
+                    <span className={`text-lg font-semibold ${
+                      validationResult.summary.all_passed ? 'text-green-400' : 'text-red-400'
+                    }`}>
+                      {validationResult.summary.all_passed ? 'ALL TESTS PASSED' : 'VALIDATION FAILED'}
+                    </span>
+                  </div>
+                  <div className="text-sm text-slate-300">
+                    <span className="text-red-400">{validationResult.summary.total_errors} errors</span>
+                    {' · '}
+                    <span className="text-amber-400">{validationResult.summary.total_warnings} warnings</span>
+                    {validationResult.rom_filename && (
+                      <>
+                        {' · '}
+                        <span className="text-slate-400">ROM: {validationResult.rom_filename}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Per-chapter results */}
+                <div className="space-y-3">
+                  {validationResult.chapters.map((chapter) => (
+                    <div
+                      key={chapter.chapter_num}
+                      className={`bg-slate-800 rounded-lg overflow-hidden border ${
+                        chapter.passed ? 'border-slate-700' : 'border-red-500/30'
+                      }`}
+                    >
+                      <div className={`px-4 py-2 flex items-center justify-between ${
+                        chapter.passed ? 'bg-slate-700' : 'bg-red-500/10'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <span className={chapter.passed ? 'text-green-400' : 'text-red-400'}>
+                            {chapter.passed ? '✓' : '✗'}
+                          </span>
+                          <span className="font-semibold text-slate-200">Chapter {chapter.chapter_num}</span>
+                          <span className="text-slate-500 text-sm">({chapter.total_screens} screens)</span>
+                        </div>
+                        <div className="flex gap-3 text-xs">
+                          <span className="text-slate-400">
+                            Reachability: <span className={
+                              chapter.reachability.percent >= 95 ? 'text-green-400' : 'text-amber-400'
+                            }>{chapter.reachability.percent.toFixed(1)}%</span>
+                          </span>
+                          <span className="text-slate-400">
+                            Components: <span className={
+                              chapter.nav_components === 1 ? 'text-green-400' : 'text-red-400'
+                            }>{chapter.nav_components}</span>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="px-4 py-3 text-sm">
+                        {/* Time period info */}
+                        <div className="flex gap-4 mb-2 text-xs text-slate-400">
+                          <span>PAST: {chapter.time_period.past_count}</span>
+                          <span>PRESENT: {chapter.time_period.present_count}</span>
+                          <span>Time Doors: [{chapter.time_period.time_doors.join(', ')}]</span>
+                        </div>
+
+                        {/* Errors */}
+                        {chapter.errors.length > 0 && (
+                          <div className="mt-2">
+                            <div className="text-red-400 text-xs font-semibold mb-1">Errors:</div>
+                            {chapter.errors.map((err, i) => (
+                              <div key={i} className="text-red-300 text-xs ml-2">• {err}</div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Warnings */}
+                        {chapter.warnings.length > 0 && (
+                          <div className="mt-2">
+                            <div className="text-amber-400 text-xs font-semibold mb-1">Warnings:</div>
+                            {chapter.warnings.map((warn, i) => (
+                              <div key={i} className="text-amber-300 text-xs ml-2">• {warn}</div>
+                            ))}
+                          </div>
+                        )}
+
+                        {chapter.errors.length === 0 && chapter.warnings.length === 0 && (
+                          <div className="text-green-400 text-xs">No issues found</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
