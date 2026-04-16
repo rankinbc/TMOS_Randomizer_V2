@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.chapter import Chapter, GameWorld
 from ..core.constants import NAV_BLOCKED, NAV_BUILDING_ENTRANCE, relative_to_global, get_chr_index
-from ..core.enums import SectionType, EventType, DO_NOT_RANDOMIZE
+from ..core.enums import SectionType, EventType, DO_NOT_RANDOMIZE, is_past_screen_index
 from ..core.worldscreen import WorldScreen
 from ..logic.navigation import (
     DIRECTIONS,
@@ -242,6 +242,7 @@ def _check_edge_passable(
     try:
         edges = extract_edges(
             rom_data,
+            screen.relative_index,
             screen.top_tiles,
             screen.bottom_tiles,
             screen.datapointer,
@@ -1060,8 +1061,12 @@ def rewrite_section_navigation(
 
     logger.info(f"  Navigation built for {len(nav_connections)} screens")
 
-    # Step 2: Clear ALL intra-section navigation first
-    # Then set navigation based on grid/spanning tree
+    # Step 2: Clear ALL navigation directions for section screens
+    # When using grid-based navigation, navigation MUST match grid positions.
+    # Any direction not set by the grid connections must be blocked (0xFF).
+    # We preserve: building entrances (0xFE) and connections to excluded screens
+    logger.info(f"  Step 2: Clearing navigation for {len(screen_indices)} screens")
+    clear_count = 0
     for screen_idx in screen_indices:
         screen = chapter.get_screen(screen_idx)
         if not screen:
@@ -1071,10 +1076,24 @@ def rewrite_section_navigation(
             nav_attr = f"screen_index_{direction}"
             current_nav = getattr(screen, nav_attr)
 
-            # Clear if it points to another screen in this section
-            # or if it's invalid (we'll set proper values next)
-            if current_nav in section_screens and current_nav != screen_idx:
+            # Preserve building entrances
+            if current_nav == NAV_BUILDING_ENTRANCE:
+                continue
+
+            # Preserve connections to excluded screens (wizard battles, bosses, etc)
+            if current_nav < chapter.screen_count:
+                target_global = relative_to_global(chapter.chapter_num, current_nav)
+                if target_global in DO_NOT_RANDOMIZE:
+                    logger.debug(f"  Preserving connection to excluded screen {current_nav} on {screen_idx} {direction}")
+                    continue
+
+            # Clear ALL other directions - grid navigation will set valid ones
+            if current_nav != NAV_BLOCKED:
+                if screen_idx == 79:
+                    logger.info(f"    DEBUG: Clearing screen 79 {direction} from {current_nav} to 0xFF")
                 _set_navigation(screen, direction, NAV_BLOCKED, chapter_nav)
+                clear_count += 1
+    logger.info(f"  Step 2: Cleared {clear_count} navigation values")
 
     # Step 3: Apply navigation connections
     for screen_idx, connections in nav_connections.items():
@@ -1091,12 +1110,8 @@ def rewrite_section_navigation(
 
     logger.info(f"  Section {section_shape.section_id}: {stats['screens_processed']} screens, {stats['connections_made']} connections")
 
-    # Step 4: Clear unused directions on entry/exit screens that point outside section
-    # (preserving excluded screens and building entrances)
-    _clear_unused_external_connections(
-        chapter, section_shape, screen_indices, section_screens,
-        nav_connections, chapter_nav
-    )
+    # Note: Step 2 already clears all navigation except protected connections (building entrances,
+    # excluded screens). Step 3 then sets valid grid-based connections. No additional clearing needed.
 
     return stats
 
@@ -1185,7 +1200,7 @@ def rewrite_section_connections(
     chapter_shape: ChapterShape,
     chapter_nav: ChapterNavigation,
     rng: random.Random,
-) -> None:
+) -> Set[Tuple[int, str]]:
     """Rewrite navigation between sections based on connections.
 
     Args:
@@ -1195,7 +1210,14 @@ def rewrite_section_connections(
         chapter_shape: Section shapes
         chapter_nav: Chapter navigation to record changes
         rng: Random number generator
+
+    Returns:
+        Set of (screen_index, direction) tuples representing inter-section connections
+        that should be protected from removal by blocked edge detection.
     """
+    # Track inter-section connections so they can be protected from blocked edge removal
+    inter_section_connections: Set[Tuple[int, str]] = set()
+
     # Identify protected screens (preserved sections = sections without shapes)
     sections_with_shapes = {s.section_id for s in chapter_shape.sections}
     protected_screens: Set[int] = set()
@@ -1247,13 +1269,26 @@ def rewrite_section_connections(
             _create_stairway_connection(
                 chapter, from_screen_idx, to_screen_idx, chapter_nav
             )
+        elif connection.method == "time_door":
+            # Time Door connections are handled separately in connect_time_doors()
+            # This method just registers the section-level connection for validation
+            logger.info(f"  TIME_DOOR connection: section {connection.from_section_id} <-> section {connection.to_section_id}")
+            logger.info(f"    (Screen-level connection handled in Step 2.5)")
         else:
             # Edge connection - find available directions
+            # Get grid positions for spatial-aware direction selection
+            from_pos = population.get_grid_position(from_screen_idx)
+            to_pos = population.get_grid_position(to_screen_idx)
             logger.info(f"  Creating EDGE connection: {from_screen_idx} -> {to_screen_idx} (bidirectional: {connection.bidirectional})")
-            _create_edge_connection(
+            logger.info(f"    Grid positions: from={from_pos}, to={to_pos}")
+            made_conns = _create_edge_connection(
                 chapter, from_screen_idx, to_screen_idx,
-                connection.bidirectional, chapter_nav, protected_screens
+                connection.bidirectional, chapter_nav, protected_screens,
+                from_position=from_pos, to_position=to_pos,
             )
+            inter_section_connections.update(made_conns)
+
+    return inter_section_connections
 
 
 def _get_section_shape(
@@ -1388,11 +1423,16 @@ def _create_edge_connection(
     bidirectional: bool,
     chapter_nav: ChapterNavigation,
     protected_screens: Optional[Set[int]] = None,
-) -> None:
+    from_position: Optional[Tuple[int, int]] = None,
+    to_position: Optional[Tuple[int, int]] = None,
+) -> List[Tuple[int, str]]:
     """Create an edge-based navigation connection between two screens.
 
     Finds available directions on both screens and creates a bidirectional
     connection. Prefers matching directions (e.g., right<->left) when possible.
+
+    If grid positions are provided, prefers the direction that matches the
+    spatial relationship between the screens.
 
     Args:
         chapter: Chapter with screen data
@@ -1401,7 +1441,13 @@ def _create_edge_connection(
         bidirectional: Whether to create reverse connection
         chapter_nav: Chapter navigation to record changes
         protected_screens: Screens that should not be modified (preserved sections)
+        from_position: Optional (x, y) grid position of source screen
+        to_position: Optional (x, y) grid position of target screen
+
+    Returns:
+        List of (screen_idx, direction) tuples for the connections made.
     """
+    connections_made: List[Tuple[int, str]] = []
     if protected_screens is None:
         protected_screens = set()
     logger.debug(f"    _create_edge_connection: {from_idx} -> {to_idx} (bidirectional={bidirectional})")
@@ -1411,7 +1457,7 @@ def _create_edge_connection(
 
     if from_screen is None or to_screen is None:
         logger.warning(f"    Screen not found: from={from_screen is not None}, to={to_screen is not None}")
-        return
+        return connections_made
 
     # Log current navigation state
     logger.debug(f"    from_screen {from_idx} nav: R={from_screen.screen_index_right:02X} L={from_screen.screen_index_left:02X} D={from_screen.screen_index_down:02X} U={from_screen.screen_index_up:02X}")
@@ -1422,17 +1468,40 @@ def _create_edge_connection(
         attr = f"screen_index_{direction}"
         if getattr(from_screen, attr) == to_idx:
             logger.info(f"    Already connected via {direction}")
+            connections_made.append((from_idx, direction))
             # Already connected, just ensure bidirectional
             if bidirectional:
                 opposite = OPPOSITE_DIRECTIONS[direction]
                 _set_navigation(to_screen, opposite, from_idx, chapter_nav)
-            return
+                connections_made.append((to_idx, opposite))
+            return connections_made
+
+    # Determine preferred direction based on spatial relationship
+    preferred_direction = None
+    if from_position is not None and to_position is not None:
+        dx = to_position[0] - from_position[0]
+        dy = to_position[1] - from_position[1]
+
+        # Prefer direction based on largest delta
+        if abs(dx) >= abs(dy):
+            preferred_direction = "right" if dx > 0 else "left" if dx < 0 else None
+        else:
+            preferred_direction = "down" if dy > 0 else "up" if dy < 0 else None
+
+        if preferred_direction:
+            logger.debug(f"    Spatial preferred direction: {preferred_direction} (dx={dx}, dy={dy})")
+
+    # Order directions to try preferred first
+    if preferred_direction:
+        directions_to_try = [preferred_direction] + [d for d in DIRECTIONS if d != preferred_direction]
+    else:
+        directions_to_try = list(DIRECTIONS)
 
     # Find matching available directions (prefer complementary pairs)
     best_direction = None
     best_score = -1
 
-    for direction in DIRECTIONS:
+    for direction in directions_to_try:
         from_attr = f"screen_index_{direction}"
         from_current = getattr(from_screen, from_attr)
 
@@ -1490,6 +1559,7 @@ def _create_edge_connection(
     else:
         logger.info(f"    Setting: screen {from_idx} {best_direction} -> {to_idx}")
         _set_navigation(from_screen, best_direction, to_idx, chapter_nav)
+        connections_made.append((from_idx, best_direction))
 
     # Set reverse connection if bidirectional (skip if to_screen is protected)
     if bidirectional:
@@ -1499,6 +1569,9 @@ def _create_edge_connection(
         else:
             logger.info(f"    Setting reverse: screen {to_idx} {reverse_direction} -> {from_idx}")
             _set_navigation(to_screen, reverse_direction, from_idx, chapter_nav)
+            connections_made.append((to_idx, reverse_direction))
+
+    return connections_made
 
 
 def _create_stairway_connection(
@@ -1569,6 +1642,16 @@ def repair_connectivity(
         global_idx = relative_to_global(chapter.chapter_num, screen.relative_index)
         if global_idx in DO_NOT_RANDOMIZE:
             protected_screens.add(screen.relative_index)
+
+    # Also protect screens that have grid positions - their navigation is authoritative
+    # We should not overwrite grid-based navigation with repair connections
+    screens_with_grid_positions: Set[int] = set()
+    if population:
+        for section_id, grid_positions in population.section_grid_positions.items():
+            for pos, screen_idx in grid_positions.items():
+                screens_with_grid_positions.add(screen_idx)
+        if screens_with_grid_positions:
+            logger.info(f"  Screens with grid positions (nav protected): {len(screens_with_grid_positions)}")
 
     if protected_screens:
         logger.info(f"  Protected screens (will not be modified): {len(protected_screens)}")
@@ -1652,6 +1735,11 @@ def repair_connectivity(
                 if main_screen is None:
                     continue
 
+                # Prefer screens WITHOUT grid positions - their navigation can be modified
+                # Screens WITH grid positions have authoritative navigation we shouldn't touch
+                if main_idx in screens_with_grid_positions:
+                    continue  # Skip screens with grid positions - we can't modify their nav
+
                 main_pw = parent_world_map.get(main_idx, 0)
 
                 # Check if main screen has the opposite direction available or overwritable
@@ -1683,6 +1771,7 @@ def repair_connectivity(
                     best_pair = (orphan_idx, main_idx, orphan_available_dir)
 
         # If no perfect match found, try any direction pair (force connection)
+        # Still avoid screens with grid positions
         if best_pair is None:
             logger.debug(f"  No ideal match for orphan component, trying forced connection...")
             for orphan_idx in orphan_screens:
@@ -1696,9 +1785,11 @@ def repair_connectivity(
                     if orphan_val == NAV_BUILDING_ENTRANCE:
                         continue  # Skip building entrances
 
-                    # Find any main screen where we can connect
+                    # Find any main screen where we can connect (excluding grid screens)
                     opposite = OPPOSITE_DIRECTIONS[direction]
                     for main_idx in main_component:
+                        if main_idx in screens_with_grid_positions:
+                            continue  # Skip screens with grid positions
                         main_screen = chapter.get_screen(main_idx)
                         if main_screen is None:
                             continue
@@ -1710,15 +1801,24 @@ def repair_connectivity(
                         best_pair = (orphan_idx, main_idx, direction)
                         logger.debug(f"    Found forced pair: {orphan_idx}->{direction}->{main_idx}")
                         break
-                        if best_pair:
-                            break
+                    if best_pair:
+                        break
                 if best_pair:
                     break
 
         # Last resort: force a connection even if we have to overwrite
+        # Still try to avoid screens with grid positions, but if all main screens have them,
+        # we'll just set the forward connection (orphan->main) and skip the reverse
         if best_pair is None and orphan_screens:
-            orphan_idx = orphan_screens[0]
-            main_idx = list(main_component)[0]
+            # Try to find a main screen without grid positions first
+            main_without_grid = [idx for idx in main_component if idx not in screens_with_grid_positions]
+            if main_without_grid:
+                orphan_idx = orphan_screens[0]
+                main_idx = main_without_grid[0]
+            else:
+                # All main screens have grid positions - we'll only set forward connection
+                orphan_idx = orphan_screens[0]
+                main_idx = list(main_component)[0]
             best_pair = (orphan_idx, main_idx, "right")
             logger.warning(f"  Forcing connection {orphan_idx} -> {main_idx} (no ideal match)")
 
@@ -1733,11 +1833,15 @@ def repair_connectivity(
 
                 logger.info(f"  Connecting orphan {orphan_idx} -> {direction} -> main {main_idx}")
 
-                # Set forward connection
+                # Set forward connection (orphan points to main)
                 _set_navigation(orphan_screen, direction, main_idx, chapter_nav)
 
-                # Set reverse connection
-                _set_navigation(main_screen, opposite, orphan_idx, chapter_nav)
+                # Set reverse connection ONLY if main screen doesn't have grid positions
+                # Grid-based navigation is authoritative and should not be overwritten
+                if main_idx in screens_with_grid_positions:
+                    logger.debug(f"    Skipping reverse connection: main {main_idx} has grid positions")
+                else:
+                    _set_navigation(main_screen, opposite, orphan_idx, chapter_nav)
 
                 connections_made += 1
 
@@ -1789,6 +1893,22 @@ def repair_section_flow(
     # Process each section
     for section_id, screen_indices in population.screen_assignments.items():
         if not screen_indices:
+            continue
+
+        # Skip sections that have grid positions - their navigation is authoritative
+        # based on grid adjacency. Fragmentation in these sections is intentional
+        # (edges are blocked, so screens can't be connected in those directions).
+        section_grid = population.section_grid_positions.get(section_id, {})
+        if section_grid:
+            logger.debug(f"  Section {section_id}: Skipping repair (has grid positions)")
+            stats["section_details"][section_id] = {
+                "screens": len(screen_indices),
+                "initial_fragments": 1,  # Not calculated
+                "final_fragments": 1,    # Not calculated
+                "connections_made": 0,
+                "attempts": 0,
+                "skipped": "has_grid_positions",
+            }
             continue
 
         screen_set = set(screen_indices)
@@ -2060,6 +2180,7 @@ def remove_blocked_connections(
     chapter: Chapter,
     chapter_nav: ChapterNavigation,
     rom_data: Optional[bytes] = None,
+    protected_connections: Optional[Set[Tuple[int, str]]] = None,
 ) -> int:
     """Remove navigation links where the edge is completely blocked.
 
@@ -2071,6 +2192,8 @@ def remove_blocked_connections(
         chapter: Chapter with screen data
         chapter_nav: Chapter navigation to record changes
         rom_data: ROM data for edge extraction (optional but recommended)
+        protected_connections: Set of (screen_idx, direction) tuples that should
+                              NOT be removed (e.g., inter-section connections)
 
     Returns:
         Number of blocked connections removed
@@ -2078,6 +2201,9 @@ def remove_blocked_connections(
     if rom_data is None:
         logger.warning("  No ROM data provided - cannot check edge walkability")
         return 0
+
+    if protected_connections is None:
+        protected_connections = set()
 
     removed = 0
     edge_cache: Dict[int, ScreenEdges] = {}
@@ -2113,6 +2239,15 @@ def remove_blocked_connections(
             walkable_count = sum(1 for t in edge_tiles if is_walkable(t))
 
             if walkable_count == 0:
+                # Check if this is a protected inter-section connection
+                conn_key = (screen.relative_index, direction)
+                if conn_key in protected_connections:
+                    logger.info(
+                        f"  PROTECTED inter-section connection: screen {screen.relative_index} "
+                        f"{direction} -> {nav_value} (edge blocked but preserved)"
+                    )
+                    continue
+
                 # Edge is completely blocked - remove the navigation link
                 logger.info(
                     f"  Removing blocked connection: screen {screen.relative_index} "
@@ -2157,6 +2292,326 @@ def preserve_building_entrances(
             if screen.event == 0x00:
                 # Preserve existing up navigation or mark as building
                 pass  # Don't modify building screens
+
+
+def block_unassigned_screens(
+    chapter: Chapter,
+    population: ChapterPopulation,
+    chapter_nav: ChapterNavigation,
+) -> int:
+    """Block navigation for screens not assigned to any section.
+
+    Unassigned screens can retain original ROM navigation which may include
+    cross-time-period connections via Time Doors. To prevent R-002 violations:
+    1. Set all navigation to 0xFF (blocked) for unassigned screens
+    2. Block navigation FROM assigned screens TO unassigned screens
+
+    Args:
+        chapter: Chapter with screen data
+        population: Screen assignments
+        chapter_nav: Chapter navigation to record changes
+
+    Returns:
+        Number of screens blocked
+    """
+    # Get all assigned screen indices
+    assigned_screens: Set[int] = set()
+    for section_id, screens in population.screen_assignments.items():
+        assigned_screens.update(screens)
+
+    unassigned_screens = set(range(chapter.screen_count)) - assigned_screens
+    blocked_count = 0
+
+    # Step 1: Block all navigation FROM unassigned screens
+    for screen in chapter:
+        if screen.relative_index in assigned_screens:
+            continue
+
+        # This screen is not assigned to any section - block all its navigation
+        for direction in DIRECTIONS:
+            attr = f"screen_index_{direction}"
+            current_value = getattr(screen, attr)
+
+            # Skip if already blocked or building entrance
+            if current_value in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+                continue
+
+            # Block this direction
+            setattr(screen, attr, NAV_BLOCKED)
+            chapter_nav.navigation_changes.append(NavigationChange(
+                screen_index=screen.relative_index,
+                direction=direction,
+                old_value=current_value,
+                new_value=NAV_BLOCKED,
+            ))
+
+        blocked_count += 1
+        logger.debug(f"  Blocked unassigned screen {screen.relative_index}")
+
+    # Step 2: Block navigation FROM assigned screens TO unassigned screens
+    for screen in chapter:
+        if screen.relative_index not in assigned_screens:
+            continue
+
+        for direction in DIRECTIONS:
+            attr = f"screen_index_{direction}"
+            target = getattr(screen, attr)
+
+            # Skip if already blocked, building entrance, or pointing to assigned screen
+            if target in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+                continue
+            if target not in unassigned_screens:
+                continue
+
+            # Navigation points to an unassigned screen - block it
+            setattr(screen, attr, NAV_BLOCKED)
+            chapter_nav.navigation_changes.append(NavigationChange(
+                screen_index=screen.relative_index,
+                direction=direction,
+                old_value=target,
+                new_value=NAV_BLOCKED,
+            ))
+            logger.debug(f"  Blocked nav {screen.relative_index} {direction} -> unassigned {target}")
+
+    return blocked_count
+
+
+# =============================================================================
+# Time Door Connection Functions
+# =============================================================================
+
+def connect_time_doors(
+    chapter: Chapter,
+    chapter_nav: ChapterNavigation,
+    population: ChapterPopulation,
+) -> int:
+    """Pair Time Door screens with each other across time periods.
+
+    Every chapter has exactly two Time Doors (Content=0xC0): one in PRESENT and
+    one in PAST. The player activates OPRIN on either one to teleport to the
+    other. We link them directly — Time-Door-to-Time-Door — rather than
+    connecting the time door to a random screen in the opposite era (which
+    would leave the unrelated screen with a rogue cross-time pointer).
+
+    Args:
+        chapter: Chapter with screen data
+        chapter_nav: Navigation changes to record
+        population: Screen assignments (retained for signature compat; unused)
+
+    Returns:
+        Number of Time Door pairs linked (0 or 1 per chapter)
+    """
+    TIME_DOOR_CONTENTS = {0xC0, 0xC7, 0xD7}
+
+    present_doors: List[int] = []
+    past_doors: List[int] = []
+    for screen in chapter:
+        if screen.content not in TIME_DOOR_CONTENTS:
+            continue
+        if is_past_screen_index(chapter.chapter_num, screen.relative_index):
+            past_doors.append(screen.relative_index)
+        else:
+            present_doors.append(screen.relative_index)
+
+    if not (present_doors and past_doors):
+        logger.info(
+            f"  Time Doors incomplete (pres={present_doors}, past={past_doors}); "
+            "skipping pair link"
+        )
+        return 0
+
+    pres_idx = min(present_doors)  # Each chapter ships with exactly one of each;
+    past_idx = min(past_doors)     # min() is just a stable pick when parsing multiples.
+    pres_screen = chapter.get_screen(pres_idx)
+    past_screen = chapter.get_screen(past_idx)
+    if pres_screen is None or past_screen is None:
+        return 0
+
+    # Pick direction on each door — prefer an already-blocked slot so we don't
+    # stomp an intentional same-time neighbour, but fall back to 'down'
+    # consistent with the original ROM layouts.
+    def _first_blocked_dir(screen) -> str:
+        for direction in DIRECTIONS:
+            if getattr(screen, f"screen_index_{direction}") == NAV_BLOCKED:
+                return direction
+        return "down"
+
+    pres_dir = _first_blocked_dir(pres_screen)
+    past_dir = _first_blocked_dir(past_screen)
+
+    def _set(screen, screen_idx, direction, target):
+        attr = f"screen_index_{direction}"
+        old = getattr(screen, attr)
+        setattr(screen, attr, target)
+        screen.mark_modified()
+        chapter_nav.navigation_changes.append(NavigationChange(
+            screen_index=screen_idx,
+            direction=direction,
+            old_value=old,
+            new_value=target,
+        ))
+
+    _set(pres_screen, pres_idx, pres_dir, past_idx)
+    _set(past_screen, past_idx, past_dir, pres_idx)
+
+    logger.info(
+        f"  Time Door pair linked: {pres_idx} (PRES, {pres_dir}) <-> "
+        f"{past_idx} (PAST, {past_dir})"
+    )
+    return 1
+
+
+def strip_misaligned_edge_pointers(
+    chapter: Chapter,
+    chapter_nav: ChapterNavigation,
+    rom_data: bytes,
+) -> int:
+    """Clear directional pointers whose edge tiles don't line up.
+
+    ``_check_edge_passable`` only verifies each edge has *some* walkable tile.
+    Two screens can both pass that check and still strand the player: A's
+    walkable tile might sit at row 0 while B's walkable tile sits at row 5,
+    so walking off A's edge lands on a tree/wall on B.
+
+    This pass, run at the very end of phase 5, walks every directional nav
+    pointer and clears it if no paired row/column index has walkable tiles on
+    BOTH sides. Time-Door-to-Time-Door links are exempt — the engine
+    teleports the player, so edge alignment doesn't apply.
+    """
+    from ..validation.tiles.categories import is_walkable as _tile_walkable
+    from ..validation.tiles.edges import (
+        OPPOSITE_DIRECTIONS as _OPPOSITE,
+        extract_edges as _extract,
+    )
+
+    TIME_DOOR_CONTENTS = {0xC0, 0xC7, 0xD7}
+    edge_cache: Dict[int, "ScreenEdges"] = {}
+    stripped = 0
+
+    def _edges(screen):
+        if screen.relative_index in edge_cache:
+            return edge_cache[screen.relative_index]
+        try:
+            e = _extract(
+                rom_data,
+                screen.relative_index,
+                screen.top_tiles,
+                screen.bottom_tiles,
+                screen.datapointer,
+            )
+        except Exception:
+            return None
+        edge_cache[screen.relative_index] = e
+        return e
+
+    for screen in chapter:
+        src_is_td = screen.content in TIME_DOOR_CONTENTS
+
+        for direction in DIRECTIONS:
+            attr = f"screen_index_{direction}"
+            target = getattr(screen, attr)
+
+            if target in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+                continue
+            if target >= chapter.screen_count:
+                continue
+
+            target_screen = chapter.get_screen(target)
+            if target_screen is None:
+                continue
+
+            # Skip TD<->TD: teleport, not a physical walk.
+            if src_is_td and target_screen.content in TIME_DOOR_CONTENTS:
+                continue
+
+            a_edges = _edges(screen)
+            b_edges = _edges(target_screen)
+            if a_edges is None or b_edges is None:
+                continue  # Fail open on extraction error.
+
+            a_tiles = a_edges.get_edge(direction)
+            b_tiles = b_edges.get_edge(_OPPOSITE[direction])
+            if not a_tiles or not b_tiles:
+                continue
+
+            pair_count = min(len(a_tiles), len(b_tiles))
+            aligned = any(
+                _tile_walkable(a_tiles[i]) and _tile_walkable(b_tiles[i])
+                for i in range(pair_count)
+            )
+            if aligned:
+                continue
+
+            setattr(screen, attr, NAV_BLOCKED)
+            screen.mark_modified()
+            chapter_nav.navigation_changes.append(NavigationChange(
+                screen_index=screen.relative_index,
+                direction=direction,
+                old_value=target,
+                new_value=NAV_BLOCKED,
+            ))
+            stripped += 1
+
+    return stripped
+
+
+def strip_cross_time_pointers(
+    chapter: Chapter,
+    chapter_nav: ChapterNavigation,
+) -> int:
+    """Remove directional nav pointers that cross time periods.
+
+    PAST and PRESENT are parallel worlds — the engine only transitions between
+    them via a Time Door (Content=0xC0/0xC7/0xD7). Any other directional
+    pointer that crosses eras is a bug that produces the "mixed map" failure
+    mode visible in the UI's spatial BFS view.
+
+    Rule: the ONLY cross-time pointer we keep is TD ↔ TD between the two
+    Time Doors of the same chapter (set up by ``connect_time_doors``). Every
+    other cross-time pointer — whether inherited from the original ROM or
+    created by an over-eager edge connection — is cleared to NAV_BLOCKED.
+    """
+    TIME_DOOR_CONTENTS = {0xC0, 0xC7, 0xD7}
+    chapter_num = chapter.chapter_num
+    stripped = 0
+
+    for screen in chapter:
+        src_is_td = screen.content in TIME_DOOR_CONTENTS
+        src_is_past = is_past_screen_index(chapter_num, screen.relative_index)
+
+        for direction in DIRECTIONS:
+            attr = f"screen_index_{direction}"
+            target = getattr(screen, attr)
+
+            if target in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+                continue
+            if target >= chapter.screen_count:
+                continue
+
+            target_screen = chapter.get_screen(target)
+            if target_screen is None:
+                continue
+
+            tgt_is_past = is_past_screen_index(chapter_num, target)
+            if src_is_past == tgt_is_past:
+                continue  # Same time period — fine.
+
+            # Cross-time. Allow only if BOTH endpoints are Time Doors.
+            tgt_is_td = target_screen.content in TIME_DOOR_CONTENTS
+            if src_is_td and tgt_is_td:
+                continue
+
+            setattr(screen, attr, NAV_BLOCKED)
+            screen.mark_modified()
+            chapter_nav.navigation_changes.append(NavigationChange(
+                screen_index=screen.relative_index,
+                direction=direction,
+                old_value=target,
+                new_value=NAV_BLOCKED,
+            ))
+            stripped += 1
+
+    return stripped
 
 
 # =============================================================================
@@ -2231,9 +2686,13 @@ def rewrite_chapter_navigation(
     for conn in chapter_connections.connections:
         logger.info(f"    {conn.from_section_id} -> {conn.to_section_id} (method: {conn.method}, bidirectional: {conn.bidirectional})")
 
-    rewrite_section_connections(
+    inter_section_connections = rewrite_section_connections(
         chapter, chapter_connections, population, chapter_shape, chapter_nav, rng
     )
+    logger.info(f"  Inter-section connections created: {len(inter_section_connections)}")
+
+    # Time Door pairing moved to Step 7.5 — runs after edge-removal and
+    # repair steps so the TD<->TD link isn't wiped by them.
 
     # Step 3: Preserve building entrances
     if preserve_buildings:
@@ -2243,10 +2702,14 @@ def rewrite_chapter_navigation(
 
     # Step 4: Remove blocked connections (edges with 0 walkable tiles)
     # This runs BEFORE repair steps so repairs can reconnect using valid edges
+    # Inter-section connections are protected from removal
     logger.info(f"")
     logger.info(f"--- Step 4: Remove blocked connections ---")
     if rom_data:
-        blocked_removed = remove_blocked_connections(chapter, chapter_nav, rom_data)
+        blocked_removed = remove_blocked_connections(
+            chapter, chapter_nav, rom_data,
+            protected_connections=inter_section_connections
+        )
         logger.info(f"  Blocked connections removed: {blocked_removed}")
     else:
         logger.warning(f"  Skipped (no ROM data)")
@@ -2266,6 +2729,35 @@ def rewrite_chapter_navigation(
     for section_id, details in section_repair_stats['section_details'].items():
         if details['connections_made'] > 0:
             logger.info(f"    Section {section_id}: {details['initial_fragments']} -> {details['final_fragments']} fragments ({details['connections_made']} connections)")
+
+    # Step 7: Block unassigned screens to prevent cross-time-period navigation
+    logger.info(f"")
+    logger.info(f"--- Step 7: Block unassigned screens ---")
+    blocked_count = block_unassigned_screens(chapter, population, chapter_nav)
+    logger.info(f"  Unassigned screens blocked: {blocked_count}")
+
+    # Step 7.5: Connect Time Door pair (PRESENT TD <-> PAST TD).
+    # Runs AFTER edge-removal/repair so the link is not collateral-damaged.
+    logger.info(f"")
+    logger.info(f"--- Step 7.5: Time Door pair link (PRESENT <-> PAST) ---")
+    time_door_connections = connect_time_doors(chapter, chapter_nav, population)
+    logger.info(f"  Time Door pair linked: {time_door_connections}")
+
+    # Step 8: Final sanitization — strip any remaining cross-time pointers.
+    # Runs AFTER time-door pairing so the legitimate TD<->TD link survives.
+    logger.info(f"")
+    logger.info(f"--- Step 8: Strip rogue cross-time pointers ---")
+    stripped = strip_cross_time_pointers(chapter, chapter_nav)
+    logger.info(f"  Cross-time pointers stripped: {stripped}")
+
+    # Step 9: Strip pointers whose edges don't align (walkable-to-walkable).
+    # Prevents the player from walking off a valid edge into a tree/wall on
+    # the destination screen. Runs last so everything else has settled.
+    if rom_data:
+        logger.info(f"")
+        logger.info(f"--- Step 9: Strip misaligned edge pointers ---")
+        misaligned = strip_misaligned_edge_pointers(chapter, chapter_nav, rom_data)
+        logger.info(f"  Misaligned pointers stripped: {misaligned}")
 
     logger.info(f"")
     logger.info(f"--- Navigation changes summary ---")

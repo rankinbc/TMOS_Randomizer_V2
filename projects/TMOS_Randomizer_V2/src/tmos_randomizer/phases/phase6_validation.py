@@ -379,7 +379,7 @@ def validate_required_content(
     has_dungeon = False
 
     for screen in chapter:
-        section_type = screen.get_section_type()
+        section_type = screen.section_type
         if section_type == SectionType.OVERWORLD:
             has_overworld = True
         elif section_type == SectionType.TOWN:

@@ -42,13 +42,19 @@ class ScreenTraversabilityValidator(Validator):
     DEFAULT_SEVERITY = Severity.WARNING
     SUPPORTED_PHASES = {ValidationPhase.DURING_POPULATION, ValidationPhase.FINAL}
 
-    def __init__(self, config: Optional[ScreenTraversabilityConfig] = None):
+    def __init__(self, config=None):
         """Initialize with configuration.
 
         Args:
-            config: Traversability settings
+            config: Traversability settings (ScreenTraversabilityConfig or ValidatorConfig)
         """
-        self.config = config or ScreenTraversabilityConfig()
+        # Initialize _issues list directly since we use a custom config type
+        self._issues: List[ValidationIssue] = []
+        # Accept ScreenTraversabilityConfig or create default
+        if isinstance(config, ScreenTraversabilityConfig):
+            self.config = config
+        else:
+            self.config = ScreenTraversabilityConfig()
 
     def validate_chapter(
         self,
@@ -76,14 +82,14 @@ class ScreenTraversabilityValidator(Validator):
                 severity=Severity.WARNING,
                 message="No ROM data available for traversability validation",
                 screen_index=None,
-                chapter_num=chapter.chapter_number,
+                chapter_num=chapter.chapter_num,
             ))
             return issues
 
         for screen in chapter.screens:
             screen_issues = self._validate_screen(
                 screen,
-                chapter.chapter_number,
+                chapter.chapter_num,
                 rom_data,
             )
             issues.extend(screen_issues)
@@ -95,7 +101,7 @@ class ScreenTraversabilityValidator(Validator):
                     severity=Severity.INFO,
                     message=f"Stopped after {self.config.max_issues} issues (limit reached)",
                     screen_index=None,
-                    chapter_num=chapter.chapter_number,
+                    chapter_num=chapter.chapter_num,
                 ))
                 break
 
@@ -142,10 +148,10 @@ class ScreenTraversabilityValidator(Validator):
 
         # Build navigation dict
         navigation = get_screen_navigation_dict(
-            screen.nav_right,
-            screen.nav_left,
-            screen.nav_down,
-            screen.nav_up,
+            screen.screen_index_right,
+            screen.screen_index_left,
+            screen.screen_index_down,
+            screen.screen_index_up,
         )
 
         # Count active connections
@@ -236,7 +242,8 @@ class ScreenTraversabilityValidator(Validator):
         """
         issues: List[ValidationIssue] = []
 
-        for chapter in game_world.chapters:
+        # game_world.chapters is a Dict[int, Chapter], iterate over values
+        for chapter in game_world.chapters.values():
             chapter_issues = self.validate_chapter(chapter, context)
             issues.extend(chapter_issues)
 

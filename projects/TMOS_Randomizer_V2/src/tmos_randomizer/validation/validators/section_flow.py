@@ -118,13 +118,17 @@ class SectionFlowValidator(Validator):
     DEFAULT_SEVERITY = Severity.ERROR
     SUPPORTED_PHASES = {ValidationPhase.DURING_NAVIGATION, ValidationPhase.FINAL}
 
-    def __init__(self, config: Optional[SectionFlowConfig] = None):
+    def __init__(self, config=None):
         """Initialize with configuration.
 
         Args:
             config: Section flow validation settings
         """
-        self.config = config or SectionFlowConfig()
+        self._issues: List[ValidationIssue] = []
+        if isinstance(config, SectionFlowConfig):
+            self.config = config
+        else:
+            self.config = SectionFlowConfig()
 
     def validate_chapter(
         self,
@@ -156,14 +160,14 @@ class SectionFlowValidator(Validator):
                 severity=Severity.WARNING,
                 message="Missing world_plan or world_population in context - cannot validate section flow",
                 screen_index=None,
-                chapter_num=chapter.chapter_number,
+                chapter_num=chapter.chapter_num,
             ))
             return issues
 
         # Get chapter-specific data
-        chapter_plan = world_plan.get_chapter(chapter.chapter_number)
-        chapter_pop = world_population.get_chapter(chapter.chapter_number)
-        chapter_conn = world_connections.get_chapter(chapter.chapter_number) if world_connections else None
+        chapter_plan = world_plan.get_chapter(chapter.chapter_num)
+        chapter_pop = world_population.get_chapter(chapter.chapter_num)
+        chapter_conn = world_connections.get_chapter(chapter.chapter_num) if world_connections else None
 
         if not chapter_plan or not chapter_pop:
             return issues
@@ -185,7 +189,7 @@ class SectionFlowValidator(Validator):
                         f"No screens assigned (planned {section.planned_screens})"
                     ),
                     screen_index=None,
-                    chapter_num=chapter.chapter_number,
+                    chapter_num=chapter.chapter_num,
                     details={
                         "section_id": section.section_id,
                         "section_type": section.section_type,
@@ -203,7 +207,7 @@ class SectionFlowValidator(Validator):
                         f"Largest fragment is only {section.largest_fragment_ratio:.0%} of section."
                     ),
                     screen_index=None,
-                    chapter_num=chapter.chapter_number,
+                    chapter_num=chapter.chapter_num,
                     details={
                         "section_id": section.section_id,
                         "section_type": section.section_type,
@@ -225,7 +229,7 @@ class SectionFlowValidator(Validator):
                             f"Section {conn.to_section_id} ({conn.to_section_type})"
                         ),
                         screen_index=None,
-                        chapter_num=chapter.chapter_number,
+                        chapter_num=chapter.chapter_num,
                         details={
                             "from_section": conn.from_section_id,
                             "to_section": conn.to_section_id,
@@ -239,12 +243,12 @@ class SectionFlowValidator(Validator):
                 validator_id=self.VALIDATOR_ID,
                 severity=severity,
                 message=(
-                    f"Chapter {chapter.chapter_number} section flow INVALID: "
+                    f"Chapter {chapter.chapter_num} section flow INVALID: "
                     f"Planned {analysis.planned_sections} sections but got {total_fragments} fragments. "
                     f"The section flow diagram is NOT being followed."
                 ),
                 screen_index=None,
-                chapter_num=chapter.chapter_number,
+                chapter_num=chapter.chapter_num,
                 details=analysis.to_dict(),
             ))
 
@@ -377,7 +381,7 @@ class SectionFlowValidator(Validator):
         total_fragments = sum(s.fragment_count for s in sections if s.assigned_screens > 0)
 
         return SectionFlowAnalysis(
-            chapter_num=chapter.chapter_number,
+            chapter_num=chapter.chapter_num,
             planned_sections=len(chapter_plan.sections),
             actual_fragments=total_fragments,
             sections=sections,

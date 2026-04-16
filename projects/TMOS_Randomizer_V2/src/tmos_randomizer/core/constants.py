@@ -39,38 +39,49 @@ CHAPTER_OFFSETS: dict[int, Tuple[int, int]] = {
 TOTAL_SCREENS = sum(count for _, count in CHAPTER_OFFSETS.values())  # 739
 
 # =============================================================================
-# Shop Table Constants (Bank 6)
+# Inventory-Pickup Tables (Bank 3) — corrected 2026-04-16
+#
+# CORRECTION: previously labeled SHOP_*. Per RE answer
+# (TMOS_AI/docs/human/items-economy-re-answers.md), these tables live in
+# Bank 3 (NOT Bank 6) and are used by the chest/drop pickup handler at
+# Bank 3 $94B0, NOT by any shop code. The data at 0xD544 is an inventory
+# CAP table, not a shop slot table. Real shop data lives in a Bank 2
+# bytecode interpreter that has not been decoded.
+#
+# NES MMC1 PRG bank size = 16 KB (0x4000), NOT 8 KB. The original comment
+# claimed 8 KB but the math (16 + 6*0x2000) coincidentally landed in Bank 3.
 # =============================================================================
 
-# Shop data tables in Bank 6 (CPU addresses converted to file offsets)
-# Bank 6 is swapped into $8000-$9FFF during shop routines
-# File offset = 16 (iNES header) + bank_offset + (CPU_addr - 0x8000)
-# For bank 6: base = 16 + (6 * 0x2000) = 0xC010
+# Bank 3 starts at file 0x0C010 = iNES header (16) + 3 banks * 0x4000.
+# Bank 3 is the RPG battle engine.
+BANK_3_FILE_OFFSET = 0xC010
 
-SHOP_BANK_FILE_OFFSET = 0xC010  # Bank 6 start in ROM file
-
-# L9524: Item index lookup table - maps shop index to item slot start
+# Bank 3 $9524 — 16-byte randomization indexer for inv_pickup_handler.
+# 4 groups x 4 selectors. NOT a shop-id-to-slot map.
 # File offset = 0xC010 + (0x9524 - 0x8000) = 0xD534
-SHOP_INDEX_TABLE = 0xD534
+INV_PICKUP_INDEXER = 0xD534
 
-# L9534: Item properties table - [item_id, quantity, price_low, price_high] x 4 per shop
+# Bank 3 $9534 — 8-entry x 4-byte inventory cap table.
+# Each entry: [ram_addr_lo, 0x03, max_cap, slot_idx].
+# Byte 0+1 form a $03xx RAM pointer; byte 2 is the cap; byte 3 is a
+# party-slot mirror index. NOT shop slots.
 # File offset = 0xC010 + (0x9534 - 0x8000) = 0xD544
-SHOP_ITEM_TABLE = 0xD544
+INV_CAP_TABLE = 0xD544
 
-# L95D0: Price range/modifier data (12 bytes)
-# File offset = 0xC010 + (0x95D0 - 0x8000) = 0xD5E0
-SHOP_PRICE_TABLE = 0xD5E0
+# Bank 3 $95D0 — 12 bytes immediately after inv_pickup_handler.
+# Purpose unknown (no readers found in xref). Was misnamed SHOP_PRICE_TABLE.
+INV_PICKUP_AUX_DATA = 0xD5E0
 
-# Shop Content byte ranges (from WorldScreen byte 2)
+# Shop Content byte ranges (from WorldScreen byte 2). These are the actual
+# in-game shop entry points; the per-shop transaction logic is in Bank 2.
 GENERAL_SHOP_CONTENT_MIN = 0x60
 GENERAL_SHOP_CONTENT_MAX = 0x66
 MAGIC_SHOP_CONTENT_MIN = 0x75
 MAGIC_SHOP_CONTENT_MAX = 0x79
 
-# Each shop has 4 item slots, 4 bytes each = 16 bytes total per shop
-SHOP_SLOT_SIZE = 4  # bytes per item slot
-SHOP_SLOTS_PER_SHOP = 4
-SHOP_ENTRY_SIZE = SHOP_SLOT_SIZE * SHOP_SLOTS_PER_SHOP  # 16 bytes per shop
+# Inventory-cap table layout
+INV_CAP_SLOT_SIZE = 4
+INV_CAP_SLOT_COUNT = 8
 
 
 # =============================================================================
@@ -132,6 +143,15 @@ ENCOUNTER_LINEUP_TABLES: dict[int, int] = {
     4: 0x00C2C1,
     5: 0x00C301,
 }
+
+# EXP tier lookup table (action-mode overworld kills).
+# Stride-2: game reads rom[EXP_TABLE_OFFSET + index * EXP_TABLE_STRIDE].
+# Indices 0-6 are the seven main tiers used by Ch1-2; 7-9 are special tiers.
+# Indices 10+ map to 0 in vanilla and represent "no EXP" / encounter-only.
+# Source: GameAnalysis2 raw_research/exp_tables.md (ROM_VERIFIED).
+EXP_TABLE_OFFSET = 0x174AA
+EXP_TABLE_STRIDE = 2
+EXP_TABLE_COUNT = 10
 
 # =============================================================================
 # World Enemy Set Pointers

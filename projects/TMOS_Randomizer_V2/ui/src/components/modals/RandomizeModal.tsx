@@ -60,6 +60,30 @@ export function RandomizeModal() {
 
         {/* Content */}
         <div className="px-6 py-4 space-y-4">
+          {/* Strategy Selector */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">Strategy</label>
+            <select
+              value={settings.strategy ?? 'organic'}
+              onChange={(e) =>
+                setSettings({ strategy: e.target.value as 'organic' | 'classic' })
+              }
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500"
+            >
+              <option value="organic">
+                Organic &mdash; real shapes, shuffled content (recommended)
+              </option>
+              <option value="classic">
+                Classic &mdash; abstract shape pipeline
+              </option>
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              {settings.strategy === 'classic'
+                ? 'Generates blob / linear / branching section shapes procedurally.'
+                : 'Preserves the original ROM\u2019s section shapes and shuffles screens with edge-aware placement.'}
+            </p>
+          </div>
+
           {/* Seed Input */}
           <div>
             <label className="flex items-center gap-2 mb-2">

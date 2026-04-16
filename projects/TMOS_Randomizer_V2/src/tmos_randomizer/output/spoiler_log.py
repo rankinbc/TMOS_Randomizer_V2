@@ -415,8 +415,9 @@ def generate_text_spoiler(log: SpoilerLog, include_sections: Optional[Dict[str, 
     if include_sections.get("allies", True) and log.allies:
         lines.extend(_generate_allies_section(log))
 
-    # Shops
-    if include_sections.get("shops", True) and log.shops:
+    # Shops — always emit (Phase 0: the section renders a fixed "not yet
+    # supported" notice, intentionally visible even when log.shops is empty).
+    if include_sections.get("shops", True):
         lines.extend(_generate_shops_section(log))
 
     # Map Layout
@@ -550,34 +551,24 @@ def _generate_allies_section(log: SpoilerLog) -> List[str]:
 
 
 def _generate_shops_section(log: SpoilerLog) -> List[str]:
-    """Generate shops section."""
-    lines = [
+    """Generate shops section.
+
+    Currently emits a fixed "not supported" notice. Real shop data lives in
+    an undecoded Bank 2 bytecode interpreter; randomizing it would corrupt
+    the inventory cap table at 0xD544. See TMOS_AI/docs/human/items-economy-re-answers.md.
+    """
+    return [
         SEPARATOR,
         _center("SHOP INVENTORIES"),
         SEPARATOR,
         "",
+        "  Shop randomization is not yet supported.",
+        "  Real shop data lives in an undecoded Bank 2 bytecode interpreter.",
+        "  See TMOS_AI/docs/human/items-economy-re-answers.md.",
+        "",
+        SEPARATOR,
+        "",
     ]
-
-    # Group by chapter
-    by_chapter: Dict[int, List[ShopInventory]] = {}
-    for shop in log.shops:
-        by_chapter.setdefault(shop.chapter, []).append(shop)
-
-    for chapter in sorted(by_chapter.keys()):
-        lines.append(f"CHAPTER {chapter}")
-        lines.append("-" * 9)
-        lines.append("")
-
-        for shop in by_chapter[chapter]:
-            lines.append(f"  {shop.location_desc} - {shop.shop_type.title()} Shop (Screen {shop.screen}):")
-            for item in shop.items:
-                lines.append(f"    - {item['name']:.<20} {item['price']} gold")
-            lines.append("")
-
-    lines.append(SEPARATOR)
-    lines.append("")
-
-    return lines
 
 
 def _generate_map_section(log: SpoilerLog) -> List[str]:
@@ -921,49 +912,25 @@ class SpoilerLogBuilder:
         inventory: CoreShopInventory,
         location_desc: Optional[str] = None,
     ) -> "SpoilerLogBuilder":
-        """Add a shop inventory from the core shop_inventory module.
+        """DISABLED — consumes broken shop_inventory data model.
 
-        Args:
-            inventory: CoreShopInventory object from shop randomization
-            location_desc: Optional location description (auto-generated if not provided)
-
-        Returns:
-            Self for chaining
+        See TMOS_AI/docs/human/items-economy-re-answers.md.
         """
-        # Convert items to spoiler log format
-        items = [
-            {"name": slot.item.name, "price": slot.price}
-            for slot in inventory.items
-        ]
-
-        # Generate location description if not provided
-        if location_desc is None:
-            location_desc = f"Screen {inventory.screen_index}"
-
-        self._log.shops.append(ShopInventory(
-            chapter=inventory.chapter,
-            screen=inventory.screen_index,
-            shop_type=inventory.shop_type.name.lower(),
-            location_desc=location_desc,
-            items=items,
-        ))
-        return self
+        raise NotImplementedError(
+            "add_shop_inventory is disabled: the CoreShopInventory data model "
+            "does not match ROM reality. Real shop data requires Bank 2 "
+            "bytecode RE. See TMOS_AI/docs/human/items-economy-re-answers.md."
+        )
 
     def add_chapter_shops(
         self,
         chapter_data: ChapterShopData,
     ) -> "SpoilerLogBuilder":
-        """Add all shops from a chapter's shop data.
-
-        Args:
-            chapter_data: ChapterShopData from shop randomization
-
-        Returns:
-            Self for chaining
-        """
-        for inventory in chapter_data.inventories:
-            self.add_shop_inventory(inventory)
-        return self
+        """DISABLED — consumes broken ChapterShopData data model."""
+        raise NotImplementedError(
+            "add_chapter_shops is disabled pending Bank 2 bytecode RE. "
+            "See TMOS_AI/docs/human/items-economy-re-answers.md."
+        )
 
     def add_chapter_map(
         self,

@@ -45,13 +45,17 @@ class EdgeCompatibilityValidator(Validator):
     DEFAULT_SEVERITY = Severity.ERROR
     SUPPORTED_PHASES = {ValidationPhase.DURING_NAVIGATION, ValidationPhase.FINAL}
 
-    def __init__(self, config: Optional[EdgeCompatibilityConfig] = None):
+    def __init__(self, config=None):
         """Initialize with configuration.
 
         Args:
             config: Edge compatibility settings
         """
-        self.config = config or EdgeCompatibilityConfig()
+        self._issues: List[ValidationIssue] = []
+        if isinstance(config, EdgeCompatibilityConfig):
+            self.config = config
+        else:
+            self.config = EdgeCompatibilityConfig()
 
     def validate_chapter(
         self,
@@ -79,7 +83,7 @@ class EdgeCompatibilityValidator(Validator):
                 severity=Severity.WARNING,
                 message="No ROM data available for edge validation",
                 screen_index=None,
-                chapter_num=chapter.chapter_number,
+                chapter_num=chapter.chapter_num,
             ))
             return issues
 
@@ -106,7 +110,7 @@ class EdgeCompatibilityValidator(Validator):
                     severity=Severity.INFO,
                     message=f"Stopped after {self.config.max_issues} issues (limit reached)",
                     screen_index=None,
-                    chapter_num=chapter.chapter_number,
+                    chapter_num=chapter.chapter_num,
                 ))
                 break
 
@@ -139,10 +143,10 @@ class EdgeCompatibilityValidator(Validator):
 
         # Check each navigation direction
         nav_directions = [
-            ("right", screen.nav_right, self.config.check_horizontal),
-            ("left", screen.nav_left, self.config.check_horizontal),
-            ("down", screen.nav_down, self.config.check_vertical),
-            ("up", screen.nav_up, self.config.check_vertical),
+            ("right", screen.screen_index_right, self.config.check_horizontal),
+            ("left", screen.screen_index_left, self.config.check_horizontal),
+            ("down", screen.screen_index_down, self.config.check_vertical),
+            ("up", screen.screen_index_up, self.config.check_vertical),
         ]
 
         for direction, nav_value, should_check in nav_directions:
@@ -174,7 +178,7 @@ class EdgeCompatibilityValidator(Validator):
                 direction,
                 screen_edges,
                 neighbor_edges,
-                chapter.chapter_number,
+                chapter.chapter_num,
             )
             issues.extend(edge_issues)
 
@@ -383,7 +387,8 @@ class EdgeCompatibilityValidator(Validator):
         """
         issues: List[ValidationIssue] = []
 
-        for chapter in game_world.chapters:
+        # game_world.chapters is a Dict[int, Chapter], iterate over values
+        for chapter in game_world.chapters.values():
             chapter_issues = self.validate_chapter(chapter, context)
             issues.extend(chapter_issues)
 

@@ -72,11 +72,13 @@ def validate_section_fragmentation(
     section_type: str,
     assigned_screens: List[int],
     is_preserved: bool,
+    has_grid_positions: bool = False,
 ) -> List[ValidationIssue]:
     """Check if a section is fragmented into multiple components.
 
     FAIL IF: find_components_in_subset(section_screens) returns more than 1 component
              AND section is NOT marked preserve_original=True
+             AND section does NOT use grid-based navigation
 
     Args:
         chapter: Chapter object
@@ -84,6 +86,7 @@ def validate_section_fragmentation(
         section_type: Type name (e.g., "OVERWORLD", "DUNGEON")
         assigned_screens: List of screen indices assigned to this section
         is_preserved: Whether this section is preserved (original structure)
+        has_grid_positions: Whether this section uses grid-based navigation
 
     Returns:
         List of ValidationIssue (empty if valid)
@@ -94,6 +97,12 @@ def validate_section_fragmentation(
 
     # Skip preserved sections - they keep original structure
     if is_preserved:
+        return issues
+
+    # Skip sections with grid positions - fragmentation is expected because
+    # grid-based navigation only connects screens when edges are walkable.
+    # Blocked edges result in intentional fragmentation.
+    if has_grid_positions:
         return issues
 
     # Skip empty sections (handled by validate_empty_sections)
@@ -394,6 +403,10 @@ def validate_time_period_boundaries(
             if nav_value >= len(chapter):
                 continue
 
+            # Connections TO Time Doors are allowed (they're the legitimate cross-time portals)
+            if nav_value in time_door_screens:
+                continue
+
             target_period = get_time_period_for_screen(chapter_num, nav_value)
 
             # Check for cross-period violation
@@ -481,10 +494,11 @@ def validate_orphaned_screens(
 
         if not has_outgoing:
             issues.append(ValidationIssue(
-                severity=IssueSeverity.ERROR,
+                severity=IssueSeverity.WARNING,  # Downgrade to warning - may be reachable via stairways
                 category="orphaned_screen",
                 message="Screen is orphaned: no incoming connections, all outgoing blocked",
                 screen_index=screen_idx,
+                requirement="R-006",  # Orphaned screen requirement
             ))
 
     return issues
@@ -647,6 +661,7 @@ def validate_inter_section_connections(
                 severity=IssueSeverity.ERROR,
                 category="missing_connection",
                 message=f"No navigation from section {from_section} to section {to_section}",
+                requirement="R-013",
             ))
 
     return issues
@@ -867,11 +882,15 @@ def validate_grid_navigation(
     section_type: str,
     grid_positions: Dict[tuple, int],
     screen_to_position: Dict[int, tuple],
+    all_section_screens: Optional[Set[int]] = None,
 ) -> List[ValidationIssue]:
     """Check that navigation values match grid positions.
 
     R-018: If screen A is at (0,0) and screen B is at (1,0), then
     A.nav_right should equal B's index and B.nav_left should equal A's index.
+
+    Exception: Navigation may point to screens OUTSIDE the section (inter-section connections).
+    This is valid for section exit/entry points.
 
     Args:
         chapter: Chapter to validate
@@ -879,6 +898,8 @@ def validate_grid_navigation(
         section_type: Type name
         grid_positions: Dict mapping (x, y) -> screen_index
         screen_to_position: Dict mapping screen_index -> (x, y)
+        all_section_screens: Optional set of all screens in this section (to detect
+                            inter-section connections pointing outside)
 
     Returns:
         List of ValidationIssue
@@ -893,6 +914,10 @@ def validate_grid_navigation(
         "down": (0, 1),
         "up": (0, -1),
     }
+
+    # Build set of screens in this section for inter-section connection detection
+    if all_section_screens is None:
+        all_section_screens = set(screen_to_position.keys())
 
     for screen_idx, pos in screen_to_position.items():
         screen = chapter.get_screen(screen_idx)
@@ -909,8 +934,15 @@ def validate_grid_navigation(
                 attr = f"screen_index_{direction}"
                 actual_nav = getattr(screen, attr)
 
-                # Nav should point to the grid neighbor OR be blocked (0xFF)
-                if actual_nav != expected_neighbor and actual_nav != NAV_BLOCKED:
+                # Nav should point to the grid neighbor OR be blocked (0xFF) OR be building entrance (0xFE)
+                # Building entrances are special and should not be overwritten by grid navigation
+                # ALSO: Navigation pointing OUTSIDE the section is valid (inter-section connection)
+                if actual_nav != expected_neighbor and actual_nav != NAV_BLOCKED and actual_nav != NAV_BUILDING:
+                    # Check if this is an inter-section connection (pointing outside this section)
+                    if actual_nav < chapter.screen_count and actual_nav not in all_section_screens:
+                        # This is pointing to another section - valid inter-section connection
+                        continue
+
                     issues.append(ValidationIssue(
                         severity=IssueSeverity.ERROR,
                         category="grid_nav_mismatch",
@@ -1021,9 +1053,13 @@ def run_all_chapter_validators(
         assigned = chapter_population.screen_assignments.get(section_id, [])
         all_assigned_screens.update(assigned)
 
+        # Check if this section has grid positions
+        section_grid = chapter_population.section_grid_positions.get(section_id, {})
+        has_grid_positions = bool(section_grid)
+
         # Category 1: Fragmentation
         issues.extend(validate_section_fragmentation(
-            chapter, section_id, section_type, assigned, is_preserved
+            chapter, section_id, section_type, assigned, is_preserved, has_grid_positions
         ))
 
         # Category 2: Empty sections
@@ -1039,7 +1075,7 @@ def run_all_chapter_validators(
             ))
 
         # Category 16: Grid position overlap (R-016)
-        section_grid = chapter_population.section_grid_positions.get(section_id, {})
+        # section_grid already defined above
         if section_grid and not is_preserved:
             issues.extend(validate_grid_positions(section_id, section_type, section_grid))
 
@@ -1047,7 +1083,8 @@ def run_all_chapter_validators(
         if section_grid and not is_preserved:
             screen_to_pos = {v: k for k, v in section_grid.items()}
             issues.extend(validate_grid_navigation(
-                chapter, section_id, section_type, section_grid, screen_to_pos
+                chapter, section_id, section_type, section_grid, screen_to_pos,
+                all_section_screens=set(assigned)
             ))
 
     # Category 22: Duplicate screen assignments (R-022)

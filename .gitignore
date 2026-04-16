@@ -98,3 +98,6 @@ desktop.ini
 *.dll
 *.o
 *.obj
+
+# Python virtualenv
+.venv/

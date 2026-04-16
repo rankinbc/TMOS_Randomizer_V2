@@ -10,8 +10,6 @@ from typing import Dict, List, Optional, Union
 
 from ..core.constants import (
     CHAPTER_BASES,
-    SHOP_ITEM_TABLE,
-    SHOP_ENTRY_SIZE,
     WORLDSCREEN_SIZE,
 )
 from ..core.shop_inventory import ChapterShopData, ShopInventory
@@ -115,18 +113,17 @@ class ROMWriter:
         return written
 
     def write_shop_inventory(self, inventory: ShopInventory, shop_index: int) -> None:
-        """Write a single shop's inventory to ROM.
+        """DISABLED — would corrupt the inventory cap table at 0xD544.
 
-        Args:
-            inventory: ShopInventory object with randomized items
-            shop_index: Index of shop in the shop table (0-based)
+        SHOP_ITEM_TABLE (0xD544) is actually the inventory cap table, not a
+        shop slot table. See TMOS_AI/docs/human/items-economy-re-answers.md.
         """
-        address = SHOP_ITEM_TABLE + (shop_index * SHOP_ENTRY_SIZE)
-        data = inventory.to_rom_bytes()
-        self.write_bytes(
-            address,
-            data,
-            f"Shop {shop_index} (Ch{inventory.chapter}:Scr{inventory.screen_index})",
+        raise NotImplementedError(
+            "write_shop_inventory is disabled: target table at 0xD544 is the "
+            "inventory cap table, not shop slots. Writing here corrupts "
+            "inventory caps and the adjacent inv_pickup_handler code. "
+            "Real shop data lives in an undecoded Bank 2 bytecode interpreter. "
+            "See TMOS_AI/docs/human/items-economy-re-answers.md."
         )
 
     def write_chapter_shops(
@@ -134,42 +131,21 @@ class ROMWriter:
         chapter_data: ChapterShopData,
         start_index: int = 0,
     ) -> int:
-        """Write all shop inventories for a chapter.
-
-        Args:
-            chapter_data: ChapterShopData with randomized shop inventories
-            start_index: Starting shop index in the ROM table
-
-        Returns:
-            Number of shops written
-        """
-        for i, inventory in enumerate(chapter_data.inventories):
-            self.write_shop_inventory(inventory, start_index + i)
-        return len(chapter_data.inventories)
+        """DISABLED — calls write_shop_inventory which would corrupt ROM."""
+        raise NotImplementedError(
+            "write_chapter_shops is disabled pending Bank 2 bytecode RE. "
+            "See TMOS_AI/docs/human/items-economy-re-answers.md."
+        )
 
     def write_all_shops(
         self,
         all_chapter_data: Dict[int, ChapterShopData],
     ) -> int:
-        """Write all shop inventories for all chapters.
-
-        Args:
-            all_chapter_data: Dict mapping chapter number to ChapterShopData
-
-        Returns:
-            Total number of shops written
-        """
-        written = 0
-        shop_index = 0
-
-        # Write shops in chapter order
-        for chapter_num in sorted(all_chapter_data.keys()):
-            chapter_data = all_chapter_data[chapter_num]
-            count = self.write_chapter_shops(chapter_data, shop_index)
-            shop_index += count
-            written += count
-
-        return written
+        """DISABLED — calls write_chapter_shops which would corrupt ROM."""
+        raise NotImplementedError(
+            "write_all_shops is disabled pending Bank 2 bytecode RE. "
+            "See TMOS_AI/docs/human/items-economy-re-answers.md."
+        )
 
     def save(self, output_path: Union[str, Path]) -> None:
         """Save modified ROM to file.
@@ -223,16 +199,19 @@ def patch_rom(
     Returns:
         Dict with counts: {"screens": int, "shops": int}
     """
+    if shop_data is not None:
+        raise NotImplementedError(
+            "patch_rom(..., shop_data=...) is disabled: shop writing would "
+            "corrupt the inventory cap table at 0xD544. Pass shop_data=None. "
+            "See TMOS_AI/docs/human/items-economy-re-answers.md."
+        )
+
     with open(original_path, "rb") as f:
         rom_data = f.read()
 
     writer = ROMWriter(rom_data)
     screens_written = writer.write_game_world(world, modified_only=True)
 
-    shops_written = 0
-    if shop_data:
-        shops_written = writer.write_all_shops(shop_data)
-
     writer.save(output_path)
 
-    return {"screens": screens_written, "shops": shops_written}
+    return {"screens": screens_written, "shops": 0}

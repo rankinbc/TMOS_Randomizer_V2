@@ -84,6 +84,9 @@ class SectionShape:
     screens: List[ScreenNode] = field(default_factory=list)
     entry_points: List[int] = field(default_factory=list)  # local_ids
     exit_points: List[int] = field(default_factory=list)   # local_ids
+    # Time period — copied from SectionPlan so downstream phases can keep
+    # PAST and PRESENT in disjoint chapter-grid regions.
+    is_past: bool = False
 
     @property
     def screen_count(self) -> int:
@@ -134,6 +137,13 @@ class WorldShape:
 
     chapters: List[ChapterShape] = field(default_factory=list)
     seed: int = 0
+
+    def get_chapter(self, chapter_num: int) -> Optional[ChapterShape]:
+        """Get shape for a specific chapter."""
+        for chapter in self.chapters:
+            if chapter.chapter_num == chapter_num:
+                return chapter
+        return None
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary."""
@@ -560,7 +570,11 @@ def generate_section_shape(
         screens=screens,
         entry_points=entry_points,
         exit_points=exit_points,
+        is_past=section_plan.is_past,
     )
+
+
+_TIME_PERIOD_GAP = 2  # Blank rows between PRESENT and PAST chapter regions.
 
 
 def shape_chapter(
@@ -568,6 +582,10 @@ def shape_chapter(
     rng: random.Random,
 ) -> ChapterShape:
     """Generate shapes for all sections in a chapter.
+
+    PAST sections are shifted down on the chapter grid so their screen
+    positions can never become directly adjacent to PRESENT ones (the only
+    sanctioned cross-time traversal is via Time Doors).
 
     Args:
         chapter_plan: The chapter plan from phase 1
@@ -586,7 +604,45 @@ def shape_chapter(
         section_shape = generate_section_shape(section_plan, rng)
         chapter_shape.sections.append(section_shape)
 
+    _partition_time_periods(chapter_shape)
+
     return chapter_shape
+
+
+def _partition_time_periods(chapter_shape: ChapterShape) -> None:
+    """Shift PAST sections so they occupy a distinct chapter-grid region.
+
+    Each section shape is generated with a local origin of (0,0). Without
+    this shift, a PRESENT section at y=0 and a PAST section at y=0 would
+    share the same row of the chapter grid, letting the UI (and any future
+    grid-joining code) treat them as visual neighbours.
+    """
+    present_sections = [s for s in chapter_shape.sections if not s.is_past]
+    past_sections = [s for s in chapter_shape.sections if s.is_past]
+
+    if not past_sections:
+        return
+
+    if present_sections:
+        max_present_y = max(
+            screen.position.y
+            for shape in present_sections
+            for screen in shape.screens
+        )
+        offset_y = max_present_y + 1 + _TIME_PERIOD_GAP
+    else:
+        offset_y = 0
+
+    for shape in past_sections:
+        _shift_shape_y(shape, offset_y)
+
+
+def _shift_shape_y(shape: SectionShape, dy: int) -> None:
+    """Translate every screen in a shape by dy on the y-axis (in place)."""
+    if dy == 0:
+        return
+    for screen in shape.screens:
+        screen.position = ScreenPosition(screen.position.x, screen.position.y + dy)
 
 
 def shape_world(

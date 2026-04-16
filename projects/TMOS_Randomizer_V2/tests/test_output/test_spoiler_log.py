@@ -302,6 +302,50 @@ class TestSpoilerLogBuilder:
         assert len(log.shops) == 1
         assert log.shops[0].shop_type == "weapon"
 
+    def test_add_shop_inventory_raises(self):
+        """Disabled in Phase 0: consumes the broken CoreShopInventory model."""
+        from tmos_randomizer.core.shop_inventory import (
+            ShopInventory as CoreShopInventory,
+            ShopSlot,
+        )
+        from tmos_randomizer.core.shop_items import (
+            ShopItem, ShopType, ItemCategory,
+        )
+        item = ShopItem(
+            item_id=1, name="Bread", base_price=20,
+            category=ItemCategory.CONSUMABLE,
+            shop_types=frozenset({ShopType.GENERAL}),
+        )
+        inv = CoreShopInventory(
+            content_value=0x60, chapter=1, screen_index=0,
+            shop_type=ShopType.GENERAL,
+            items=[ShopSlot(item=item, price=20, quantity=0, slot_index=0)],
+        )
+        builder = SpoilerLogBuilder(seed=12345)
+        with pytest.raises(NotImplementedError) as excinfo:
+            builder.add_shop_inventory(inv)
+        assert "items-economy-re-answers.md" in str(excinfo.value)
+
+    def test_add_chapter_shops_raises(self):
+        """Disabled in Phase 0: consumes the broken ChapterShopData model."""
+        from tmos_randomizer.core.shop_inventory import ChapterShopData
+        builder = SpoilerLogBuilder(seed=12345)
+        with pytest.raises(NotImplementedError) as excinfo:
+            builder.add_chapter_shops(ChapterShopData(chapter_num=1, inventories=[]))
+        assert "items-economy-re-answers.md" in str(excinfo.value)
+
+    def test_shop_section_emits_not_supported_notice(self):
+        """The spoiler text must carry the fixed 'not yet supported' notice,
+        not fabricated shop inventory data."""
+        builder = SpoilerLogBuilder(seed=12345)
+        builder.set_rom_hash("abc")
+        log = builder.build()
+        text = generate_text_spoiler(log)
+        assert "SHOP INVENTORIES" in text
+        assert "Shop randomization is not yet supported" in text
+        # Must NOT contain the old fabricated output like "Sword Level 2 ... 500 gold"
+        assert " gold" not in text.split("SHOP INVENTORIES")[1].split("MAP LAYOUT")[0]
+
     def test_add_chapter_map(self):
         """Test adding chapter map info."""
         builder = SpoilerLogBuilder(seed=44444)

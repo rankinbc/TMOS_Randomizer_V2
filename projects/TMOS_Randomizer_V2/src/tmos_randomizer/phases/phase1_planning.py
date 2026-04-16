@@ -9,11 +9,19 @@ This phase determines:
 from __future__ import annotations
 
 import random
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.constants import CHAPTER_OFFSETS
-from ..core.enums import SectionType, BOSS_SCREENS_BY_CHAPTER, VICTORY_SCREENS_BY_CHAPTER
+from ..core.enums import (
+    SectionType,
+    BOSS_SCREENS_BY_CHAPTER,
+    VICTORY_SCREENS_BY_CHAPTER,
+    PARENTWORLD_TO_SECTION,
+    is_past_screen_index,
+    TimePeriod,
+)
 from ..io.config_loader import RandomizerConfig
 
 
@@ -139,6 +147,95 @@ RESERVED_SCREENS_PER_CHAPTER: Dict[int, int] = {
 
 
 # =============================================================================
+# Screen Analysis Functions (for time-period-aware planning)
+# =============================================================================
+
+def analyze_chapter_screens(chapter_num: int) -> Dict[Tuple[SectionType, bool], int]:
+    """Analyze screens in a chapter by (SectionType, is_past) combinations.
+
+    This function determines what types of screens exist in each time period
+    so we can create appropriate sections for both PRESENT and PAST screens.
+
+    Args:
+        chapter_num: Chapter number (1-5)
+
+    Returns:
+        Dict mapping (SectionType, is_past) -> count of screens
+    """
+    _, screen_count = CHAPTER_OFFSETS[chapter_num]
+
+    # Get excluded screens using hardcoded sets
+    boss_screens = BOSS_SCREENS_BY_CHAPTER.get(chapter_num, set())
+    victory_screens = VICTORY_SCREENS_BY_CHAPTER.get(chapter_num, set())
+    excluded = boss_screens | victory_screens
+
+    # Count screens by (SectionType, is_past) combination
+    counts: Dict[Tuple[SectionType, bool], int] = defaultdict(int)
+
+    for screen_idx in range(screen_count):
+        if screen_idx in excluded:
+            continue
+
+        # Determine time period
+        is_past = is_past_screen_index(chapter_num, screen_idx)
+
+        # We can't determine SectionType without actual screen data
+        # So we'll use OVERWORLD as a placeholder
+        # Phase 4's filtering handles actual section type matching
+        section_type = SectionType.OVERWORLD
+
+        counts[(section_type, is_past)] += 1
+
+    return dict(counts)
+
+
+def get_time_period_screen_counts(chapter_num: int) -> Tuple[int, int]:
+    """Get counts of PRESENT and PAST screens in a chapter.
+
+    Args:
+        chapter_num: Chapter number (1-5)
+
+    Returns:
+        Tuple of (present_count, past_count)
+    """
+    _, screen_count = CHAPTER_OFFSETS[chapter_num]
+
+    # Get excluded screens (boss, victory) using hardcoded sets
+    boss_screens = BOSS_SCREENS_BY_CHAPTER.get(chapter_num, set())
+    victory_screens = VICTORY_SCREENS_BY_CHAPTER.get(chapter_num, set())
+    excluded = boss_screens | victory_screens
+
+    present_count = 0
+    past_count = 0
+
+    for screen_idx in range(screen_count):
+        if screen_idx in excluded:
+            continue
+
+        if is_past_screen_index(chapter_num, screen_idx):
+            past_count += 1
+        else:
+            present_count += 1
+
+    return present_count, past_count
+
+
+def _pick_count(rule, rng: random.Random) -> int:
+    """Pick an integer in [rule.min, rule.max] using rule.weights if set."""
+    if rule is None:
+        return 1
+    lo = max(0, int(rule.min))
+    hi = max(lo, int(rule.max))
+    choices = list(range(lo, hi + 1))
+    if not choices:
+        return 0
+    weights = rule.weights
+    if weights and len(weights) == len(choices):
+        return rng.choices(choices, weights=weights, k=1)[0]
+    return rng.choice(choices)
+
+
+# =============================================================================
 # Planning Functions
 # =============================================================================
 
@@ -185,42 +282,68 @@ def _add_required_sections(
 ) -> None:
     """Add required sections (minimum one of each type) to the plan.
 
+    CRITICAL: Creates SEPARATE sections for PRESENT and PAST time periods.
+    This ensures screens are never mixed across time periods.
+
     Time period assignment (is_past):
-    - First overworld: PRESENT (is_past=False)
-    - Second+ overworld: PAST (is_past=True)
-    - First town: PRESENT (is_past=False)
-    - Second+ town: PAST (is_past=True)
-    - Maze: PAST (is_past=True) - typically accessed via Time Door
-    - Dungeon: PRESENT by default
-    - Boss/Victory: PRESENT by default
+    - OVERWORLD: Creates both PRESENT and PAST sections (if PAST screens exist)
+    - TOWN: First is PRESENT, second is PAST
+    - DUNGEON: PRESENT only (no PAST dungeon screens typically)
+    - MAZE: PAST only (accessed via Time Door)
+    - BOSS/VICTORY: PRESENT (protected screens)
     """
     section_id = 0
 
-    # Add required overworld sections
-    overworld_count = REQUIRED_SECTIONS.get(SectionType.OVERWORLD, 1)
-    for i in range(overworld_count):
-        defaults = SECTION_DEFAULTS["overworld"]
+    # Analyze chapter to determine screen counts by time period
+    present_count, past_count = get_time_period_screen_counts(plan.chapter_num)
+
+    # =========================================================================
+    # OVERWORLD SECTIONS - ALWAYS create both PRESENT and PAST
+    # =========================================================================
+    defaults = SECTION_DEFAULTS["overworld"]
+
+    # OVERWORLD (PRESENT) - always create
+    section_id += 1
+    # Estimate target size based on proportion of present screens
+    present_ratio = present_count / (present_count + past_count) if (present_count + past_count) > 0 else 0.6
+    present_target = max(defaults["min"], int(defaults["default"] * present_ratio))
+    plan.sections.append(SectionPlan(
+        section_type=SectionType.OVERWORLD,
+        section_id=section_id,
+        target_screen_count=present_target,
+        min_screens=defaults["min"],
+        max_screens=defaults["max"],
+        shape=_get_shape_for_section(SectionType.OVERWORLD, config),
+        is_required=True,
+        is_past=False,  # PRESENT
+    ))
+
+    # OVERWORLD (PAST) - create if there are PAST screens
+    if past_count > 0:
         section_id += 1
-        # First overworld is PRESENT, additional overworlds are PAST
-        is_past = i > 0
+        past_target = max(defaults["min"], int(defaults["default"] * (1 - present_ratio)))
         plan.sections.append(SectionPlan(
             section_type=SectionType.OVERWORLD,
             section_id=section_id,
-            target_screen_count=defaults["min"],
+            target_screen_count=past_target,
             min_screens=defaults["min"],
             max_screens=defaults["max"],
             shape=_get_shape_for_section(SectionType.OVERWORLD, config),
             is_required=True,
-            is_past=is_past,
+            is_past=True,  # PAST
         ))
 
-    # Add required town sections
-    town_count = REQUIRED_SECTIONS.get(SectionType.TOWN, 2)
+    # Town count — driven by config.section_counts (defaults: 2-4 weighted).
+    town_rule = config.section_counts.for_chapter(plan.chapter_num, "town")
+    town_count = _pick_count(town_rule, rng)
+    past_town_slots = 0
+    if past_count > 0:
+        # At most half the towns may be past-era, and only if past screens exist.
+        past_town_slots = min(town_count // 2, 1 if town_count <= 2 else 2)
     for i in range(town_count):
         defaults = SECTION_DEFAULTS["town"]
         section_id += 1
-        # First town is PRESENT, second+ towns are PAST
-        is_past = i > 0
+        is_past = i >= (town_count - past_town_slots)
         plan.sections.append(SectionPlan(
             section_type=SectionType.TOWN,
             section_id=section_id,
@@ -248,10 +371,12 @@ def _add_required_sections(
             is_past=False,  # Dungeon typically in PRESENT
         ))
 
-    # Add maze section (preserved by default)
-    # Mazes are typically in PAST (accessed via Time Door)
+    # Maze section — driven by config.section_counts.
+    maze_rule = config.section_counts.for_chapter(plan.chapter_num, "maze")
+    maze_count = _pick_count(maze_rule, rng)
+    include_maze = past_count > 0 and maze_count >= 1
     maze_enabled = config.shuffling.get("mazes", None)
-    if maze_enabled is None or not maze_enabled.enabled:
+    if include_maze and (maze_enabled is None or not maze_enabled.enabled):
         defaults = SECTION_DEFAULTS["maze"]
         section_id += 1
         plan.sections.append(SectionPlan(
@@ -262,7 +387,7 @@ def _add_required_sections(
             max_screens=defaults["max"],
             shape="maze",
             preserve_original=True,
-            is_past=True,  # Mazes are typically in PAST
+            is_past=True,
         ))
 
     # Add BOSS section (fixed screens, preserve original navigation)

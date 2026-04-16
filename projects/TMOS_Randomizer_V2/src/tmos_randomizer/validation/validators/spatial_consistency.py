@@ -121,8 +121,12 @@ class SpatialConsistencyValidator(Validator):
     DEFAULT_SEVERITY = Severity.WARNING
     SUPPORTED_PHASES = {ValidationPhase.DURING_NAVIGATION, ValidationPhase.FINAL}
 
-    def __init__(self, config: Optional[SpatialConsistencyConfig] = None):
-        self.config = config or SpatialConsistencyConfig()
+    def __init__(self, config=None):
+        self._issues: List[ValidationIssue] = []
+        if isinstance(config, SpatialConsistencyConfig):
+            self.config = config
+        else:
+            self.config = SpatialConsistencyConfig()
 
     def validate_chapter(
         self,
@@ -139,7 +143,7 @@ class SpatialConsistencyValidator(Validator):
         world_population = context.get("world_population")
         chapter_pop = None
         if world_population:
-            chapter_pop = world_population.get_chapter(chapter.chapter_number)
+            chapter_pop = world_population.get_chapter(chapter.chapter_num)
 
         # Build screen -> section mapping
         screen_to_section: Dict[int, int] = {}
@@ -174,7 +178,7 @@ class SpatialConsistencyValidator(Validator):
                         f"(screens: {screen_str}, sections: {section_str})"
                     ),
                     screen_index=conflict.screens[0],
-                    chapter_num=chapter.chapter_number,
+                    chapter_num=chapter.chapter_num,
                     details={
                         "position": (conflict.x, conflict.y),
                         "screens": conflict.screens,
@@ -191,11 +195,11 @@ class SpatialConsistencyValidator(Validator):
                 validator_id=self.VALIDATOR_ID,
                 severity=severity,
                 message=(
-                    f"Chapter {chapter.chapter_number} has {len(analysis.conflicts)} "
+                    f"Chapter {chapter.chapter_num} has {len(analysis.conflicts)} "
                     f"spatial conflicts - navigation grid is inconsistent"
                 ),
                 screen_index=None,
-                chapter_num=chapter.chapter_number,
+                chapter_num=chapter.chapter_num,
                 details=analysis.to_dict(),
             ))
 
@@ -284,7 +288,7 @@ class SpatialConsistencyValidator(Validator):
             bounds = (0, 0, 0, 0)
 
         return SpatialAnalysis(
-            chapter_num=chapter.chapter_number,
+            chapter_num=chapter.chapter_num,
             total_screens_mapped=len(screen_positions),
             grid_bounds=bounds,
             conflicts=conflicts,

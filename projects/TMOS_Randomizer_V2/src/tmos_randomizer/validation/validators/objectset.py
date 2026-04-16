@@ -51,13 +51,17 @@ class DataPointerObjectSetValidator(Validator):
     DEFAULT_SEVERITY = Severity.ERROR
     SUPPORTED_PHASES = {ValidationPhase.DURING_POPULATION, ValidationPhase.FINAL}
 
-    def __init__(self, config: Optional[DataPointerObjectSetConfig] = None):
+    def __init__(self, config=None):
         """Initialize with configuration.
 
         Args:
             config: ObjectSet validation settings
         """
-        self.config = config or DataPointerObjectSetConfig()
+        self._issues: List[ValidationIssue] = []
+        if isinstance(config, DataPointerObjectSetConfig):
+            self.config = config
+        else:
+            self.config = DataPointerObjectSetConfig()
 
     def validate_chapter(
         self,
@@ -82,7 +86,7 @@ class DataPointerObjectSetValidator(Validator):
         for screen in chapter.screens:
             screen_issues = self._validate_screen(
                 screen,
-                chapter.chapter_number,
+                chapter.chapter_num,
                 registry,
             )
             issues.extend(screen_issues)
@@ -94,7 +98,7 @@ class DataPointerObjectSetValidator(Validator):
                     severity=Severity.INFO,
                     message=f"Stopped after {self.config.max_issues} issues (limit reached)",
                     screen_index=None,
-                    chapter_num=chapter.chapter_number,
+                    chapter_num=chapter.chapter_num,
                 ))
                 break
 
@@ -270,7 +274,8 @@ class DataPointerObjectSetValidator(Validator):
         """
         issues: List[ValidationIssue] = []
 
-        for chapter in game_world.chapters:
+        # game_world.chapters is a Dict[int, Chapter], iterate over values
+        for chapter in game_world.chapters.values():
             chapter_issues = self.validate_chapter(chapter, context)
             issues.extend(chapter_issues)
 

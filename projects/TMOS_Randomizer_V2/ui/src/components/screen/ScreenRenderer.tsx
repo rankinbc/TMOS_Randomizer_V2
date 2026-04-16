@@ -27,13 +27,15 @@ function getScreenRenderUrl(
   scale: number = 4,
   topTiles?: number,
   bottomTiles?: number,
-  datapointer?: number
+  datapointer?: number,
+  wsColor?: number
 ): string {
   let url = `${API_BASE}/api/rom/render/${chapterNum}/${screenIndex}?scale=${scale}`;
   // Add cache-busting params based on tile data
   if (topTiles !== undefined) url += `&t=${topTiles}`;
   if (bottomTiles !== undefined) url += `&b=${bottomTiles}`;
   if (datapointer !== undefined) url += `&d=${datapointer}`;
+  if (wsColor !== undefined) url += `&ws_color=${wsColor}`;
   return url;
 }
 
@@ -54,7 +56,8 @@ export function ScreenRenderer({
     apiScale,
     screen.top_tiles,
     screen.bottom_tiles,
-    screen.datapointer
+    screen.datapointer,
+    screen.worldscreen_color
   );
   const screenId = formatScreenId(screen.index, screen.global_index, chapterNum);
 
@@ -128,6 +131,7 @@ export function ScreenMini({
   selected = false,
   onClick,
   showIndex = true,
+  tileOpacity = 1,
 }: {
   screen: ScreenData;
   chapterNum: number;
@@ -135,16 +139,21 @@ export function ScreenMini({
   selected?: boolean;
   onClick?: () => void;
   showIndex?: boolean;
+  /** Opacity 0-1 of the rendered tile graphics (0 = hide, only background+index visible) */
+  tileOpacity?: number;
 }) {
-  // Use API scale 1 (512x384), CSS will resize to thumbnail
-  const apiScale = 1;
+  // Request a higher-res render than we'll display so the browser has plenty
+  // of source pixels to downsample from. Combined with imageRendering:'auto'
+  // below, this produces much crisper thumbnails than scale=1 + 'pixelated'.
+  const apiScale = 4;
   const renderUrl = getScreenRenderUrl(
     chapterNum,
     screen.index,
     apiScale,
     screen.top_tiles,
     screen.bottom_tiles,
-    screen.datapointer
+    screen.datapointer,
+    screen.worldscreen_color
   );
   const screenId = formatScreenId(screen.index, screen.global_index, chapterNum);
 
@@ -160,22 +169,31 @@ export function ScreenMini({
       style={{
         width,
         height,
-        backgroundColor: getGroundColor(screen.worldscreen_color),
+        // Wrapper itself is fully transparent — when tile graphics fade out,
+        // the canvas behind shows through (clear) instead of a green wash.
+        backgroundColor: 'transparent',
       }}
       onClick={onClick}
       title={screenId.full}
     >
-      <img
-        src={renderUrl}
-        alt={`Screen ${screenId.short}`}
-        className="w-full h-full object-cover"
-        style={{ imageRendering: 'pixelated' }}
-        onError={(e) => {
-          e.currentTarget.style.display = 'none';
-          const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-          if (fallback) fallback.style.display = 'flex';
-        }}
-      />
+      {tileOpacity > 0 && (
+        <img
+          src={renderUrl}
+          alt={`Screen ${screenId.short}`}
+          className="absolute inset-0 w-full h-full object-cover"
+          // 'auto' lets the browser use smooth (bilinear/bicubic) downsampling
+          // on our 4x source, which is much clearer than nearest-neighbor.
+          // The renderer now bakes the WorldScreen color into the image
+          // (including missing-tile fallbacks), so no separate bg layer is
+          // needed and reduced opacity reveals the dark canvas behind.
+          style={{ imageRendering: 'auto', opacity: tileOpacity }}
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+            if (fallback) fallback.style.display = 'flex';
+          }}
+        />
+      )}
       {/* Fallback colored div when image fails */}
       <div
         className="absolute inset-0 items-center justify-center text-white text-[10px] font-bold hidden"

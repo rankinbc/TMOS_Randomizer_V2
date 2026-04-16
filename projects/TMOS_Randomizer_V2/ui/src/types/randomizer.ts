@@ -93,6 +93,11 @@ export interface AllyPlacement {
   placement_notes?: string;
 }
 
+// PROVISIONAL — shop data is not populated by the backend today. The real
+// per-shop inventory lives in an undecoded Bank 2 bytecode interpreter.
+// Do not build UI against this shape until Bank 2 RE is complete.
+// See: ../../../docs/human/items-economy-re-answers.md (in TMOS_AI repo)
+//      and core/items.py (GAMEPLAY_ITEMS / BATTLE_ITEMS) for the live item registry.
 export interface ShopInventory {
   shop_id: string;
   chapter: number;
@@ -152,7 +157,7 @@ export interface ChapterPlan {
   screens: ScreenPlan[];
   item_placements: ItemPlacement[];
   ally_placements: AllyPlacement[];
-  shop_inventories: ShopInventory[];
+  shop_inventories: ShopInventory[];  // PROVISIONAL — not populated; see ShopInventory note above
   validation: ValidationResult;
 }
 
@@ -218,7 +223,10 @@ export interface ShapeWeights {
   grid: number;
 }
 
+export type RandomizationStrategy = 'organic' | 'classic';
+
 export interface RandomizerSettings {
+  strategy?: RandomizationStrategy;
   preset?: 'standard' | 'chaos' | 'beginner' | 'custom';
   shuffle_overworld: boolean;
   shuffle_towns: boolean;

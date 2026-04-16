@@ -3,6 +3,7 @@ Screen rendering module for TMOS Randomizer.
 
 Renders WorldScreen visuals by compositing tile images based on TileSection data.
 """
+from __future__ import annotations
 
 import os
 import logging
@@ -295,22 +296,34 @@ class ScreenRenderer:
         # Return None for missing tiles
         return None
 
-    def _create_fallback_tile(self, tile_id: int) -> Image.Image:
-        """Create a colored fallback tile for missing images."""
-        # Use tile ID to generate a deterministic color
-        r = (tile_id * 37) % 256
-        g = (tile_id * 73) % 256
-        b = (tile_id * 113) % 256
+    def _create_fallback_tile(
+        self,
+        tile_id: int,
+        bg_color: Optional[Tuple[int, int, int]] = None,
+    ) -> Image.Image:
+        """Create a fallback tile for missing images.
 
-        img = Image.new('RGB', (TILE_PIXEL_SIZE, TILE_PIXEL_SIZE), (r, g, b))
-        return img
+        When ``bg_color`` is provided we use it (matching the WorldScreen
+        ground color), so missing tiles read as "this is just the ground"
+        rather than a random per-tile-ID color. Without ``bg_color`` we fall
+        back to the legacy deterministic color so callers that don't know
+        the WS color still get *some* visual indication.
+        """
+        if bg_color is None:
+            r = (tile_id * 37) % 256
+            g = (tile_id * 73) % 256
+            b = (tile_id * 113) % 256
+            bg_color = (r, g, b)
+
+        return Image.new('RGB', (TILE_PIXEL_SIZE, TILE_PIXEL_SIZE), bg_color)
 
     def render_screen(
         self,
         top_tiles: int,
         bottom_tiles: int,
         datapointer: int,
-        scale: int = 1
+        scale: int = 1,
+        ws_color: Optional[int] = None,
     ) -> Image.Image:
         """
         Render a complete screen image.
@@ -320,6 +333,9 @@ class ScreenRenderer:
             bottom_tiles: BottomTiles TileSection index from WorldScreen
             datapointer: DataPointer value from WorldScreen (for bank selection)
             scale: Scale factor for output image (1 = 64x56, 2 = 128x112, etc.)
+            ws_color: WorldScreen color byte. When provided, the canvas base
+                and missing-tile fallbacks use the ground color for that
+                value, matching what the Tiles page shows for missing tiles.
 
         Returns:
             PIL Image of the rendered screen
@@ -335,17 +351,23 @@ class ScreenRenderer:
         # Extract CHR bank index from datapointer (bits 0-5)
         chr_bank = datapointer & 0x3F
 
+        # Resolve background color from WS color (defaults to black if not given)
+        if ws_color is not None:
+            base_color = get_ground_color(ws_color)
+        else:
+            base_color = (0, 0, 0)
+
         # Create output image
         width = SCREEN_WIDTH_PX * scale
         height = SCREEN_HEIGHT_PX * scale
-        output = Image.new('RGB', (width, height), (0, 0, 0))
+        output = Image.new('RGB', (width, height), base_color)
 
         # Render each tile
         for row_idx, row in enumerate(tile_grid):
             for col_idx, tile_id in enumerate(row):
                 tile_img = self._load_tile_image(tile_id, chr_bank)
                 if tile_img is None:
-                    tile_img = self._create_fallback_tile(tile_id)
+                    tile_img = self._create_fallback_tile(tile_id, base_color if ws_color is not None else None)
 
                 # Scale tile if needed
                 if scale > 1:
@@ -367,7 +389,8 @@ class ScreenRenderer:
         bottom_tiles: int,
         datapointer: int,
         scale: int = 1,
-        format: str = 'PNG'
+        format: str = 'PNG',
+        ws_color: Optional[int] = None,
     ) -> bytes:
         """
         Render a screen and return as bytes (for HTTP response).
@@ -378,11 +401,12 @@ class ScreenRenderer:
             datapointer: DataPointer value
             scale: Scale factor
             format: Image format ('PNG', 'JPEG', etc.)
+            ws_color: WorldScreen color byte (see render_screen).
 
         Returns:
             Image bytes
         """
-        img = self.render_screen(top_tiles, bottom_tiles, datapointer, scale)
+        img = self.render_screen(top_tiles, bottom_tiles, datapointer, scale, ws_color=ws_color)
         buffer = BytesIO()
         img.save(buffer, format=format)
         return buffer.getvalue()

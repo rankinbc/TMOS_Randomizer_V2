@@ -1,29 +1,23 @@
-"""Shop inventory randomization algorithm.
+"""Shop inventory randomization algorithm — DISABLED.
 
-This module implements the shop randomization algorithm which:
-- Randomizes which items appear in each shop
-- Randomizes prices with configurable variance
-- Preserves shop type distinctions (general vs magic)
-- Excludes progression items (swords/rods)
-- Ensures required items are available
+This module randomized a phantom data structure. The target table at 0xD544
+is NOT a shop slot table — it's the inventory cap table read by the
+inv_pickup_handler in Bank 3 $94B0. Writing the output of this module to
+that address would corrupt both the caps and the adjacent 6502 code.
+
+Real shop data lives in an undecoded Bank 2 bytecode interpreter. Until
+that interpreter is reverse-engineered, shop randomization is not supported.
+
+See TMOS_AI/docs/human/items-economy-re-answers.md for the RE finding.
 """
 
-import random
-from collections import defaultdict
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
-
-from ..core.shop_items import (
-    REQUIRED_ITEMS,
-    SHOP_ITEMS,
-    ShopItem,
-    ShopType,
-    get_item_pool,
-    get_shop_type,
-    is_shop_content,
+raise ImportError(
+    "tmos_randomizer.logic.shop_randomization is disabled: the data model "
+    "(ShopSlot with item_id+price) does not match ROM reality. The target "
+    "table at 0xD544 is the inventory cap table, not shop slots. "
+    "Real shop data requires Bank 2 bytecode RE (not yet done). "
+    "See TMOS_AI/docs/human/items-economy-re-answers.md."
 )
-from ..core.shop_inventory import ChapterShopData, ShopInventory, ShopSlot
-from ..io.config_loader import ShopRandomizationConfig
 
 
 @dataclass

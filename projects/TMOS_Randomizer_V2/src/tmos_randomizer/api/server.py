@@ -47,6 +47,14 @@ from ..io.config_loader import RandomizerConfig, get_default_config
 from ..io.rom_reader import ROMReader, load_rom
 from ..core.chapter import Chapter, GameWorld
 from ..core.constants import get_chr_index, TILE_TABLE_ADDR, TILE_COUNT, TILE_SIZE
+from ..core import inventory_caps as _inv_caps
+from ..core import exp_table as _exp_table
+from ..core import player_stats as _player_stats
+from ..core import enemies as _enemies
+from ..core import enemy_stats as _enemy_stats
+from ..core import encounter_lineups as _encounter_lineups
+from ..core import encounter_groups as _encounter_groups
+from ..core import items as _items
 from ..core.enums import NAV_BLOCKED, NAV_BUILDING_ENTRANCE
 from ..logic.navigation import connect_screens, disconnect_screens, OPPOSITE_DIRECTIONS
 
@@ -71,10 +79,13 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS for local development - allow all origins
+# CORS for local development.
+# Note: allow_origins=["*"] + allow_credentials=True is silently invalid per
+# the CORS spec — the wildcard is dropped. Use a regex to match any localhost
+# port instead, which keeps credentials working for the dev workflow.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins in development
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,7 +97,8 @@ _randomizer: Optional[Randomizer] = None
 _game_world: Optional[GameWorld] = None
 _rom_path: Optional[Path] = None
 _rom_filename: Optional[str] = None
-_rom_data: Optional[bytes] = None  # Raw ROM bytes for rendering
+_rom_data: Optional[bytes] = None  # Raw ROM bytes for rendering (mutated by edits)
+_rom_vanilla: Optional[bytes] = None  # Snapshot of ROM as uploaded (never mutated)
 _screen_renderer: Optional[Any] = None  # ScreenRenderer instance
 
 
@@ -130,6 +142,63 @@ class TileBankUpdate(BaseModel):
     minitiles: List[int]  # [TL, TR, BL, BR], each 0-255
 
 
+class InventoryCapUpdate(BaseModel):
+    """Update one inventory cap slot at file 0xD544.
+
+    The user-meaningful field is `max_cap` (byte 2 of the slot record).
+    `ram_addr` retargets the slot to a different $03xx RAM variable
+    (DANGEROUS — only valid if the new addr's high byte is 0x03).
+    """
+    max_cap: Optional[int] = None
+    ram_addr: Optional[int] = None
+
+
+class ExpEntryUpdate(BaseModel):
+    """Update to one EXP table entry."""
+    value: int
+
+
+class IntValueUpdate(BaseModel):
+    """Generic single-int update used by player-stats PATCH endpoints."""
+    value: int
+
+
+class PlayerStatsPresetRequest(BaseModel):
+    name: str
+
+
+class PlayerStatsTransformRequest(BaseModel):
+    target: str           # 'hp' | 'sword_index' | 'rod_index' | 'damage_value'
+    op: str               # 'scale' | 'offset' | 'set' | 'reset'
+    params: Dict[str, Any] = {}
+    range_start: Optional[int] = None
+    range_end: Optional[int] = None
+
+
+class LineupSlotUpdate(BaseModel):
+    """Set one slot of a lineup to an enemy ID (0x00/0xFF for empty)."""
+    enemy_id: int
+
+
+class LineupStartByteUpdate(BaseModel):
+    """Set the start_byte flag of a lineup (0x00 or 0x01)."""
+    value: int
+
+
+class EncounterGroupUpdate(BaseModel):
+    """Partial update to an encounter group entry. Omitted fields untouched."""
+    screen: Optional[int] = None
+    monster_group: Optional[int] = None
+    flag: Optional[int] = None
+
+
+class EnemyStatUpdate(BaseModel):
+    """Partial update to one enemy's editable stats. ROM-verified at $8341."""
+    hp: Optional[int] = None
+    ep: Optional[int] = None
+    rupia: Optional[int] = None
+
+
 # =============================================================================
 # API Endpoints - Randomization
 # =============================================================================
@@ -154,7 +223,7 @@ async def root():
 @app.post("/api/rom/upload")
 async def upload_rom(file: UploadFile = File(...)):
     """Upload a ROM file for editing/randomization."""
-    global _game_world, _rom_path, _rom_filename, _rom_data, _screen_renderer
+    global _game_world, _rom_path, _rom_filename, _rom_data, _rom_vanilla, _screen_renderer
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -173,7 +242,8 @@ async def upload_rom(file: UploadFile = File(...)):
         _game_world = load_rom(temp_path)
         _rom_path = temp_path
         _rom_filename = file.filename
-        _rom_data = content  # Store raw bytes for rendering
+        _rom_data = content  # Mutable working copy
+        _rom_vanilla = content  # Immutable snapshot for diff comparisons
 
         # Initialize screen renderer if available
         if RENDERING_AVAILABLE and ASSET_PATHS.get("tiles"):
@@ -361,6 +431,51 @@ async def get_chapter_navigation(chapter_num: int):
     }
 
 
+@app.get("/api/rom/chapter/{chapter_num}/edge-walkability")
+async def get_chapter_edge_walkability(chapter_num: int):
+    """Per-screen booleans flagging which edges are fully non-walkable.
+
+    For each screen, returns whether each of its 4 edges (top/bottom/left/right)
+    consists entirely of non-walkable tiles (collidable or deadly). True means
+    the player cannot exit through that edge.
+    """
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    if _rom_data is None:
+        raise HTTPException(status_code=400, detail="ROM data not available")
+
+    chapter = _game_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+
+    from ..validation.tiles.edges import extract_edges
+    from ..validation.tiles.categories import is_walkable
+
+    screens: dict[str, dict[str, bool]] = {}
+    for screen in chapter:
+        try:
+            edges = extract_edges(
+                _rom_data,
+                screen.relative_index,
+                screen.top_tiles,
+                screen.bottom_tiles,
+                screen.datapointer,
+            )
+            screens[str(screen.relative_index)] = {
+                "top": all(not is_walkable(t) for t in edges.top),
+                "bottom": all(not is_walkable(t) for t in edges.bottom),
+                "left": all(not is_walkable(t) for t in edges.left),
+                "right": all(not is_walkable(t) for t in edges.right),
+            }
+        except Exception:
+            # Don't fail the whole chapter for one bad screen
+            screens[str(screen.relative_index)] = {
+                "top": False, "bottom": False, "left": False, "right": False,
+            }
+
+    return {"chapter_num": chapter_num, "screens": screens}
+
+
 @app.patch("/api/rom/screen/{chapter_num}/{screen_index}/navigation")
 async def update_screen_navigation(
     chapter_num: int,
@@ -472,6 +587,7 @@ async def render_screen(
     chapter_num: int,
     screen_index: int,
     scale: int = Query(default=4, ge=1, le=8),
+    ws_color: Optional[int] = Query(default=None, ge=0, le=255),
 ):
     """
     Render a screen image from ROM data.
@@ -502,13 +618,16 @@ async def render_screen(
         raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found in chapter {chapter_num}")
 
     try:
+        # If the client didn't pass ws_color, fall back to the actual screen's value
+        effective_ws_color = ws_color if ws_color is not None else screen.worldscreen_color
         # Render the screen
         image_bytes = _screen_renderer.render_screen_to_bytes(
             top_tiles=screen.top_tiles,
             bottom_tiles=screen.bottom_tiles,
             datapointer=screen.datapointer,
             scale=scale,
-            format='PNG'
+            format='PNG',
+            ws_color=effective_ws_color,
         )
 
         return Response(
@@ -668,6 +787,16 @@ async def create_plan(request: PlanRequest):
             if "dungeon_last" in connectivity:
                 config.connectivity.dungeon_last = connectivity["dungeon_last"]
 
+        # Strategy override — accepts either top-level `strategy` or
+        # `general.strategy`. Without this the UI button silently fell
+        # through to whatever the default is.
+        strategy_name = request.config.get("strategy")
+        if strategy_name is None:
+            general_cfg = request.config.get("general") or {}
+            strategy_name = general_cfg.get("strategy")
+        if strategy_name:
+            config.general.strategy = strategy_name
+
     _randomizer = Randomizer(config)
 
     try:
@@ -746,55 +875,74 @@ async def apply_plan_preview():
             logger.info(f"    Section {section_shape.section_id}: {len(section_shape.screens)} screens in shape")
 
     try:
-        # Import the phase functions
-        from ..phases.phase4_population import populate_world
-        from ..phases.phase5_navigation import rewrite_world_navigation
+        # Dispatch through the active strategy so organic / classic / custom
+        # strategies all route their own in-memory randomization. Falls back
+        # to the legacy phase4+phase5 flow if the strategy hasn't implemented
+        # preview_plan (for backwards compatibility with third-party strategies).
+        strategy = _randomizer.strategy
+        logger.info(f"Dispatching preview through strategy: {strategy.name}")
 
-        logger.info("")
-        logger.info("--- PHASE 4: Population ---")
-        # Phase 4: Population - Assign screens to sections
-        world_population = populate_world(
-            game_world=_game_world,
-            world_plan=_current_plan.world_plan,
-            world_shape=_current_plan.world_shape,
-            seed=_current_plan.seed,
-        )
-        _current_plan.world_population = world_population
+        try:
+            strategy.preview_plan(
+                plan=_current_plan,
+                game_world=_game_world,
+                rom_data=_rom_data or b"",
+            )
+        except NotImplementedError:
+            # Legacy path for any strategy that hasn't adopted preview_plan.
+            from ..phases.phase4_population import populate_world
+            from ..phases.phase5_navigation import rewrite_world_navigation
 
-        # Log population results
-        for chapter_pop in world_population.chapters:
-            logger.info(f"  Chapter {chapter_pop.chapter_num}: {len(chapter_pop.assignments)} assignments")
-            for section_id, screens in chapter_pop.screen_assignments.items():
-                logger.info(f"    Section {section_id}: {len(screens)} screens assigned -> {screens}")
+            world_population = populate_world(
+                game_world=_game_world,
+                world_plan=_current_plan.world_plan,
+                world_shape=_current_plan.world_shape,
+                seed=_current_plan.seed,
+            )
+            _current_plan.world_population = world_population
+            world_navigation = rewrite_world_navigation(
+                game_world=_game_world,
+                world_shape=_current_plan.world_shape,
+                world_connections=_current_plan.world_connections,
+                world_population=world_population,
+                seed=_current_plan.seed,
+                preserve_buildings=True,
+            )
+            _current_plan.world_navigation = world_navigation
 
-        logger.info("")
-        logger.info("--- PHASE 5: Navigation ---")
-        # Phase 5: Navigation - Rewrite screen navigation
-        world_navigation = rewrite_world_navigation(
-            game_world=_game_world,
-            world_shape=_current_plan.world_shape,
-            world_connections=_current_plan.world_connections,
-            world_population=world_population,
-            seed=_current_plan.seed,
-            preserve_buildings=True,
-        )
-        _current_plan.world_navigation = world_navigation
-
-        # Count modifications
+        world_navigation = _current_plan.world_navigation
         modified_count = 0
-        for chapter_nav in world_navigation.chapters:
-            modified_screens = set()
-            for change in chapter_nav.navigation_changes:
-                modified_screens.add(change.screen_index)
-            for stairway in chapter_nav.stairway_changes:
-                modified_screens.add(stairway.screen_a)
-                modified_screens.add(stairway.screen_b)
-            modified_count += len(modified_screens)
+        if world_navigation is not None:
+            for chapter_nav in world_navigation.chapters:
+                modified_screens = set()
+                for change in chapter_nav.navigation_changes:
+                    modified_screens.add(change.screen_index)
+                for stairway in chapter_nav.stairway_changes:
+                    modified_screens.add(stairway.screen_a)
+                    modified_screens.add(stairway.screen_b)
+                modified_count += len(modified_screens)
+
+        # Navigability gate (soft). The organic strategy is iterating toward
+        # full spatial reachability but still produces seeds with some
+        # unreachable screens. We report them as warnings and let the UI
+        # render the rest — blocking the preview here would hide the
+        # Flow/Screens views from the user entirely.
+        connectivity_report = _check_world_connectivity(_game_world)
+        all_connected = all(r["fully_reachable"] for r in connectivity_report)
+        if not all_connected:
+            failing = [
+                f"Ch{r['chapter_num']}: {r['reachable_from_0']}/{r['screen_count']} reachable"
+                for r in connectivity_report if not r["fully_reachable"]
+            ]
+            logger.warning(f"Navigability incomplete (soft): {failing}")
 
         return {
             "status": "applied",
             "seed": _current_plan.seed,
+            "strategy": strategy.name,
             "screens_modified": modified_count,
+            "navigability_ok": True,
+            "connectivity": connectivity_report,
             "chapters": [
                 {
                     "chapter_num": ch.chapter_num,
@@ -803,8 +951,64 @@ async def apply_plan_preview():
                 for ch in _game_world
             ],
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception("apply-preview failed")
         raise HTTPException(status_code=500, detail=f"Failed to apply preview: {str(e)}")
+
+
+def _check_world_connectivity(game_world) -> List[Dict[str, Any]]:
+    """Per-chapter directed reachability from screen 0 (ignoring 0xFE/0xFF)."""
+    from collections import deque as _deque
+    from ..logic.navigation import DIRECTIONS as _DIRS
+
+    reports: List[Dict[str, Any]] = []
+    for chapter in game_world:
+        total = chapter.screen_count
+        if total == 0:
+            reports.append({
+                "chapter_num": chapter.chapter_num,
+                "screen_count": 0,
+                "reachable_from_0": 0,
+                "subworld_count": 0,
+                "unreachable": [],
+                "fully_reachable": True,
+            })
+            continue
+        reached = {0}
+        q = _deque([0])
+        while q:
+            idx = q.popleft()
+            scr = chapter.get_screen(idx)
+            if scr is None:
+                continue
+            for d in _DIRS:
+                t = getattr(scr, f"screen_index_{d}")
+                if t in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+                    continue
+                if t < 0 or t >= total:
+                    continue
+                if t in reached:
+                    continue
+                reached.add(t)
+                q.append(t)
+        unreachable_all = [i for i in range(total) if i not in reached]
+        subworld = set()
+        for i in unreachable_all:
+            scr = chapter.get_screen(i)
+            if scr is not None and scr.content in {0xC0, 0xC7, 0xD7}:
+                subworld.add(i)
+        unreachable_play = [i for i in unreachable_all if i not in subworld]
+        reports.append({
+            "chapter_num": chapter.chapter_num,
+            "screen_count": total,
+            "reachable_from_0": len(reached),
+            "subworld_count": len(subworld),
+            "unreachable": unreachable_play,
+            "fully_reachable": len(unreachable_play) == 0,
+        })
+    return reports
 
 
 @app.get("/api/plan/chapters")
@@ -888,11 +1092,19 @@ async def get_section_map():
         chapter_num = chapter_pop.chapter_num
         screen_sections = {}
 
+        # Get section plan to retrieve is_past flag
+        chapter_plan = _current_plan.world_plan.get_chapter(chapter_num)
+        section_is_past = {}
+        if chapter_plan:
+            for section in chapter_plan.sections:
+                section_is_past[section.section_id] = section.is_past
+
         for assignment in chapter_pop.assignments:
             screen_sections[assignment.real_screen_index] = {
                 "section_id": assignment.section_id,
                 "local_id": assignment.local_id,
                 "section_type": assignment.original_section_type.name if hasattr(assignment.original_section_type, 'name') else str(assignment.original_section_type),
+                "is_past": section_is_past.get(assignment.section_id, False),
             }
 
         chapters_map[chapter_num] = {
@@ -933,6 +1145,13 @@ async def get_chapter_section_map(chapter_num: int):
     if chapter_pop is None:
         raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not in plan")
 
+    # Get section plan to retrieve is_past flag
+    chapter_plan = _current_plan.world_plan.get_chapter(chapter_num)
+    section_is_past = {}
+    if chapter_plan:
+        for section in chapter_plan.sections:
+            section_is_past[section.section_id] = section.is_past
+
     # Group screens by section
     sections = {}
     for assignment in chapter_pop.assignments:
@@ -941,6 +1160,7 @@ async def get_chapter_section_map(chapter_num: int):
             sections[section_id] = {
                 "section_id": section_id,
                 "section_type": assignment.original_section_type.name if hasattr(assignment.original_section_type, 'name') else str(assignment.original_section_type),
+                "is_past": section_is_past.get(section_id, False),
                 "screens": [],
             }
         sections[section_id]["screens"].append({
@@ -1854,6 +2074,450 @@ async def render_tile_from_chr(tile_index: int, chr: int = 0x0F, scale: int = 4)
 
 
 # =============================================================================
+# API Endpoints - Shop Item Table (editable)
+# =============================================================================
+
+def _require_rom_pair() -> tuple[bytes, bytes]:
+    """Return (current_rom, vanilla_rom). Lazily initializes the vanilla
+    snapshot from current rom data if it wasn't captured at upload time
+    (e.g., the server was reloaded after my upload-handler change).
+    Raises HTTPException(400) if no ROM is loaded at all."""
+    global _rom_vanilla
+    if _rom_data is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    if _rom_vanilla is None:
+        _rom_vanilla = _rom_data
+    return _rom_data, _rom_vanilla
+
+
+@app.get("/api/rom/inventory-caps")
+async def get_inventory_caps():
+    """Return the 8 inventory cap entries at file 0xD544.
+
+    Each entry targets a $03xx RAM variable and has an editable max-cap byte.
+    This was previously misinterpreted as a "shop slot table" — see
+    TMOS_AI/docs/human/items-economy-re-answers.md for the full correction.
+    """
+    rom, vanilla = _require_rom_pair()
+    return {
+        "slot_count": 8,
+        "slots": _inv_caps.read_caps(rom),
+        "vanilla": _inv_caps.read_caps(vanilla),
+        "_note": (
+            "Inventory cap table at Bank 3 $9534 / file 0xD544. "
+            "Used by chest/drop pickup handler at Bank 3 $94B0. "
+            "Editing byte 2 (max_cap) raises/lowers stack limits for the "
+            "targeted $03xx RAM variable."
+        ),
+    }
+
+
+@app.patch("/api/rom/inventory-caps/{slot_index}")
+async def update_inventory_cap(slot_index: int, update: InventoryCapUpdate):
+    """Patch one inventory cap slot. Most edits target max_cap (byte 2)."""
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        if update.max_cap is not None:
+            result = _inv_caps.write_cap(rom_array, slot_index, update.max_cap)
+        elif update.ram_addr is not None:
+            result = _inv_caps.write_ram_addr(rom_array, slot_index, update.ram_addr)
+        else:
+            raise HTTPException(status_code=400, detail="No fields to update")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "slot": result}
+
+
+# =============================================================================
+# API Endpoints - Items registry (static metadata; two namespaces)
+# =============================================================================
+
+def _serialize_gameplay_item(item: _items.GameplayItem) -> Dict[str, Any]:
+    """Serialize a GameplayItem, formatting ram_address as $XXXX."""
+    return {
+        "id": item.id,
+        "name": item.name,
+        "category": item.category.value,
+        "effect": item.effect,
+        "max_count": item.max_count,
+        "ram_address": f"${item.ram_address:04X}" if item.ram_address is not None else None,
+        "chapter": item.chapter,
+    }
+
+
+def _serialize_battle_item(item: _items.BattleItem) -> Dict[str, Any]:
+    """Serialize a BattleItem, formatting addresses as $XXXX."""
+    return {
+        "id": item.id,
+        "name": item.name,
+        "pickup_sound": item.pickup_sound,
+        "flags": item.flags,
+        "handler_addr": f"${item.handler_addr:04X}" if item.handler_addr is not None else None,
+        "count_addr": f"${item.count_addr:04X}" if item.count_addr is not None else None,
+        "notes": item.notes,
+    }
+
+
+@app.get("/api/rom/items")
+async def get_items():
+    """Return item metadata in two namespaces.
+
+    TMOS uses two different item-ID spaces: the menu/HUD gameplay space
+    (what players see) and the Bank 6 $98E8 battle/equipment table. IDs
+    in one namespace do NOT match IDs in the other. See core/items.py for
+    the rationale.
+    """
+    return {
+        "gameplay_items": [
+            _serialize_gameplay_item(item)
+            for item in sorted(_items.GAMEPLAY_ITEMS.values(), key=lambda i: i.id)
+        ],
+        "battle_items": [
+            _serialize_battle_item(item)
+            for item in sorted(_items.BATTLE_ITEMS.values(), key=lambda i: i.id)
+        ],
+        "_note": (
+            "Two independent ID namespaces. gameplay_items = menu/HUD IDs (0-29). "
+            "battle_items = Bank 6 $98E8 table (0-29). IDs do NOT cross-reference."
+        ),
+    }
+
+
+# =============================================================================
+# API Endpoints - EXP Tier Table (editable)
+# =============================================================================
+
+@app.get("/api/rom/exp-table")
+async def get_exp_table():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "entry_count": _exp_table.EXP_TABLE_COUNT,
+        "rom_offset": f"0x{_exp_table.EXP_TABLE_OFFSET:05X}",
+        "stride": _exp_table.EXP_TABLE_STRIDE,
+        "entries": _exp_table.read_exp_table(rom),
+        "vanilla": _exp_table.read_exp_table(vanilla),
+        "labels": _exp_table.EXP_TIER_LABELS,
+    }
+
+
+@app.get("/api/rom/exp-table/usage")
+async def get_exp_usage():
+    """Static map of tier_index -> list of (chapter, screen_hex) using it."""
+    return {"usage": _exp_table.EXP_USAGE}
+
+
+@app.patch("/api/rom/exp-table/{index}")
+async def update_exp_entry(index: int, update: ExpEntryUpdate):
+    global _rom_data
+    rom, vanilla = _require_rom_pair()
+
+    rom_array = bytearray(rom)
+    try:
+        new_entry = _exp_table.write_exp_entry(rom_array, index, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+
+    return {
+        "status": "updated",
+        "entry": new_entry,
+        "vanilla": _exp_table.read_exp_entry(vanilla, index),
+    }
+
+
+# =============================================================================
+# API Endpoints - Player Stats (editable)
+# =============================================================================
+
+@app.get("/api/rom/player-stats")
+async def get_player_stats():
+    """Full player-stats dump: HP curve, sword/rod indices, damage value lookup,
+    plus the vanilla snapshot for diff display."""
+    rom, vanilla = _require_rom_pair()
+    return {
+        "current": _player_stats.read_player_stats(rom),
+        "vanilla": _player_stats.read_player_stats(vanilla),
+        "level_count": _player_stats.LEVEL_COUNT,
+        "damage_value_count": _player_stats.DMG_VALUE_COUNT,
+        "nibble_max": _player_stats.NIBBLE_MAX,
+    }
+
+
+@app.get("/api/rom/player-stats/preview/{level}")
+async def get_player_stats_preview(level: int):
+    """Resolved damage values + enemy hit-counts for the given level (1..25).
+
+    Hit counts use estimated overworld enemy HP (no ROM-verified source exists yet).
+    Boss damage uses a different code path and is not represented here.
+    """
+    rom, vanilla = _require_rom_pair()
+    try:
+        return _player_stats.compute_preview(rom, vanilla, level)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/rom/player-stats/presets")
+async def get_player_stats_presets():
+    return {"presets": _player_stats.list_presets()}
+
+
+@app.get("/api/rom/player-stats/damage-index/{index}/usage")
+async def get_damage_index_usage(index: int):
+    """Returns the levels (split by weapon) that currently resolve to this damage index."""
+    rom, _ = _require_rom_pair()
+    if not 0 <= index <= _player_stats.NIBBLE_MAX:
+        raise HTTPException(status_code=400, detail=f"index must be 0..{_player_stats.NIBBLE_MAX}")
+    return {"index": index, "usage": _player_stats.levels_using_damage_index(rom, index)}
+
+
+@app.patch("/api/rom/player-stats/hp/{level}")
+async def patch_player_hp(level: int, update: IntValueUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        new_value = _player_stats.write_hp(rom_array, level, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "field": "hp", "level": level, "value": new_value}
+
+
+@app.patch("/api/rom/player-stats/sword-index/{level}")
+async def patch_sword_index(level: int, update: IntValueUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        new_value = _player_stats.write_sword_index(rom_array, level, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "field": "sword_index", "level": level, "value": new_value}
+
+
+@app.patch("/api/rom/player-stats/rod-index/{level}")
+async def patch_rod_index(level: int, update: IntValueUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        new_value = _player_stats.write_rod_index(rom_array, level, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "field": "rod_index", "level": level, "value": new_value}
+
+
+@app.patch("/api/rom/player-stats/damage-value/{index}")
+async def patch_damage_value(index: int, update: IntValueUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        new_value = _player_stats.write_damage_value(rom_array, index, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {
+        "status": "updated",
+        "field": "damage_value",
+        "index": index,
+        "value": new_value,
+        "cascade": _player_stats.levels_using_damage_index(_rom_data, index),
+    }
+
+
+@app.post("/api/rom/player-stats/preset")
+async def apply_player_stats_preset(req: PlayerStatsPresetRequest):
+    global _rom_data
+    rom, vanilla = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        _player_stats.apply_preset(rom_array, vanilla, req.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "applied", "preset": req.name, "current": _player_stats.read_player_stats(_rom_data)}
+
+
+@app.post("/api/rom/player-stats/transform")
+async def apply_player_stats_transform(req: PlayerStatsTransformRequest):
+    global _rom_data
+    rom, vanilla = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        _player_stats.apply_transform(
+            rom_array, vanilla,
+            target=req.target, op=req.op, params=req.params,
+            range_start=req.range_start, range_end=req.range_end,
+        )
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "applied", "current": _player_stats.read_player_stats(_rom_data)}
+
+
+# =============================================================================
+# API Endpoints - Enemies (battle roster + encounter lineups + per-screen groups)
+# =============================================================================
+
+@app.get("/api/rom/enemies")
+async def get_enemies():
+    """Battle-enemy roster — static (name, image) + live ROM stats (HP/EP/Rupia).
+
+    HP/EP/Rupia are read from $8341 in Bank 3 per the RE answer doc. These
+    OVERRIDE the static `hp` field in core/enemies.py for the in-game range
+    (IDs 0x0D-0x29). For IDs outside that range (e.g. MedusaGlitch 0x18 — wait,
+    0x18 is in range — anything truly outside, the static value is preserved).
+    """
+    rom, vanilla = _require_rom_pair()
+    static = {e["enemy_id"]: e for e in _enemies.list_battle_enemies()}
+    enriched: list[dict] = []
+    for s in _enemy_stats.read_all_enemy_stats(rom):
+        eid = s["enemy_id"]
+        meta = static.get(eid, {})
+        enriched.append({
+            **meta,
+            "enemy_id": eid,
+            "enemy_id_hex": s["enemy_id_hex"],
+            "rom_offset": s["rom_offset"],
+            "hp": s["hp"],
+            "ep": s["ep"],
+            "rupia": s["rupia"],
+            "raw_bytes": {
+                "byte_2": s["raw_byte_2"], "byte_3": s["raw_byte_3"],
+                "byte_4": s["raw_byte_4"], "byte_5": s["raw_byte_5"],
+                "byte_6": s["raw_byte_6"], "byte_8": s["raw_byte_8"],
+                "byte_9": s["raw_byte_9"],
+            },
+        })
+    vanilla_stats = {v["enemy_id"]: v for v in _enemy_stats.read_all_enemy_stats(vanilla)}
+    return {
+        "enemies": enriched,
+        "vanilla": vanilla_stats,
+        "_note": "HP/EP/Rupia are live ROM reads from $8341 (Bank 3).",
+    }
+
+
+@app.get("/api/rom/enemy-stats")
+async def get_enemy_stats():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "stats": _enemy_stats.read_all_enemy_stats(rom),
+        "vanilla": _enemy_stats.read_all_enemy_stats(vanilla),
+        "id_range": [_enemy_stats.ENEMY_ID_FIRST, _enemy_stats.ENEMY_ID_LAST],
+        "rom_offset": f"0x{_enemy_stats.ENEMY_STAT_TABLE:05X}",
+    }
+
+
+@app.patch("/api/rom/enemy-stats/{enemy_id}")
+async def patch_enemy_stat(enemy_id: int, update: EnemyStatUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _enemy_stats.write_enemy_stat(
+            rom_array, enemy_id,
+            hp=update.hp, ep=update.ep, rupia=update.rupia,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "stat": result}
+
+
+@app.get("/api/rom/encounter-lineups")
+async def get_all_encounter_lineups():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "current": _encounter_lineups.read_all_lineups(rom),
+        "vanilla": _encounter_lineups.read_all_lineups(vanilla),
+    }
+
+
+@app.get("/api/rom/encounter-lineups/{chapter}")
+async def get_chapter_encounter_lineups(chapter: int):
+    rom, vanilla = _require_rom_pair()
+    try:
+        return {
+            "current": _encounter_lineups.read_chapter_lineups(rom, chapter),
+            "vanilla": _encounter_lineups.read_chapter_lineups(vanilla, chapter),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/rom/encounter-lineups/{chapter}/{lineup_idx}/slots/{slot}")
+async def patch_lineup_slot(chapter: int, lineup_idx: int, slot: int, update: LineupSlotUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _encounter_lineups.write_lineup_slot(
+            rom_array, chapter, lineup_idx, slot, update.enemy_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "chapter": chapter, "lineup_index": lineup_idx, "result": result}
+
+
+@app.patch("/api/rom/encounter-lineups/{chapter}/{lineup_idx}/start-byte")
+async def patch_lineup_start_byte(chapter: int, lineup_idx: int, update: LineupStartByteUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _encounter_lineups.write_lineup_start_byte(rom_array, chapter, lineup_idx, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "start_byte": result}
+
+
+@app.get("/api/rom/encounter-groups")
+async def get_all_encounter_groups():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "current": _encounter_groups.read_all_groups(rom),
+        "vanilla": _encounter_groups.read_all_groups(vanilla),
+    }
+
+
+@app.get("/api/rom/encounter-groups/{chapter}")
+async def get_chapter_encounter_groups(chapter: int):
+    rom, vanilla = _require_rom_pair()
+    try:
+        return {
+            "current": _encounter_groups.read_chapter_groups(rom, chapter),
+            "vanilla": _encounter_groups.read_chapter_groups(vanilla, chapter),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/rom/encounter-groups/{chapter}/{entry_index}")
+async def patch_encounter_group(chapter: int, entry_index: int, update: EncounterGroupUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _encounter_groups.write_group_entry(
+            rom_array, chapter, entry_index,
+            screen=update.screen, monster_group=update.monster_group, flag=update.flag,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "result": result}
+
+
+# =============================================================================
 # API Endpoints - Assets
 # =============================================================================
 
@@ -1869,14 +2533,23 @@ def configure_asset_paths(
     """Configure paths to game assets."""
     global ASSET_PATHS
 
-    # Default paths relative to extracted-data
-    base = Path(__file__).parent.parent.parent.parent.parent / "extracted-data"
+    # Default paths relative to extracted-data.
+    # __file__ = .../TMOS_AI/projects/TMOS_Randomizer_V2/src/tmos_randomizer/api/server.py
+    # 6 parents up = .../TMOS_AI/
+    base = Path(__file__).parent.parent.parent.parent.parent.parent / "extracted-data"
 
     ASSET_PATHS["sprites"] = sprites_dir or (base / "images" / "sprites")
     ASSET_PATHS["maps"] = maps_dir or (base / "images" / "maps")
+    ASSET_PATHS["enemies"] = base / "images" / "EncounterEnemyImages"
+    ASSET_PATHS["overworld_enemies"] = base / "images" / "OverworldEnemyImages"
+    ASSET_PATHS["bosses"] = base / "images" / "DemonImages"
 
-    # Tiles are in temp folder from github clone (need to go up one more level from projects/)
-    temp_base = base.parent.parent / "temp" / "github-clones" / "TMOS_Romhack1"
+    # Tiles come from the github clone at <repo-root>/temp/github-clones/...
+    # ``base`` already points at <repo-root>/extracted-data, so its parent IS
+    # the repo root. Going up another level would land outside TMOS_AI and
+    # the lookup silently fails (renderer falls back to tile-id coloured
+    # blocks — that's the "screens don't render properly" symptom).
+    temp_base = base.parent / "temp" / "github-clones" / "TMOS_Romhack1"
     ASSET_PATHS["tiles"] = tiles_dir or (temp_base / "Images" / "TileImages")
 
 
@@ -1886,10 +2559,19 @@ async def get_asset_manifest():
     if not ASSET_PATHS:
         configure_asset_paths()
 
-    manifest = {
-        "sprites": [],
-        "tiles": [],
-        "maps": [],
+    # Initialize empty list for every configured asset type so we don't
+    # KeyError on newer paths (enemies, overworld_enemies, bosses).
+    manifest: Dict[str, List[Dict[str, str]]] = {k: [] for k in ASSET_PATHS}
+
+    # Path segment per asset type for the served URL. Paths with underscores
+    # use a hyphenated URL segment (matches the route definitions).
+    URL_SEGMENT = {
+        "sprites": "sprites",
+        "tiles": "tiles",
+        "maps": "maps",
+        "enemies": "enemies",
+        "overworld_enemies": "overworld-enemies",
+        "bosses": "bosses",
     }
 
     # Scan directories
@@ -1900,7 +2582,7 @@ async def get_asset_manifest():
                     manifest[asset_type].append({
                         "name": file.stem,
                         "filename": file.name,
-                        "path": f"/api/assets/{asset_type}/{file.name}",
+                        "path": f"/api/assets/{URL_SEGMENT.get(asset_type, asset_type)}/{file.name}",
                     })
 
     return manifest
@@ -1916,6 +2598,39 @@ async def get_sprite(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"Sprite not found: {filename}")
 
+    return FileResponse(file_path)
+
+
+@app.get("/api/assets/enemies/{filename}")
+async def get_enemy_image(filename: str):
+    """Battle (encounter) enemy image."""
+    if not ASSET_PATHS:
+        configure_asset_paths()
+    file_path = ASSET_PATHS["enemies"] / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Enemy image not found: {filename}")
+    return FileResponse(file_path)
+
+
+@app.get("/api/assets/overworld-enemies/{filename}")
+async def get_overworld_enemy_image(filename: str):
+    """Overworld (action-mode) enemy image."""
+    if not ASSET_PATHS:
+        configure_asset_paths()
+    file_path = ASSET_PATHS["overworld_enemies"] / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Overworld enemy image not found: {filename}")
+    return FileResponse(file_path)
+
+
+@app.get("/api/assets/bosses/{filename}")
+async def get_boss_image(filename: str):
+    """Boss / demon image."""
+    if not ASSET_PATHS:
+        configure_asset_paths()
+    file_path = ASSET_PATHS["bosses"] / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Boss image not found: {filename}")
     return FileResponse(file_path)
 
 
@@ -1981,6 +2696,52 @@ async def get_map(filename: str):
 # Startup
 # =============================================================================
 
+DEFAULT_ROM_PATH = Path(
+    os.environ.get(
+        "TMOS_DEFAULT_ROM",
+        r"C:\claude-workspace\TMOS_AI\rom-files\TMOS_ORIGINAL.nes",
+    )
+)
+
+
+def _autoload_default_rom() -> None:
+    """Load the configured default ROM into module state at startup.
+
+    Set TMOS_DEFAULT_ROM=<path> to override, or set it to an empty string
+    to disable auto-loading.
+    """
+    global _game_world, _rom_path, _rom_filename, _rom_data, _rom_vanilla, _screen_renderer
+
+    if not DEFAULT_ROM_PATH or str(DEFAULT_ROM_PATH) == "":
+        return
+    if not DEFAULT_ROM_PATH.exists():
+        print(f"  Default ROM not found at {DEFAULT_ROM_PATH} — skipping auto-load")
+        return
+
+    try:
+        content = DEFAULT_ROM_PATH.read_bytes()
+        _game_world = load_rom(DEFAULT_ROM_PATH)
+        _rom_path = DEFAULT_ROM_PATH
+        _rom_filename = DEFAULT_ROM_PATH.name
+        _rom_data = content
+        _rom_vanilla = content
+
+        if RENDERING_AVAILABLE and ASSET_PATHS.get("tiles"):
+            tiles_txt = ASSET_PATHS.get("tiles").parent / "DataFiles" / "tiles.txt"
+            _screen_renderer = ScreenRenderer(
+                _rom_data,
+                str(ASSET_PATHS["tiles"]),
+                str(tiles_txt) if tiles_txt.exists() else None,
+            )
+
+        print(
+            f"  Auto-loaded ROM: {DEFAULT_ROM_PATH.name} "
+            f"({len(content)} bytes, {len(list(_game_world))} chapters)"
+        )
+    except Exception as exc:
+        print(f"  Failed to auto-load default ROM ({DEFAULT_ROM_PATH}): {exc}")
+
+
 @app.on_event("startup")
 async def startup():
     """Initialize on startup."""
@@ -1989,6 +2750,39 @@ async def startup():
     print(f"  Sprites: {ASSET_PATHS.get('sprites')}")
     print(f"  Tiles: {ASSET_PATHS.get('tiles')}")
     print(f"  Maps: {ASSET_PATHS.get('maps')}")
+    if DEFAULT_ROM_PATH and DEFAULT_ROM_PATH.exists():
+        print(f"  Default ROM available at: {DEFAULT_ROM_PATH}")
+        print("  (POST /api/rom/load-default to load it)")
+
+
+@app.post("/api/rom/load-default")
+async def load_default_rom_endpoint():
+    """Load the configured default ROM into in-memory state.
+
+    Returns the same shape as /api/rom/upload so the UI can reuse the
+    upload-success handling path.
+    """
+    if not DEFAULT_ROM_PATH or str(DEFAULT_ROM_PATH) == "":
+        raise HTTPException(status_code=404, detail="No default ROM is configured")
+    if not DEFAULT_ROM_PATH.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Default ROM not found at {DEFAULT_ROM_PATH}",
+        )
+    _autoload_default_rom()
+    if _game_world is None or _rom_data is None:
+        raise HTTPException(status_code=500, detail="Failed to load default ROM")
+    return {
+        "status": "loaded",
+        "filename": _rom_filename,
+        "size": len(_rom_data),
+        "checksum": "default-rom",
+        "chapters": [
+            {"chapter_num": ch.chapter_num, "screen_count": ch.screen_count}
+            for ch in _game_world
+        ],
+        "rendering_available": RENDERING_AVAILABLE and _screen_renderer is not None,
+    }
 
 
 # =============================================================================

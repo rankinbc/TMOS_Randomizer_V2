@@ -88,23 +88,23 @@ class ShopInventory:
         }
 
     def to_rom_bytes(self) -> bytes:
-        """Convert to ROM format for L9534 table.
+        """DISABLED — the byte layout this method produced is wrong for 0xD544.
 
-        Each slot is 4 bytes: [item_id, quantity, price_low, price_high]
+        The ROM table at 0xD544 is the inventory cap table (8 x 4-byte entries
+        of [ram_addr_lo, 0x03, max_cap, slot_idx]), NOT a shop slot table.
+        Writing [item_id, quantity, price_lo, price_hi] there corrupts both
+        the cap table and the adjacent 6502 code at bank 3 $9564+.
 
-        Returns:
-            16 bytes for 4 shop slots
+        See TMOS_AI/docs/human/items-economy-re-answers.md for the RE finding.
+        For editing inventory caps, use tmos_randomizer.core.inventory_caps.write_cap().
+        Real per-shop pricing lives in an undecoded Bank 2 bytecode interpreter.
         """
-        data = bytearray()
-        for slot in self.items:
-            data.append(slot.item.item_id & 0xFF)
-            data.append(slot.quantity & 0xFF)
-            data.append(slot.price & 0xFF)  # Price low byte
-            data.append((slot.price >> 8) & 0xFF)  # Price high byte
-        # Pad to 16 bytes if fewer than 4 items
-        while len(data) < 16:
-            data.extend([0x00, 0x00, 0x00, 0x00])
-        return bytes(data[:16])
+        raise NotImplementedError(
+            "ShopInventory.to_rom_bytes is disabled: the target table at 0xD544 "
+            "is the inventory cap table, not shop slots. "
+            "Use tmos_randomizer.core.inventory_caps.write_cap() to edit caps. "
+            "See TMOS_AI/docs/human/items-economy-re-answers.md."
+        )
 
 
 @dataclass

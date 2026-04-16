@@ -12,12 +12,14 @@ from typing import Any, Dict, List, Optional, Set, Union
 import yaml
 
 from ..validation.config import (
-    ValidationConfig,
-    EdgeCompatibilityConfig,
-    ScreenTraversabilityConfig,
     DataPointerObjectSetConfig,
+    EdgeAlignmentConfig,
+    EdgeCompatibilityConfig,
     NavigationConfig,
     ReachabilityConfig,
+    ScreenTraversabilityConfig,
+    TimePeriodIsolationConfig,
+    ValidationConfig,
 )
 
 
@@ -31,6 +33,7 @@ class GeneralConfig:
     seed: int = 0
     chapters: List[int] = field(default_factory=lambda: [1, 2, 3, 4, 5])
     mode: str = "shuffle"
+    strategy: str = "organic"
 
 
 @dataclass
@@ -49,6 +52,64 @@ class ConnectivityConfig:
     order_randomization: bool = True
     topology: str = "branching"
     enforce_bidirectional: bool = True
+
+
+@dataclass
+class SectionCountRule:
+    """Per-section-type count rule for a chapter.
+
+    ``min``/``max`` bound the count; ``weights`` (same length as the range
+    ``min..max`` inclusive) biases the RNG pick. Defaults cover the common
+    TMOS section shape.
+    """
+    min: int = 1
+    max: int = 1
+    weights: Optional[List[int]] = None  # None = uniform over [min..max]
+
+
+@dataclass
+class ChapterSectionCounts:
+    """Per-chapter overrides for section counts.
+
+    Any field left None inherits from ``SectionCountsConfig.defaults``. Keeps
+    the YAML concise — chapters only list what differs from defaults.
+    """
+    overworld: Optional[SectionCountRule] = None
+    town: Optional[SectionCountRule] = None
+    dungeon: Optional[SectionCountRule] = None
+    maze: Optional[SectionCountRule] = None
+
+
+@dataclass
+class SectionCountsConfig:
+    """Global section-count defaults + per-chapter overrides.
+
+    Defaults reflect the classic TMOS section layout:
+    - 1 overworld (each era gets one if past screens exist).
+    - 2–4 towns (weighted toward 2/3).
+    - 1 dungeon.
+    - 0–1 maze (50/50 inclusion).
+    Chapters can override any field via ``per_chapter[n]``.
+    """
+    defaults: ChapterSectionCounts = field(default_factory=lambda: ChapterSectionCounts(
+        overworld=SectionCountRule(min=1, max=1),
+        town=SectionCountRule(min=2, max=4, weights=[40, 35, 25]),
+        dungeon=SectionCountRule(min=1, max=1),
+        maze=SectionCountRule(min=0, max=1, weights=[50, 50]),
+    ))
+    per_chapter: Dict[int, ChapterSectionCounts] = field(default_factory=dict)
+
+    def for_chapter(self, chapter_num: int, section: str) -> SectionCountRule:
+        """Resolved rule for a chapter+section, falling back to defaults."""
+        override = self.per_chapter.get(chapter_num)
+        if override is not None:
+            rule = getattr(override, section, None)
+            if rule is not None:
+                return rule
+        base = getattr(self.defaults, section, None)
+        if base is not None:
+            return base
+        return SectionCountRule(min=1, max=1)
 
 
 @dataclass
@@ -162,16 +223,32 @@ class OutputConfig:
 
 
 @dataclass
+class RepairConfig:
+    """Organic-strategy iterative repair loop settings.
+
+    Budget is applied per-chapter; total cost = 5 × ``time_ms_per_chapter``.
+    ``max_retries`` lets the v4 detect-fallback-retry loop re-seed if a run
+    leaves critical failures (unreachable screens, disconnected sections).
+    """
+    enabled: bool = True
+    max_iterations: int = 5000
+    time_ms_per_chapter: int = 30000
+    max_retries: int = 2
+
+
+@dataclass
 class RandomizerConfig:
     """Complete randomizer configuration."""
     general: GeneralConfig = field(default_factory=GeneralConfig)
     shuffling: Dict[str, ShufflingConfig] = field(default_factory=dict)
     connectivity: ConnectivityConfig = field(default_factory=ConnectivityConfig)
+    section_counts: SectionCountsConfig = field(default_factory=SectionCountsConfig)
     tilesections: TileSectionConfig = field(default_factory=TileSectionConfig)
     critical_path: CriticalPathConfig = field(default_factory=CriticalPathConfig)
     exclusions: ExclusionConfigData = field(default_factory=ExclusionConfigData)
     difficulty: DifficultyConfig = field(default_factory=DifficultyConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    repair: RepairConfig = field(default_factory=RepairConfig)
 
     # Raw YAML data for custom access
     _raw: Dict[str, Any] = field(default_factory=dict, repr=False)
@@ -271,6 +348,50 @@ def get_default_config() -> RandomizerConfig:
 # Parsing Functions
 # =============================================================================
 
+def _parse_section_count_rule(raw: Any) -> Optional[SectionCountRule]:
+    if not isinstance(raw, dict):
+        return None
+    mn = int(raw.get("min", 1))
+    mx = int(raw.get("max", mn))
+    weights = raw.get("weights")
+    if weights is not None:
+        weights = [int(w) for w in weights]
+    return SectionCountRule(min=mn, max=mx, weights=weights)
+
+
+def _parse_chapter_section_counts(raw: Dict[str, Any]) -> ChapterSectionCounts:
+    return ChapterSectionCounts(
+        overworld=_parse_section_count_rule(raw.get("overworld")),
+        town=_parse_section_count_rule(raw.get("town")),
+        dungeon=_parse_section_count_rule(raw.get("dungeon")),
+        maze=_parse_section_count_rule(raw.get("maze")),
+    )
+
+
+def _parse_section_counts(raw: Dict[str, Any]) -> SectionCountsConfig:
+    defaults_raw = raw.get("defaults", {}) or {}
+    per_chapter_raw = raw.get("per_chapter", {}) or {}
+
+    base = SectionCountsConfig()  # pulls built-in defaults
+    if defaults_raw:
+        parsed_defaults = _parse_chapter_section_counts(defaults_raw)
+        # Only override fields the user actually specified.
+        for fname in ("overworld", "town", "dungeon", "maze"):
+            override = getattr(parsed_defaults, fname)
+            if override is not None:
+                setattr(base.defaults, fname, override)
+
+    per_chapter: Dict[int, ChapterSectionCounts] = {}
+    for ch_key, ch_raw in per_chapter_raw.items():
+        try:
+            ch_num = int(ch_key)
+        except (TypeError, ValueError):
+            continue
+        per_chapter[ch_num] = _parse_chapter_section_counts(ch_raw or {})
+    base.per_chapter = per_chapter
+    return base
+
+
 def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
     """Parse raw YAML dict into RandomizerConfig.
 
@@ -290,6 +411,7 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             seed=g.get("seed", 0),
             chapters=g.get("chapters", [1, 2, 3, 4, 5]),
             mode=g.get("mode", "shuffle"),
+            strategy=g.get("strategy", "organic"),
         )
 
     # Shuffling (per-section)
@@ -312,6 +434,11 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             topology=c.get("topology", "branching"),
             enforce_bidirectional=c.get("bidirectional", {}).get("enforce", True),
         )
+
+    # Section counts (per-chapter overrides + global defaults)
+    if "section_counts" in raw:
+        sc_raw = raw["section_counts"] or {}
+        config.section_counts = _parse_section_counts(sc_raw)
 
     # TileSections
     if "tilesections" in raw:
@@ -415,6 +542,16 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             spoiler_text_filename=spoiler.get("text_filename", "spoiler.txt"),
             spoiler_json_filename=spoiler.get("json_filename", "spoiler.json"),
             validation_report=o.get("validation_report", True),
+        )
+
+    # Repair loop (organic strategy)
+    if "repair" in raw:
+        r = raw["repair"] or {}
+        config.repair = RepairConfig(
+            enabled=r.get("enabled", True),
+            max_iterations=int(r.get("max_iterations", 5000)),
+            time_ms_per_chapter=int(r.get("time_ms_per_chapter", 30000)),
+            max_retries=int(r.get("max_retries", 2)),
         )
 
     return config
@@ -521,6 +658,29 @@ def parse_validation_config(raw: Dict[str, Any]) -> ValidationConfig:
             check_critical_locations=reach.get("check_critical_locations", True),
         )
 
+    # Time Period Isolation
+    if "time_period_isolation" in raw:
+        tpi = raw["time_period_isolation"]
+        config.time_period_isolation = TimePeriodIsolationConfig(
+            enabled=tpi.get("enabled", True),
+            severity=tpi.get("severity", "error"),
+            max_issues=tpi.get("max_issues", 100),
+            check_section_membership=tpi.get("check_section_membership", True),
+            allow_time_door_exceptions=tpi.get("allow_time_door_exceptions", True),
+        )
+
+    # Edge Alignment
+    if "edge_alignment" in raw:
+        ea = raw["edge_alignment"]
+        config.edge_alignment = EdgeAlignmentConfig(
+            enabled=ea.get("enabled", True),
+            severity=ea.get("severity", "error"),
+            max_issues=ea.get("max_issues", 100),
+            min_aligned_walkable=ea.get("min_aligned_walkable", 1),
+            check_horizontal=ea.get("check_horizontal", True),
+            check_vertical=ea.get("check_vertical", True),
+        )
+
     return config
 
 
@@ -591,5 +751,14 @@ def validate_config(config: RandomizerConfig) -> List[str]:
     # Check connectivity
     if config.connectivity.topology not in ("linear", "hub", "branching", "freeform"):
         errors.append(f"Invalid topology: {config.connectivity.topology}")
+
+    # Check strategy (import lazily: config_loader is imported by strategies)
+    from ..strategies import list_strategies
+    known = list_strategies()
+    if known and config.general.strategy not in known:
+        errors.append(
+            f"Invalid strategy: '{config.general.strategy}' "
+            f"(known: {', '.join(known)})"
+        )
 
     return errors

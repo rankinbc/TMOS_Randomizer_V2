@@ -1,12 +1,40 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import type { ScreenData, ChapterData } from '../../api/client';
+import type { ScreenData, ChapterData, ScreenEdgeBlocked } from '../../api/client';
 import { ScreenMini } from './ScreenRenderer';
-import { useRandomizerStore } from '../../store';
+import { useRandomizerStore, type SectionMapData } from '../../store';
 import { formatScreenId, formatHex } from '../../utils/formatters';
+import { api } from '../../api/client';
+
+// localStorage keys for persisting overlay-toggle preferences
+const LS_OVERLAY_LINKS = 'navmap.overlay.links';
+const LS_OVERLAY_COLLISIONS = 'navmap.overlay.collisions';
+const LS_OVERLAY_CONTENT = 'navmap.overlay.content';
+const LS_OVERLAY_EXITS = 'navmap.overlay.exits';
+const LS_OVERLAY_TILES = 'navmap.overlay.tiles';
+const LS_OVERLAY_TILE_OPACITY = 'navmap.overlay.tileOpacity';
+
+function readBoolFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === null) return fallback;
+    return v === '1';
+  } catch {
+    return fallback;
+  }
+}
+function writeBoolFlag(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
 
 const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 2.0;
-const ZOOM_STEP = 0.1;
+const MAX_ZOOM = 10.0;
+// Multiplicative step — consistent perceived zoom speed across 0.25× to 10×.
+const ZOOM_FACTOR_BUTTON = 1.2;
+const ZOOM_FACTOR_WHEEL = 1.1;
 
 // Section color palette for multi-section view
 const SECTION_COLORS = [
@@ -38,6 +66,7 @@ interface ConnectedSection {
   id: number;
   screens: Set<number>;
   parentWorld: number;
+  sectionType?: string;  // Section type from plan (e.g., "OVERWORLD", "TOWN")
   hasBuildingEntrance: boolean;
   buildingDestinations: number[]; // Screen indices reachable via building entrance
 }
@@ -57,9 +86,91 @@ interface DropZone {
   type: 'empty' | 'edge';
 }
 
-// Build connected components - screens connected via normal navigation (not building entrances)
-// CRITICAL: All screens in a section MUST have the same parent_world value
-function buildConnectedSections(screens: ScreenData[]): ConnectedSection[] {
+/**
+ * Build sections from the planned section assignments (from sectionMap).
+ * This is the CORRECT approach - uses the randomizer's planned sections.
+ * R-019 requires this to match the Section Flow diagram.
+ */
+function buildSectionsFromSectionMap(
+  screens: ScreenData[],
+  chapterNum: number,
+  sectionMap: SectionMapData
+): ConnectedSection[] {
+  const chapterData = sectionMap.chapters?.[chapterNum];
+  if (!chapterData || !chapterData.screens) {
+    return [];
+  }
+
+  // Group screens by section_id from the plan
+  const sectionGroups = new Map<number, {
+    screens: Set<number>;
+    sectionType: string;
+    parentWorlds: Set<number>;
+  }>();
+
+  const screenMap = new Map(screens.map(s => [s.index, s]));
+
+  for (const [screenIdxStr, assignment] of Object.entries(chapterData.screens)) {
+    const screenIdx = parseInt(screenIdxStr);
+    const sectionId = assignment.section_id;
+    const sectionType = assignment.section_type;
+
+    if (!sectionGroups.has(sectionId)) {
+      sectionGroups.set(sectionId, {
+        screens: new Set(),
+        sectionType,
+        parentWorlds: new Set(),
+      });
+    }
+
+    const group = sectionGroups.get(sectionId)!;
+    group.screens.add(screenIdx);
+
+    // Track parentWorld for display purposes
+    const screen = screenMap.get(screenIdx);
+    if (screen) {
+      group.parentWorlds.add(screen.parent_world);
+    }
+  }
+
+  // Convert to ConnectedSection array, sorted by section_id
+  const sections: ConnectedSection[] = [];
+  const sortedSectionIds = Array.from(sectionGroups.keys()).sort((a, b) => a - b);
+
+  for (const sectionId of sortedSectionIds) {
+    const group = sectionGroups.get(sectionId)!;
+    // Get the most common parentWorld for display
+    const parentWorld = group.parentWorlds.size > 0
+      ? Array.from(group.parentWorlds)[0]
+      : 0;
+
+    // Find building destinations for screens in this section
+    const buildingDests: number[] = [];
+    for (const screenIdx of group.screens) {
+      const screen = screenMap.get(screenIdx);
+      if (screen && screen.event === 0x40 && screen.content < screens.length) {
+        buildingDests.push(screen.content);
+      }
+    }
+
+    sections.push({
+      id: sectionId,
+      screens: group.screens,
+      parentWorld,
+      sectionType: group.sectionType,
+      hasBuildingEntrance: buildingDests.length > 0,
+      buildingDestinations: buildingDests,
+    });
+  }
+
+  return sections;
+}
+
+/**
+ * Fallback: Build connected components based on navigation and parent_world.
+ * Used when sectionMap is not available (before randomization is applied).
+ */
+function buildConnectedSectionsFallback(screens: ScreenData[]): ConnectedSection[] {
   const screenMap = new Map(screens.map(s => [s.index, s]));
   const visited = new Set<number>();
   const sections: ConnectedSection[] = [];
@@ -71,7 +182,7 @@ function buildConnectedSections(screens: ScreenData[]): ConnectedSection[] {
     const component = new Set<number>();
     const buildingDests: number[] = [];
     const queue = [screen.index];
-    const parentWorld = screen.parent_world; // Lock to this parent_world for the section
+    const parentWorld = screen.parent_world;
 
     while (queue.length > 0) {
       const idx = queue.shift()!;
@@ -80,13 +191,11 @@ function buildConnectedSections(screens: ScreenData[]): ConnectedSection[] {
       const s = screenMap.get(idx);
       if (!s) continue;
 
-      // CRITICAL: Only include screens with the SAME parent_world
       if (s.parent_world !== parentWorld) continue;
 
       visited.add(idx);
       component.add(idx);
 
-      // Check each direction
       const navDirs = [
         { nav: s.nav_right },
         { nav: s.nav_left },
@@ -96,7 +205,6 @@ function buildConnectedSections(screens: ScreenData[]): ConnectedSection[] {
 
       for (const { nav } of navDirs) {
         if (nav < NAV_BUILDING) {
-          // Normal navigation - only follow if target has same parent_world
           if (!visited.has(nav) && screenMap.has(nav)) {
             const targetScreen = screenMap.get(nav);
             if (targetScreen && targetScreen.parent_world === parentWorld) {
@@ -104,8 +212,6 @@ function buildConnectedSections(screens: ScreenData[]): ConnectedSection[] {
             }
           }
         } else if (nav === NAV_BUILDING) {
-          // Building entrance - note the destination but don't follow
-          // The destination is typically determined by stairway event (content byte when event=0x40)
           if (s.event === 0x40 && s.content < screens.length) {
             buildingDests.push(s.content);
           }
@@ -123,6 +229,23 @@ function buildConnectedSections(screens: ScreenData[]): ConnectedSection[] {
   }
 
   return sections;
+}
+
+/**
+ * Build sections using planned assignments if available, else fall back to navigation-based.
+ */
+function buildConnectedSections(
+  screens: ScreenData[],
+  chapterNum: number,
+  sectionMap: SectionMapData | null
+): ConnectedSection[] {
+  // Use planned section assignments if available (R-019 compliance)
+  if (sectionMap?.applied && sectionMap.chapters?.[chapterNum]) {
+    return buildSectionsFromSectionMap(screens, chapterNum, sectionMap);
+  }
+
+  // Fallback to navigation-based grouping (for unrandomized ROM)
+  return buildConnectedSectionsFallback(screens);
 }
 
 // Build a 2D map from navigation data for a specific section
@@ -217,8 +340,8 @@ export function NavigationMapView({
   onScreenSelect,
   tileSize = 64,
 }: NavigationMapViewProps) {
-  // Store actions
-  const { updateScreenNavigation } = useRandomizerStore();
+  // Store actions and data
+  const { updateScreenNavigation, sectionMap } = useRandomizerStore();
 
   // Drag-drop state
   const [dragState, setDragState] = useState<DragState>({
@@ -234,6 +357,61 @@ export function NavigationMapView({
   // Zoom state
   const [zoom, setZoom] = useState(1.0);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  // Overlay toggles (persisted to localStorage)
+  const [showLinks, setShowLinks] = useState<boolean>(() =>
+    readBoolFlag(LS_OVERLAY_LINKS, false)
+  );
+  const [showCollisions, setShowCollisions] = useState<boolean>(() =>
+    readBoolFlag(LS_OVERLAY_COLLISIONS, false)
+  );
+  const [showContent, setShowContent] = useState<boolean>(() =>
+    readBoolFlag(LS_OVERLAY_CONTENT, false)
+  );
+  const [showSectionExits, setShowSectionExits] = useState<boolean>(() =>
+    readBoolFlag(LS_OVERLAY_EXITS, false)
+  );
+  const [showTiles, setShowTiles] = useState<boolean>(() =>
+    readBoolFlag(LS_OVERLAY_TILES, true)
+  );
+  const [tileOpacity, setTileOpacity] = useState<number>(() => {
+    try {
+      const v = parseFloat(localStorage.getItem(LS_OVERLAY_TILE_OPACITY) ?? '');
+      return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1;
+    } catch {
+      return 1;
+    }
+  });
+  useEffect(() => writeBoolFlag(LS_OVERLAY_LINKS, showLinks), [showLinks]);
+  useEffect(() => writeBoolFlag(LS_OVERLAY_COLLISIONS, showCollisions), [showCollisions]);
+  useEffect(() => writeBoolFlag(LS_OVERLAY_CONTENT, showContent), [showContent]);
+  useEffect(() => writeBoolFlag(LS_OVERLAY_EXITS, showSectionExits), [showSectionExits]);
+  useEffect(() => writeBoolFlag(LS_OVERLAY_TILES, showTiles), [showTiles]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_OVERLAY_TILE_OPACITY, String(tileOpacity));
+    } catch {
+      /* ignore */
+    }
+  }, [tileOpacity]);
+
+  const effectiveTileOpacity = showTiles ? tileOpacity : 0;
+
+  // Edge walkability per screen (lazily fetched when "show collisions" is on)
+  const [edgeWalkability, setEdgeWalkability] = useState<Record<string, ScreenEdgeBlocked> | null>(null);
+  useEffect(() => {
+    if (!showCollisions) return;
+    let cancelled = false;
+    api
+      .getChapterEdgeWalkability(chapter.chapter_num)
+      .then((res) => {
+        if (!cancelled) setEdgeWalkability(res.screens);
+      })
+      .catch((err) => console.error('Failed to fetch edge walkability:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [showCollisions, chapter.chapter_num]);
 
   // Multi-section view mode
   const [multiSectionMode, setMultiSectionMode] = useState(false);
@@ -259,11 +437,11 @@ export function NavigationMapView({
     }
   }, [multiSectionMode, chapter?.chapter_num]);
 
-  // Build connected sections (respecting building boundaries)
+  // Build connected sections using planned assignments (R-019 compliance)
   // IMPORTANT: Must be declared before callbacks that use it
   const sections = useMemo(() => {
-    return buildConnectedSections(chapter.screens);
-  }, [chapter.screens]);
+    return buildConnectedSections(chapter.screens, chapter.chapter_num, sectionMap);
+  }, [chapter.screens, chapter.chapter_num, sectionMap]);
 
   // Toggle section visibility
   const toggleSectionVisibility = useCallback((sectionIdx: number) => {
@@ -287,26 +465,71 @@ export function NavigationMapView({
     }
   }, [sections]);
 
-  // Zoom handlers
+  // Zoom handlers (multiplicative so stepping feels consistent at any scale)
   const handleZoomIn = useCallback(() => {
-    setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP));
+    setZoom((z) => Math.min(MAX_ZOOM, z * ZOOM_FACTOR_BUTTON));
   }, []);
 
   const handleZoomOut = useCallback(() => {
-    setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP));
+    setZoom((z) => Math.max(MIN_ZOOM, z / ZOOM_FACTOR_BUTTON));
   }, []);
 
   const handleZoomReset = useCallback(() => {
     setZoom(1.0);
   }, []);
 
-  // Mouse wheel zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
+  // Mouse wheel zoom — attached natively so we can preventDefault
+  // (React's synthetic onWheel is passive by default and cannot stop scroll)
+  useEffect(() => {
+    const el = mapContainerRef.current;
+    if (!el) return;
+    const onWheelNative = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z + delta)));
-    }
+      const factor = e.deltaY > 0 ? 1 / ZOOM_FACTOR_WHEEL : ZOOM_FACTOR_WHEEL;
+      setZoom((z) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z * factor)));
+    };
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => el.removeEventListener('wheel', onWheelNative);
+  }, []);
+
+  // Drag-to-pan: mousedown on empty canvas area pans the scroll position.
+  // mousedown on a draggable screen or interactive element is ignored so the
+  // existing screen-drag and form controls keep working.
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{
+    x: number;
+    y: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+
+  const handlePanMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[draggable="true"]')) return;
+    if (target.closest('input,button,select,textarea,label,a')) return;
+    const el = mapContainerRef.current;
+    if (!el) return;
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+    };
+    setIsPanning(true);
+  }, []);
+
+  const handlePanMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!panStartRef.current || !mapContainerRef.current) return;
+    const dx = e.clientX - panStartRef.current.x;
+    const dy = e.clientY - panStartRef.current.y;
+    mapContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+    mapContainerRef.current.scrollTop = panStartRef.current.scrollTop - dy;
+  }, []);
+
+  const handlePanMouseUp = useCallback(() => {
+    panStartRef.current = null;
+    setIsPanning(false);
   }, []);
 
   // Auto-select first section, or the section containing selected screen
@@ -315,9 +538,10 @@ export function NavigationMapView({
   // Update selected section when selectedScreen changes (from external source)
   useEffect(() => {
     if (selectedScreen !== null) {
-      const sectionWithScreen = sections.find(s => s.screens.has(selectedScreen));
-      if (sectionWithScreen) {
-        setSelectedSectionId(sectionWithScreen.id);
+      // Find the INDEX of the section containing this screen, not the section's ID
+      const sectionIndex = sections.findIndex(s => s.screens.has(selectedScreen));
+      if (sectionIndex !== -1 && sectionIndex !== selectedSectionId) {
+        setSelectedSectionId(sectionIndex);
       }
     }
     // Only react to selectedScreen changes, not selectedSectionId changes
@@ -397,6 +621,20 @@ export function NavigationMapView({
     const maxY = Math.max(...Array.from(positions.values()).map(p => p.y));
     return { gridWidth: maxX + 1, gridHeight: maxY + 1 };
   }, [positions]);
+
+  // Center the map in the viewport when section/chapter/grid-size changes,
+  // so loading the page doesn't pin the map to the top-left of a wide canvas.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const el = mapContainerRef.current;
+      if (!el) return;
+      el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+      el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) / 2);
+    });
+    return () => cancelAnimationFrame(id);
+    // Intentionally omit `zoom` so user-initiated zoom doesn't snap-recenter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSectionId, chapter.chapter_num, gridWidth, gridHeight]);
 
   // Create reverse position map (position -> screenIndex)
   const positionToScreen = useMemo(() => {
@@ -607,6 +845,49 @@ export function NavigationMapView({
     }
   }, [positionToScreen, updateScreenNavigation, chapter.screens, dragState.originalSectionId, selectedSectionId, selectedSection?.parentWorld]);
 
+  // Cross-section edge exits: nav direction points to a screen in another section.
+  // Used to render transparent neighbors at the appropriate adjacent grid cell.
+  const crossSectionExits = useMemo(() => {
+    type Exit = {
+      fromIndex: number;
+      fromPos: Position;
+      direction: 'up' | 'down' | 'left' | 'right';
+      toIndex: number;
+      toScreen: ScreenData;
+    };
+    const exits: Exit[] = [];
+    if (!selectedSection) return exits;
+
+    const screenMap = new Map(chapter.screens.map((s) => [s.index, s]));
+    const occupied = new Set(Array.from(positions.values()).map((p) => `${p.x},${p.y}`));
+    const claimedExitCells = new Set<string>();
+
+    for (const fromIdx of selectedSection.screens) {
+      const fromPos = positions.get(fromIdx);
+      const fromScreen = screenMap.get(fromIdx);
+      if (!fromPos || !fromScreen) continue;
+
+      const dirs: { dir: 'up' | 'down' | 'left' | 'right'; nav: number; dx: number; dy: number }[] = [
+        { dir: 'up', nav: fromScreen.nav_up, dx: 0, dy: -1 },
+        { dir: 'down', nav: fromScreen.nav_down, dx: 0, dy: 1 },
+        { dir: 'left', nav: fromScreen.nav_left, dx: -1, dy: 0 },
+        { dir: 'right', nav: fromScreen.nav_right, dx: 1, dy: 0 },
+      ];
+
+      for (const { dir, nav, dx, dy } of dirs) {
+        if (nav >= NAV_BUILDING) continue;
+        if (selectedSection.screens.has(nav)) continue;
+        const target = screenMap.get(nav);
+        if (!target) continue;
+        const cellKey = `${fromPos.x + dx},${fromPos.y + dy}`;
+        if (occupied.has(cellKey) || claimedExitCells.has(cellKey)) continue;
+        claimedExitCells.add(cellKey);
+        exits.push({ fromIndex: fromIdx, fromPos, direction: dir, toIndex: nav, toScreen: target });
+      }
+    }
+    return exits;
+  }, [selectedSection, chapter.screens, positions]);
+
   // Find building links from current section to other sections
   const buildingLinks = useMemo(() => {
     const links: { fromScreen: number; toSection: number; toSectionId: number }[] = [];
@@ -667,7 +948,7 @@ export function NavigationMapView({
               onClick={handleZoomOut}
               disabled={zoom <= MIN_ZOOM}
               className="w-8 h-8 flex items-center justify-center rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Zoom out (Ctrl+Scroll)"
+              title="Zoom out (or scroll wheel)"
             >
               -
             </button>
@@ -682,11 +963,79 @@ export function NavigationMapView({
               onClick={handleZoomIn}
               disabled={zoom >= MAX_ZOOM}
               className="w-8 h-8 flex items-center justify-center rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Zoom in (Ctrl+Scroll)"
+              title="Zoom in (or scroll wheel)"
             >
               +
             </button>
           </div>
+        </div>
+
+        {/* Overlay Toggles */}
+        <div className="flex items-center gap-4 mb-2 flex-wrap">
+          <OverlayToggle
+            label="Show screen links"
+            color="bg-green-500"
+            checked={showLinks}
+            onChange={setShowLinks}
+            title="Draw a green line between every pair of screens that are linked via navigation"
+          />
+          <OverlayToggle
+            label="Show collision edges"
+            color="bg-red-500"
+            checked={showCollisions}
+            onChange={setShowCollisions}
+            title="Draw a red line on each screen edge where every tile is non-walkable (impassable wall)"
+          />
+          <OverlayToggle
+            label="Show content bytes"
+            color="bg-amber-500"
+            checked={showContent}
+            onChange={setShowContent}
+            title="Show the screen's content byte (in red) under the index when it's neither 0x00 nor 0xFF — usually means an event/door target"
+          />
+          <OverlayToggle
+            label="Show section exits"
+            color="bg-cyan-500"
+            checked={showSectionExits}
+            onChange={setShowSectionExits}
+            title="Render the destination screen transparently when a screen edge exits to another section, and show the destination index in the top-right for non-edge exits like maze entrances"
+          />
+          <OverlayToggle
+            label="Show tiles"
+            color="bg-slate-300"
+            checked={showTiles}
+            onChange={setShowTiles}
+            title="Show the rendered tile graphics on each screen. Uncheck to see only the worldscreen color + index, useful when overlays are crowded."
+          />
+          <label
+            className="flex items-center gap-1.5 text-xs text-slate-300"
+            title="Opacity of the rendered tile graphics (0.05 - 1.0)"
+          >
+            <span>Tile opacity</span>
+            <input
+              type="range"
+              min={0.05}
+              max={1}
+              step={0.05}
+              value={tileOpacity}
+              onChange={(e) => setTileOpacity(parseFloat(e.target.value))}
+              disabled={!showTiles}
+              className="w-24 align-middle"
+            />
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={tileOpacity}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setTileOpacity(Math.max(0, Math.min(1, v)));
+              }}
+              disabled={!showTiles}
+              className="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-right text-slate-200 text-xs disabled:opacity-50"
+            />
+          </label>
         </div>
 
         {/* Multi-Section Toggle */}
@@ -725,13 +1074,20 @@ export function NavigationMapView({
 
         {/* Section Buttons/Checkboxes */}
         <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-xs text-slate-500 mr-2">Sections:</span>
+          <span className="text-xs text-slate-500 mr-2">
+            Sections{sectionMap?.applied ? ' (from plan)' : ''}:
+          </span>
           {sections.map((section, idx) => {
             const isCurrentSection = selectedSectionId === idx;
             const isOriginalSection = dragState.originalSectionId === idx;
             const canDropHere = dragState.isDragging && !isOriginalSection;
             const sectionColor = SECTION_COLORS[idx % SECTION_COLORS.length];
             const isVisible = visibleSections.has(idx);
+
+            // Format section label: show type if from plan, else use section id
+            const sectionLabel = section.sectionType
+              ? `${formatSectionType(section.sectionType)}`
+              : `${section.id}`;
 
             if (multiSectionMode) {
               // Checkbox mode for multi-section view
@@ -747,6 +1103,7 @@ export function NavigationMapView({
                     borderLeft: `3px solid ${sectionColor.border}`,
                     backgroundColor: isVisible ? sectionColor.bg : undefined,
                   }}
+                  title={section.sectionType || `Section ${section.id}`}
                 >
                   <input
                     type="checkbox"
@@ -754,7 +1111,7 @@ export function NavigationMapView({
                     onChange={() => toggleSectionVisibility(idx)}
                     className="w-3 h-3 rounded border-slate-600"
                   />
-                  <span>{idx + 1}</span>
+                  <span>{sectionLabel}</span>
                   <span className="text-slate-400">({section.screens.size})</span>
                 </label>
               );
@@ -777,15 +1134,17 @@ export function NavigationMapView({
                     : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                 }`}
                 style={{
-                  borderLeft: `3px solid ${getParentWorldColor(section.parentWorld)}`,
+                  borderLeft: `3px solid ${getSectionTypeColor(section.sectionType) || getParentWorldColor(section.parentWorld)}`,
                 }}
                 title={
                   canDropHere
-                    ? `Drag here to move to section ${idx + 1} (parent_world: ${formatHex(section.parentWorld)})`
+                    ? `Drag here to move to ${section.sectionType || 'section'} ${section.id}`
+                    : section.sectionType
+                    ? `${section.sectionType} (${section.screens.size} screens)`
                     : `Parent World: ${formatHex(section.parentWorld)}`
                 }
               >
-                {idx + 1} ({section.screens.size})
+                {sectionLabel} ({section.screens.size})
               </button>
             );
           })}
@@ -850,8 +1209,13 @@ export function NavigationMapView({
       {/* Map Grid */}
       <div
         ref={mapContainerRef}
-        className="flex-1 overflow-auto p-4 bg-slate-950"
-        onWheel={handleWheel}
+        className={`flex-1 overflow-auto p-4 bg-slate-950 ${
+          isPanning ? 'cursor-grabbing select-none' : 'cursor-grab'
+        }`}
+        onMouseDown={handlePanMouseDown}
+        onMouseMove={handlePanMouseMove}
+        onMouseUp={handlePanMouseUp}
+        onMouseLeave={handlePanMouseUp}
       >
         {/* Multi-Section View */}
         {multiSectionMode && spatialData ? (
@@ -933,6 +1297,7 @@ export function NavigationMapView({
                         size={tileWidth}
                         selected={selectedScreen === screen.index}
                         onClick={() => onScreenSelect(screen.index)}
+                        tileOpacity={effectiveTileOpacity}
                       />
                       {/* Section label */}
                       <div
@@ -1012,6 +1377,38 @@ export function NavigationMapView({
               );
             })}
 
+            {/* Cross-section transparent neighbors (rendered behind screens) */}
+            {showSectionExits && crossSectionExits.map((exit) => {
+              const dx = exit.direction === 'left' ? -1 : exit.direction === 'right' ? 1 : 0;
+              const dy = exit.direction === 'up' ? -1 : exit.direction === 'down' ? 1 : 0;
+              const tx = exit.fromPos.x + dx;
+              const ty = exit.fromPos.y + dy;
+              return (
+                <div
+                  key={`exit-${exit.fromIndex}-${exit.direction}`}
+                  className="absolute pointer-events-none opacity-20"
+                  style={{
+                    left: (tx + 1) * tileWidth,
+                    top: (ty + 1) * tileHeight,
+                    width: tileWidth,
+                    height: tileHeight,
+                  }}
+                  title={`Exits to screen 0x${exit.toIndex.toString(16).toUpperCase().padStart(2, '0')} (different section)`}
+                >
+                  <ScreenMini
+                    screen={exit.toScreen}
+                    chapterNum={chapter.chapter_num}
+                    size={tileWidth}
+                    showIndex={false}
+                    tileOpacity={effectiveTileOpacity}
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 text-center text-[9px] font-mono bg-black/60 text-cyan-300 px-1">
+                    0x{exit.toIndex.toString(16).toUpperCase().padStart(2, '0')} ↗
+                  </div>
+                </div>
+              );
+            })}
+
             {/* Screens */}
             {sectionScreens.map(screen => {
               const pos = positions.get(screen.index);
@@ -1025,6 +1422,17 @@ export function NavigationMapView({
                 screen.nav_right === NAV_BUILDING;
 
               const isBeingDragged = dragState.screenIndex === screen.index;
+
+              // Per-screen overlay data
+              const collisions = showCollisions
+                ? edgeWalkability?.[String(screen.index)]
+                : undefined;
+              const showContentByte =
+                showContent && screen.content !== 0x00 && screen.content !== 0xFF;
+              const isNonEdgeExit =
+                showSectionExits &&
+                hasBuildingNav &&
+                screen.content < chapter.screens.length;
 
               return (
                 <div
@@ -1048,9 +1456,49 @@ export function NavigationMapView({
                     size={tileWidth}
                     selected={selectedScreen === screen.index}
                     onClick={() => onScreenSelect(screen.index)}
+                    tileOpacity={effectiveTileOpacity}
                   />
-                  {/* Building indicator */}
-                  {hasBuildingNav && (
+
+                  {/* Collision edges (red lines on impassable edges) */}
+                  {collisions && (
+                    <>
+                      {collisions.top && (
+                        <div className="absolute top-0 left-0 right-0 h-[2px] bg-red-500 pointer-events-none" />
+                      )}
+                      {collisions.bottom && (
+                        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-red-500 pointer-events-none" />
+                      )}
+                      {collisions.left && (
+                        <div className="absolute top-0 left-0 bottom-0 w-[2px] bg-red-500 pointer-events-none" />
+                      )}
+                      {collisions.right && (
+                        <div className="absolute top-0 right-0 bottom-0 w-[2px] bg-red-500 pointer-events-none" />
+                      )}
+                    </>
+                  )}
+
+                  {/* Content byte (red, top-left, under index label) */}
+                  {showContentByte && (
+                    <div
+                      className="absolute top-3 left-0 px-1 text-[9px] font-mono font-bold text-red-400 bg-black/70 pointer-events-none"
+                      title={`Content byte: 0x${screen.content.toString(16).toUpperCase().padStart(2, '0')} (event 0x${screen.event.toString(16).toUpperCase().padStart(2, '0')})`}
+                    >
+                      0x{screen.content.toString(16).toUpperCase().padStart(2, '0')}
+                    </div>
+                  )}
+
+                  {/* Non-edge exit destination (top-right, e.g. maze/stairway) */}
+                  {isNonEdgeExit && (
+                    <div
+                      className="absolute top-0 right-0 px-1 text-[10px] font-mono font-bold text-cyan-300 bg-black/70 pointer-events-none"
+                      title={`Non-edge exit (building/stairway) — leads to screen 0x${screen.content.toString(16).toUpperCase().padStart(2, '0')}`}
+                    >
+                      →0x{screen.content.toString(16).toUpperCase().padStart(2, '0')}
+                    </div>
+                  )}
+
+                  {/* Building indicator (existing — only shown when section-exits overlay is OFF, since the dest badge above subsumes it) */}
+                  {hasBuildingNav && !isNonEdgeExit && (
                     <div
                       className="absolute top-0 right-0 w-3 h-3 bg-amber-500 rounded-bl text-[8px] flex items-center justify-center text-black font-bold"
                       title="Has building entrance"
@@ -1063,6 +1511,97 @@ export function NavigationMapView({
                 </div>
               );
             })}
+
+            {/* Screen-link overlay (SVG bright green arrows between linked
+                screens). Source endpoint is offset from center toward the link's
+                source edge so you can tell which side the link leaves from; the
+                target endpoint is pushed almost to the target's facing edge so
+                the arrowhead "barely enters" the destination screen. */}
+            {showLinks && (
+              <svg
+                className="absolute inset-0 pointer-events-none"
+                width={(gridWidth + 2) * tileWidth}
+                height={(gridHeight + 2) * tileHeight}
+              >
+                <defs>
+                  <marker
+                    id="navmap-link-arrow"
+                    viewBox="0 0 12 12"
+                    refX="11"
+                    refY="6"
+                    markerWidth="3.5"
+                    markerHeight="3.5"
+                    orient="auto"
+                  >
+                    <path
+                      d="M 1 1 L 11 6 L 1 11 z"
+                      fill="#00ff88"
+                      stroke="#0a3a1f"
+                      strokeWidth="1.2"
+                      strokeLinejoin="round"
+                    />
+                  </marker>
+                </defs>
+                {sectionScreens.flatMap((screen) => {
+                  const pos = positions.get(screen.index);
+                  if (!pos) return [];
+                  // Stem starts halfway to the source's center (0.25 from center
+                  // toward the link's source edge); arrowhead tip "barely enters"
+                  // the target (0.45 from target's center toward facing edge).
+                  const SRC = 0.25;
+                  const TGT = 0.45;
+                  const dirs: {
+                    name: 'up' | 'down' | 'left' | 'right';
+                    nav: number;
+                    srcDx: number;
+                    srcDy: number;
+                    tgtDx: number;
+                    tgtDy: number;
+                  }[] = [
+                    { name: 'up',    nav: screen.nav_up,    srcDx: 0,     srcDy: -SRC, tgtDx: 0,    tgtDy:  TGT },
+                    { name: 'down',  nav: screen.nav_down,  srcDx: 0,     srcDy:  SRC, tgtDx: 0,    tgtDy: -TGT },
+                    { name: 'left',  nav: screen.nav_left,  srcDx: -SRC,  srcDy: 0,    tgtDx: TGT,  tgtDy:  0 },
+                    { name: 'right', nav: screen.nav_right, srcDx:  SRC,  srcDy: 0,    tgtDx: -TGT, tgtDy:  0 },
+                  ];
+                  return dirs
+                    .filter((d) => d.nav < NAV_BUILDING && selectedSection?.screens.has(d.nav))
+                    .map((d) => {
+                      const targetPos = positions.get(d.nav);
+                      if (!targetPos) return null;
+                      const x1 = (pos.x + 1.5 + d.srcDx) * tileWidth;
+                      const y1 = (pos.y + 1.5 + d.srcDy) * tileHeight;
+                      const x2 = (targetPos.x + 1.5 + d.tgtDx) * tileWidth;
+                      const y2 = (targetPos.y + 1.5 + d.tgtDy) * tileHeight;
+                      return (
+                        <g key={`link-${screen.index}-${d.name}`}>
+                          {/* Dark border underneath the bright stem */}
+                          <line
+                            x1={x1}
+                            y1={y1}
+                            x2={x2}
+                            y2={y2}
+                            stroke="#0a3a1f"
+                            strokeWidth={4.5}
+                            strokeLinecap="round"
+                          />
+                          {/* Bright green stem with arrowhead */}
+                          <line
+                            x1={x1}
+                            y1={y1}
+                            x2={x2}
+                            y2={y2}
+                            stroke="#00ff88"
+                            strokeWidth={2.5}
+                            strokeLinecap="round"
+                            markerEnd="url(#navmap-link-arrow)"
+                          />
+                        </g>
+                      );
+                    })
+                    .filter(Boolean);
+                })}
+              </svg>
+            )}
           </div>
         )}
       </div>
@@ -1101,6 +1640,7 @@ export function NavigationMapView({
                     size={tileWidth}
                     selected={selectedScreen === screen.index}
                     onClick={() => onScreenSelect(screen.index)}
+                    tileOpacity={effectiveTileOpacity}
                   />
                   {hasBuildingNav && (
                     <div
@@ -1140,11 +1680,41 @@ export function NavigationMapView({
             Parent World: {selectedSection ? formatHex(selectedSection.parentWorld) : '-'}
           </div>
           <div className="text-slate-500 ml-auto">
-            Drag screens to rearrange | Hover over section buttons to move between sections
+            Drag screens to rearrange · Drag empty canvas to pan · Scroll wheel to zoom · Hover section buttons to move between sections
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function OverlayToggle({
+  label,
+  color,
+  checked,
+  onChange,
+  title,
+}: {
+  label: string;
+  color: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title?: string;
+}) {
+  return (
+    <label
+      className="flex items-center gap-1.5 cursor-pointer text-xs select-none"
+      title={title}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+      />
+      <span className={`inline-block w-2 h-2 rounded-sm ${color}`} />
+      <span className="text-slate-300">{label}</span>
+    </label>
   );
 }
 
@@ -1162,4 +1732,42 @@ function getParentWorldColor(parentWorld: number): string {
     0x09: '#14b8a6', // Teal
   };
   return colors[parentWorld] || '#64748b';
+}
+
+/**
+ * Get color for a section type from the plan.
+ * Matches the colors used in the Section Flow diagram (MapView.tsx).
+ */
+function getSectionTypeColor(sectionType: string | undefined): string | null {
+  if (!sectionType) return null;
+
+  const colors: Record<string, string> = {
+    'OVERWORLD': '#2563eb',  // Blue
+    'TOWN': '#16a34a',       // Green
+    'DUNGEON': '#dc2626',    // Red
+    'MAZE': '#9333ea',       // Purple
+    'BOSS': '#f59e0b',       // Amber
+    'VICTORY': '#84cc16',    // Lime
+    'SPECIAL': '#06b6d4',    // Cyan
+  };
+
+  return colors[sectionType.toUpperCase()] || null;
+}
+
+/**
+ * Format section type for display (e.g., "OVERWORLD" -> "OW")
+ */
+function formatSectionType(sectionType: string): string {
+  const abbreviations: Record<string, string> = {
+    'OVERWORLD': 'OW',
+    'TOWN': 'TW',
+    'DUNGEON': 'DG',
+    'MAZE': 'MZ',
+    'BOSS': 'BS',
+    'VICTORY': 'VC',
+    'SPECIAL': 'SP',
+    'UNKNOWN': '??',
+  };
+
+  return abbreviations[sectionType.toUpperCase()] || sectionType.slice(0, 2).toUpperCase();
 }

@@ -42,13 +42,17 @@ class NavigationConsistencyValidator(Validator):
     DEFAULT_SEVERITY = Severity.ERROR
     SUPPORTED_PHASES = {ValidationPhase.DURING_NAVIGATION, ValidationPhase.FINAL}
 
-    def __init__(self, config: Optional[NavigationConfig] = None):
+    def __init__(self, config=None):
         """Initialize with configuration.
 
         Args:
             config: Navigation validation settings
         """
-        self.config = config or NavigationConfig()
+        self._issues: List[ValidationIssue] = []
+        if isinstance(config, NavigationConfig):
+            self.config = config
+        else:
+            self.config = NavigationConfig()
 
     def validate_chapter(
         self,
@@ -162,7 +166,8 @@ class NavigationConsistencyValidator(Validator):
         """
         issues: List[ValidationIssue] = []
 
-        for chapter in game_world.chapters:
+        # game_world.chapters is a Dict[int, Chapter], iterate over values
+        for chapter in game_world.chapters.values():
             chapter_issues = self.validate_chapter(chapter, context)
             issues.extend(chapter_issues)
 

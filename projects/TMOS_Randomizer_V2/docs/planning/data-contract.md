@@ -119,14 +119,14 @@ interface RandomizerSettings {
   // Content placement
   content_placement: {
     encounter_density: number;  // 0.0-1.0
-    shops_per_town: { min: number; max: number };
+    shops_per_town: { min: number; max: number };  // PROVISIONAL — feeds logic/shop_randomization which is ImportError-gated. See TMOS_AI/docs/human/items-economy-re-answers.md
     hotels_per_town: { min: number; max: number };
   };
 
   // Difficulty
   difficulty: {
     enemy_scaling: 'easy' | 'normal' | 'hard';
-    shop_price_multiplier: number;
+    shop_price_multiplier: number;  // PROVISIONAL — no active reader (shop pipeline disabled pending Bank 2 RE)
   };
 }
 
@@ -188,7 +188,7 @@ interface ChapterPlan {
   // Placement data
   item_placements: ItemPlacement[];
   ally_placements: AllyPlacement[];
-  shop_inventories: ShopInventory[];
+  shop_inventories: ShopInventory[];  // PROVISIONAL — field is NOT populated by the current Python phase1_planning.ChapterPlan dataclass. Blocked on Bank 2 bytecode RE. See TMOS_AI/docs/human/items-economy-re-answers.md
 
   // Chapter-specific validation
   validation: ChapterValidation;
@@ -321,7 +321,7 @@ interface ItemPlacement {
   section_id: string;
   screen_id: number;
   source_type: 'chest' | 'npc' | 'shop' | 'starting' | 'boss_drop';
-  price?: number;            // For shop items
+  price?: number;            // PROVISIONAL — 'shop' source_type + price field depend on Bank 2 RE
   requirements: string[];    // Items/allies needed to access
   sphere: number;            // Progression sphere (0 = available from start)
 }
@@ -340,6 +340,14 @@ interface AllyPlacement {
   placement_notes?: string;  // Warnings about restrictions
 }
 
+// ============================================================================
+// PROVISIONAL — real shop data lives in an undecoded Bank 2 bytecode
+// interpreter. The shape below (item array with prices) may not match ROM
+// reality once the bytecode is decoded. Do not build UI or API clients
+// against this contract. The logic/shop_randomization module is
+// ImportError-gated and the backend does not populate shop_inventories.
+// See TMOS_AI/docs/human/items-economy-re-answers.md.
+// ============================================================================
 interface ShopInventory {
   shop_id: string;
   chapter: number;
@@ -406,7 +414,7 @@ interface SpoilerData {
   // Ally locations
   ally_locations: AllyLocationSummary[];
 
-  // Shop contents
+  // Shop contents — PROVISIONAL, not populated today (see ShopInventory note above)
   shop_summaries: ShopSummary[];
 
   // Progression analysis
@@ -430,6 +438,8 @@ interface AllyLocationSummary {
   requirements: string;
 }
 
+// PROVISIONAL — spoiler log currently emits a "not yet supported" notice
+// instead of rendering this structure. See ShopInventory note above.
 interface ShopSummary {
   chapter: number;
   location: string;
@@ -643,6 +653,8 @@ class ChapterPlan:
     screens: List[ScreenPlan]
     item_placements: List[ItemPlacement]
     ally_placements: List[AllyPlacement]
+    # PROVISIONAL: this field does NOT exist in the actual phase1_planning.ChapterPlan
+    # dataclass today. The contract below is aspirational, pending Bank 2 RE.
     shop_inventories: List[Dict]
     validation: ValidationResult
 

@@ -6,7 +6,7 @@ import { ScreenGrid } from '../screen/ScreenGrid';
 import { ScreenDetailPanel } from '../screen/ScreenDetailPanel';
 import { TileGridView } from '../screen/TileGridView';
 import { TileBankView } from '../tilebank';
-import { ItemsView, AlliesView, ValidationView, MapView } from '../views';
+import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, ValidationView, MapView } from '../views';
 import { JsonDebugPanel } from '../debug/JsonDebugPanel';
 
 const TABS: { id: TabType; label: string }[] = [
@@ -15,6 +15,8 @@ const TABS: { id: TabType; label: string }[] = [
   { id: 'tiles', label: 'Tiles' },
   { id: 'tilebank', label: 'Tile Bank' },
   { id: 'items', label: 'Items' },
+  { id: 'stats', label: 'Player Stats' },
+  { id: 'enemies', label: 'Enemies' },
   { id: 'allies', label: 'Allies' },
   { id: 'validation', label: 'Validation' },
   { id: 'debug', label: 'Debug' },
@@ -162,6 +164,12 @@ export function MainContent() {
               )}
               {selectedTab === 'items' && planChapter && (
                 <ItemsView chapter={planChapter} />
+              )}
+              {selectedTab === 'stats' && (
+                <PlayerStatsView />
+              )}
+              {selectedTab === 'enemies' && (
+                <EnemiesView />
               )}
               {selectedTab === 'allies' && planChapter && (
                 <AlliesView chapter={planChapter} />

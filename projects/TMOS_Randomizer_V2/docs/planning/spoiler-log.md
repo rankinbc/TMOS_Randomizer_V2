@@ -144,6 +144,14 @@ Supica                  2          Overworld, Screen 134       None
 
 ### 5. Shop Inventories
 
+> **PROVISIONAL — this section is not currently rendered.** The spoiler log's
+> `_generate_shops_section` (disabled in Phase 0) emits a fixed
+> "Shop randomization is not yet supported (Bank 2 RE pending)" notice instead
+> of the inventories shown below. Real shop data lives in an undecoded Bank 2
+> bytecode interpreter; the example output here is aspirational and shows what
+> the section will look like once the bytecode is reverse-engineered.
+> See `TMOS_AI/docs/human/items-economy-re-answers.md`.
+
 What each shop sells:
 
 ```

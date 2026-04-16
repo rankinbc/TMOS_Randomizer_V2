@@ -20,6 +20,13 @@ general:
   # "generate" = create new layouts (future feature)
   mode: "shuffle"
 
+  # Randomization strategy — which algorithm to use.
+  # "organic" = preserve real section shapes from the ROM, shuffle content
+  #             with edge-aware placement. Enforces PAST/PRESENT isolation
+  #             and walkable-edge alignment by construction.
+  # "classic" = the six-phase abstract-shape pipeline (blob/linear shapes).
+  strategy: "organic"
+
 # ==============================================================================
 # SECTION STRUCTURE
 # ==============================================================================

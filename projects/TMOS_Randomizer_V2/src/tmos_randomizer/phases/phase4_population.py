@@ -22,6 +22,7 @@ from ..core.enums import (
     PARENTWORLD_TO_SECTION,
     BOSS_SCREENS_BY_CHAPTER,
     VICTORY_SCREENS_BY_CHAPTER,
+    is_past_screen_index,
 )
 from ..core.worldscreen import WorldScreen
 from ..logic.exclusions import is_excluded, get_randomizable_screens
@@ -365,16 +366,20 @@ def assign_screens_to_sections(
             continue
 
         # Get candidate screens (excluding preserved section types from fallback)
+        # Filter by time period: section.is_past must match screen's time period
         candidates = _get_candidate_screens(
             screen_pools,
             section_plan.section_type,
             assigned_screens,
             prefer_matching_type,
             preserved_types,
+            chapter_num=chapter.chapter_num,
+            section_is_past=section_plan.is_past,
         )
 
         # Assign screens to section
         assigned = _assign_section_screens(
+            chapter,
             candidates,
             section_plan,
             section_shape,
@@ -396,8 +401,10 @@ def _assign_preserved_section(
 
     For preserved sections, we derive grid positions from the original
     navigation layout using BFS from the first screen.
+    Time period filtering is still applied to ensure screens match section.is_past.
     """
     # Find screens of this section type in the original ROM
+    # Filter by time period to match section's is_past flag
     section_screens = []
 
     for screen in chapter:
@@ -407,7 +414,10 @@ def _assign_preserved_section(
         section_type = PARENTWORLD_TO_SECTION.get(screen.parent_world, SectionType.UNKNOWN)
         if section_type == section_plan.section_type:
             if screen.relative_index not in assigned_screens:
-                section_screens.append(screen.relative_index)
+                # Filter by time period: must match section's is_past flag
+                screen_is_past = is_past_screen_index(chapter.chapter_num, screen.relative_index)
+                if screen_is_past == section_plan.is_past:
+                    section_screens.append(screen.relative_index)
 
     # Limit to target count
     section_screens = section_screens[:section_plan.target_screen_count]
@@ -515,6 +525,8 @@ def _get_candidate_screens(
     assigned_screens: Set[int],
     prefer_matching: bool,
     preserved_types: Optional[Set[SectionType]] = None,
+    chapter_num: Optional[int] = None,
+    section_is_past: bool = False,
 ) -> List[int]:
     """Get candidate screens for assignment.
 
@@ -525,18 +537,31 @@ def _get_candidate_screens(
         prefer_matching: If True, prefer screens of matching type first
         preserved_types: Section types that are preserved and should not be
                         used as fallback by other section types
+        chapter_num: Chapter number (required for time period filtering)
+        section_is_past: True if target section is in PAST time period
     """
     candidates = []
     if preserved_types is None:
         preserved_types = set()
 
+    def _matches_time_period(screen_idx: int) -> bool:
+        """Check if screen matches the target section's time period."""
+        if chapter_num is None:
+            return True  # No filtering if chapter unknown
+        screen_is_past = is_past_screen_index(chapter_num, screen_idx)
+        return screen_is_past == section_is_past
+
     if prefer_matching:
-        # First add screens of matching type
+        # First add screens of matching type AND matching time period
         matching = screen_pools.get(target_type, [])
-        candidates.extend([s for s in matching if s not in assigned_screens])
+        candidates.extend([
+            s for s in matching
+            if s not in assigned_screens and _matches_time_period(s)
+        ])
 
     # Then add screens of other types as fallback
     # BUT skip preserved types (they should keep their own screens)
+    # AND still filter by time period
     for section_type, screens in screen_pools.items():
         if section_type == target_type and prefer_matching:
             continue  # Already added
@@ -544,12 +569,14 @@ def _get_candidate_screens(
             continue  # Don't steal from preserved section types
         for screen in screens:
             if screen not in assigned_screens and screen not in candidates:
-                candidates.append(screen)
+                if _matches_time_period(screen):
+                    candidates.append(screen)
 
     return candidates
 
 
 def _assign_section_screens(
+    chapter: Chapter,
     candidates: List[int],
     section_plan: SectionPlan,
     section_shape: SectionShape,
@@ -561,7 +588,10 @@ def _assign_section_screens(
 
     Each screen is assigned to a unique grid position from the shape.
     The grid positions are stored for navigation phase to use.
+    Also updates the screen's parent_world to match the target section type.
     """
+    from ..core.enums import SECTION_TO_PARENTWORLD
+
     # Shuffle candidates for randomness
     rng.shuffle(candidates)
 
@@ -570,6 +600,9 @@ def _assign_section_screens(
 
     # Initialize section grid mapping
     section_grid: Dict[Tuple[int, int], int] = {}
+
+    # Get the target parent_world for this section type
+    target_parent_world = SECTION_TO_PARENTWORLD.get(section_plan.section_type)
 
     # Assign screens to shape nodes (which have grid positions)
     assigned = []
@@ -587,9 +620,17 @@ def _assign_section_screens(
             # Skip this assignment if position already taken
             continue
 
-        # Determine original section type
-        # (We'd need the chapter here, but for now assume UNKNOWN)
-        original_type = SectionType.UNKNOWN
+        # Get the actual screen and determine original section type
+        screen = chapter.get_screen(screen_idx)
+        if screen:
+            original_type = PARENTWORLD_TO_SECTION.get(screen.parent_world, SectionType.UNKNOWN)
+
+            # Update parent_world to match target section
+            if target_parent_world is not None:
+                screen.parent_world = target_parent_world
+                screen.mark_modified()
+        else:
+            original_type = SectionType.UNKNOWN
 
         population.assignments.append(ScreenAssignment(
             real_screen_index=screen_idx,

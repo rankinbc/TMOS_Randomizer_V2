@@ -13,10 +13,24 @@ export function Header() {
     checkApiConnection,
     loadAssetManifest,
     uploadRom,
+    loadDefaultRom,
   } = useRandomizerStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [loadingDefault, setLoadingDefault] = useState(false);
+
+  const handleLoadDefault = useCallback(async () => {
+    setLoadingDefault(true);
+    try {
+      await loadDefaultRom();
+    } catch (error) {
+      console.error('Load default ROM failed:', error);
+      alert(`Failed to load default ROM: ${error instanceof Error ? error.message : 'unknown error'}`);
+    } finally {
+      setLoadingDefault(false);
+    }
+  }, [loadDefaultRom]);
 
   const handleFileSelect = useCallback(async (file: File) => {
     if (!file.name.endsWith('.nes')) {
@@ -113,7 +127,7 @@ export function Header() {
           {apiConnected && (
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
+              disabled={uploading || loadingDefault}
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 text-white text-sm rounded transition-colors flex items-center gap-2"
               title={romLoaded ? `Current: ${romFilename}` : 'Import a .nes ROM file'}
             >
@@ -126,6 +140,28 @@ export function Header() {
                 <>
                   <span>&#128194;</span>
                   {romLoaded ? 'Change ROM' : 'Import ROM'}
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Load Default ROM Button */}
+          {apiConnected && (
+            <button
+              onClick={handleLoadDefault}
+              disabled={uploading || loadingDefault}
+              className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-white text-sm rounded transition-colors flex items-center gap-2"
+              title="Load the default TMOS_ORIGINAL.nes shipped in rom-files/"
+            >
+              {loadingDefault ? (
+                <>
+                  <span className="animate-spin">&#9696;</span>
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <span>&#9733;</span>
+                  Load Default ROM
                 </>
               )}
             </button>

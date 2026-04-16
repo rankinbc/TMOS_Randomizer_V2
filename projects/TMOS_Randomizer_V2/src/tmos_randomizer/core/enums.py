@@ -246,6 +246,28 @@ def get_section_type(parent_world: int) -> SectionType:
     return PARENTWORLD_TO_SECTION.get(parent_world, SectionType.UNKNOWN)
 
 
+# Reverse mapping: SectionType -> canonical ParentWorld value
+# Used when assigning screens to sections to update their parent_world
+SECTION_TO_PARENTWORLD: dict[SectionType, int] = {
+    SectionType.TOWN: 0x20,
+    SectionType.OVERWORLD: 0x40,
+    SectionType.DUNGEON: 0xD0,
+    SectionType.MAZE: 0x53,
+    SectionType.SPECIAL: 0x61,
+    SectionType.BOSS: 0xC0,
+    SectionType.VICTORY: 0xC0,      # Victory uses same as boss area
+    SectionType.MINI_DUNGEON: 0xA0,
+}
+
+
+def get_parentworld_for_section(section_type: SectionType) -> int | None:
+    """Get the canonical ParentWorld value for a SectionType.
+
+    Returns None if section type has no defined parent_world mapping.
+    """
+    return SECTION_TO_PARENTWORLD.get(section_type)
+
+
 class ContentType(IntEnum):
     """Content byte values (WorldScreen byte 2).
 

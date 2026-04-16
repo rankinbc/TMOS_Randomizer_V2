@@ -142,6 +142,59 @@ class ReachabilityConfig:
 
 
 @dataclass
+class TimePeriodIsolationConfig:
+    """Configuration for time-period isolation validation.
+
+    PAST and PRESENT are parallel worlds. The only sanctioned way for the
+    player to cross between them is a Time Door. This validator flags any
+    directional navigation pointer that crosses time periods from a non
+    Time Door screen, and also verifies every populated section's screens
+    all belong to one time period.
+
+    Attributes:
+        enabled: Whether to run this validator
+        severity: Default severity for issues (error, warning, info)
+        max_issues: Maximum issues to report (0=unlimited)
+        check_section_membership: Also verify sections are time-period-pure
+        allow_time_door_exceptions: Allow cross-time nav from Time Door screens
+    """
+
+    enabled: bool = True
+    severity: str = "error"
+    max_issues: int = 100
+
+    check_section_membership: bool = True
+    allow_time_door_exceptions: bool = True
+
+
+@dataclass
+class EdgeAlignmentConfig:
+    """Configuration for edge-alignment validation.
+
+    A navigation edge A→B is only truly walkable if at least one row/column
+    index has a walkable tile on BOTH sides. The existing edge_compatibility
+    validator only checks that each edge has *some* walkable tile — it can
+    pass even when the walkable positions don't line up, trapping the player.
+
+    Attributes:
+        enabled: Whether to run this validator
+        severity: Default severity for issues (error, warning, info)
+        max_issues: Maximum issues to report (0=unlimited)
+        min_aligned_walkable: Minimum aligned walkable positions required
+        check_horizontal: Check left/right edges
+        check_vertical: Check top/bottom edges
+    """
+
+    enabled: bool = True
+    severity: str = "error"
+    max_issues: int = 100
+
+    min_aligned_walkable: int = 1
+    check_horizontal: bool = True
+    check_vertical: bool = True
+
+
+@dataclass
 class SectionFlowConfig:
     """Configuration for section flow validation.
 
@@ -215,6 +268,12 @@ class ValidationConfig:
     section_flow: SectionFlowConfig = field(
         default_factory=SectionFlowConfig
     )
+    time_period_isolation: TimePeriodIsolationConfig = field(
+        default_factory=TimePeriodIsolationConfig
+    )
+    edge_alignment: EdgeAlignmentConfig = field(
+        default_factory=EdgeAlignmentConfig
+    )
 
     # Validator enable/disable overrides
     enabled_validators: Optional[Set[str]] = None  # None = all enabled
@@ -248,6 +307,8 @@ class ValidationConfig:
             "navigation": self.navigation,
             "reachability": self.reachability,
             "section_flow": self.section_flow,
+            "time_period_isolation": self.time_period_isolation,
+            "edge_alignment": self.edge_alignment,
         }
 
         if validator_id in config_map:
@@ -276,6 +337,8 @@ class ValidationConfig:
             "navigation": self.navigation,
             "reachability": self.reachability,
             "section_flow": self.section_flow,
+            "time_period_isolation": self.time_period_isolation,
+            "edge_alignment": self.edge_alignment,
         }
 
         if validator_id in config_map:
@@ -301,6 +364,8 @@ class ValidationConfig:
             "navigation": self.navigation,
             "reachability": self.reachability,
             "section_flow": self.section_flow,
+            "time_period_isolation": self.time_period_isolation,
+            "edge_alignment": self.edge_alignment,
         }
 
         if validator_id not in config_map:
@@ -362,6 +427,12 @@ class ValidationConfig:
             config.reachability = ReachabilityConfig(**data["reachability"])
         if "section_flow" in data:
             config.section_flow = SectionFlowConfig(**data["section_flow"])
+        if "time_period_isolation" in data:
+            config.time_period_isolation = TimePeriodIsolationConfig(
+                **data["time_period_isolation"]
+            )
+        if "edge_alignment" in data:
+            config.edge_alignment = EdgeAlignmentConfig(**data["edge_alignment"])
 
         return config
 
@@ -385,4 +456,6 @@ class ValidationConfig:
             "navigation": vars(self.navigation),
             "reachability": vars(self.reachability),
             "section_flow": vars(self.section_flow),
+            "time_period_isolation": vars(self.time_period_isolation),
+            "edge_alignment": vars(self.edge_alignment),
         }

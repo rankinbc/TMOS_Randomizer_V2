@@ -227,15 +227,19 @@ Parsed:
   Entry 4: 11 20 3D → Robber at (32, 61)
 ```
 
-### ObjectSet 0x05 (2 Bees)
+### ObjectSet 0x05 (4 Robbers)
 
 ```
-ROM Offset: 0x38B55
-Raw bytes:  20 4D 00 11 20 24 11
+ROM Offset: 0x38B55  (verified: Ch1 ptr table @ 0x38933, index 5 → 0x1B55 → +0x37000)
+Raw bytes:  20 4D 00 11 20 24 11 10 A4 11 10 A8 11 10 6C 00
 
 Parsed:
-  Entry 1: 20 4D 00 → GrimReaper? at (77, 0) [may be header]
-  Entry 2: 11 20 24 → Robber at (32, 36)
+  Header:  20 4D 00
+  Entry 1: 11 20 24 → Robber at (32, 36)
+  Entry 2: 11 10 A4 → Robber at (16, 164)
+  Entry 3: 11 10 A8 → Robber at (16, 168)
+  Entry 4: 11 10 6C → Robber at (16, 108)
+  TERMINATOR: 00
 ```
 
 ### ObjectSet 0x0B (Crabs)
@@ -387,3 +391,4 @@ def find_screens_with_objectset(rom: bytes, chapter: int, objectset_id: int) -> 
 | 2026-01-24 | Added pointer table addresses per chapter |
 | 2026-01-24 | Added randomizer code examples |
 | 2026-01-24 | Added known ObjectSet descriptions from TMOS_Romhack1 |
+| 2026-04-16 | Fixed ObjectSet 0x05 example: stale "2 Bees" replaced with ROM-verified "4 Robbers" (full entry list + terminator) |

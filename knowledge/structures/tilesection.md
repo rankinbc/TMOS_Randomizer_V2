@@ -1,7 +1,7 @@
 # TileSection Structure
 
-**Last Updated**: 2026-01-24
-**Sources**: ROM analysis, TMOS_Romhack1/2/3
+**Last Updated**: 2026-04-16
+**Sources**: ROM analysis (TMOS_ORIGINAL.nes, MD5 b3236db14c87f375e5f24a5b9b79f071), verified against `projects/TMOS_Randomizer_V2/src/tmos_randomizer/rendering/screen_renderer.py`
 **Confidence**: HIGH
 
 ---
@@ -18,24 +18,11 @@ A TileSection is a pre-defined 8x4 grid of tile IDs used to construct WorldScree
 |----------|-------|------------|
 | ROM Address | `0x03C4C7` | HIGH |
 | Size | 32 bytes per TileSection | HIGH |
-| **Offset** | **8 bytes between TileSections** | HIGH |
-| Count | 940 | HIGH |
+| **Stride** | **32 bytes between TileSections (non-overlapping)** | HIGH |
+| Count | 474 accessible (indices 0..473) | HIGH |
 | Format | 8 columns × 4 rows, row-major | HIGH |
 
-### Critical: Overlapping TileSections
-
-TileSections **overlap in ROM** to save space:
-- Each TileSection is 32 bytes (4 rows × 8 tiles)
-- But TileSection N starts at: `base + (N × 8)`
-- Adjacent TileSections share 3 rows (24 bytes)
-
-```
-TileSection 0: Row0 Row1 Row2 Row3
-TileSection 1:      Row1 Row2 Row3 Row4  (shares rows 1-3 with TS0)
-TileSection 2:           Row2 Row3 Row4 Row5  (shares rows 2-3 with TS0)
-```
-
-This allows 940 TileSections to fit in ~7,500 bytes instead of 30,000 bytes.
+TileSections are laid out **contiguously, not overlapping**. TileSection `N` is the 32 bytes at `base + N*32`. Adjacent sections share no data.
 
 ---
 
@@ -53,10 +40,32 @@ Each byte is a Tile ID referencing the Tile table at `0x011B0B`.
 
 ### Address Calculation
 ```
-TileSection_Address = 0x03C4C7 + (TileSection_Index × 8)
+TileSection_Address = 0x03C4C7 + (TileSection_Index * 32)
 ```
 
-Note: Multiply by 8, not 32. TileSections overlap.
+Multiply by 32 (= section size). Sections do **not** overlap.
+
+### Two-Bank Indexing (via DataPointer)
+
+The TileSection index byte inside a WorldScreen (bytes 10/11) is only the low 8 bits of a 9-bit index. The high bit (+256 offset) is selected per-half by the WorldScreen's DataPointer byte:
+
+| DataPointer range | Top bank | Bottom bank |
+|-------------------|----------|-------------|
+| `< 0x40`          | 0 (+0)   | 0 (+0)      |
+| `0x40..0x8E`      | 0 (+0)   | 1 (+256)    |
+| `0x8F..0x9F`      | 1 (+256) | 0 (+0)      |
+| `>= 0xC0`         | 1 (+256) | 1 (+256)    |
+
+See `knowledge/structures/worldscreen.md` for the DataPointer field. Any code reading TileSections for a specific WorldScreen **must** apply this bank shift before the stride multiplication.
+
+### ⚠️ Previous incorrect claim (fixed 2026-04-16)
+
+Earlier revisions of this doc claimed an 8-byte overlapping stride and a count of 940. Both were wrong. The real stride is 32 and the real count is 474. ROM verification at index 13:
+
+- `base + 13*8  = 0x03C52F` → `01 02 01 02…` (not the real TS13)
+- `base + 13*32 = 0x03C667` → `0D 0D 0D 0D…` (matches TS13 content used at runtime)
+
+Any downstream analysis derived from the old stride (including the edge-compatibility tables below) is suspect and should be recomputed.
 
 ---
 
@@ -87,6 +96,8 @@ A WorldScreen references two TileSections:
 ---
 
 ## Edge Compatibility Patterns (Analyzed)
+
+> ⚠️ **STALE — recompute required.** The counts below were computed using the incorrect 8-byte overlapping stride and the 940-section count. They reference data that does not correspond to real TileSections. Treat as unreliable until regenerated from the correct 32-byte stride over 474 sections (and, where relevant, with DataPointer bank shift applied).
 
 From analysis of all 940 TileSections (using correct 8-byte offset):
 
@@ -119,12 +130,14 @@ For combining Top + Bottom TileSections into a WorldScreen:
 - Top TileSection's bottom row (bytes 24-31) should match
 - Bottom TileSection's top row (bytes 0-7)
 
+> ⚠️ **STALE — see note above.** These numbers were also computed under the incorrect stride assumption.
+
 From analysis (corrected with 8-byte offset):
 - 82 unique top-row patterns exist
 - 82 unique bottom-row patterns exist
 - **All 82 patterns have compatible matches**
 
-This high compatibility is because overlapping TileSections naturally share rows - adjacent TileSections share 3 rows of data.
+The "overlapping shared rows" rationale in the original analysis is incorrect — sections do not overlap. Recompute from the real 32-byte sections.
 
 ---
 
@@ -165,3 +178,4 @@ See:
 | Date | Change |
 |------|--------|
 | 2026-01-24 | Initial creation with edge compatibility analysis |
+| 2026-04-16 | **Corrected stride** (8 → 32 bytes, non-overlapping) and **count** (940 → 474) after ROM verification against `TMOS_ORIGINAL.nes`. Added DataPointer bank-shift indexing rule. Flagged previous edge-compatibility analyses as stale (computed under wrong stride). Triggered by discovering an external project (`GameAnalysis2`) producing wrong tile grids because it trusted this doc. |

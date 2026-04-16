@@ -494,6 +494,11 @@ def connect_chapter(
 ) -> ChapterConnections:
     """Create connections for a chapter.
 
+    CRITICAL: Connections are created SEPARATELY for PRESENT and PAST time periods.
+    This prevents cross-time-period navigation which violates R-002.
+    Time Doors are the only way to cross between time periods, and they are
+    handled specially (not through normal section connections).
+
     Args:
         chapter_plan: The chapter plan from phase 1
         chapter_shape: The chapter shape from phase 2
@@ -505,22 +510,70 @@ def connect_chapter(
     Returns:
         ChapterConnections with all section connections
     """
-    # Determine section order
-    section_order = determine_section_order(
-        chapter_plan, chapter_shape, dungeon_last, randomize_order, rng
-    )
+    # Separate sections by time period to avoid cross-time-period connections
+    present_plan = _filter_plan_by_time_period(chapter_plan, is_past=False)
+    past_plan = _filter_plan_by_time_period(chapter_plan, is_past=True)
 
-    # Create connections based on topology
-    if topology == TopologyType.LINEAR:
-        connections = create_linear_connections(section_order, chapter_shape, rng)
-    elif topology == TopologyType.HUB:
-        connections = create_hub_connections(section_order, chapter_shape, chapter_plan, rng)
-    elif topology == TopologyType.BRANCHING:
-        connections = create_branching_connections(section_order, chapter_shape, chapter_plan, rng)
-    elif topology == TopologyType.FREEFORM:
-        connections = create_freeform_connections(section_order, chapter_shape, rng)
-    else:
-        connections = create_branching_connections(section_order, chapter_shape, chapter_plan, rng)
+    all_connections = []
+    section_order = []
+
+    # Create connections for PRESENT sections
+    if present_plan.sections:
+        present_order = determine_section_order(
+            present_plan, chapter_shape, dungeon_last, randomize_order, rng
+        )
+        section_order.extend(present_order)
+
+        if topology == TopologyType.LINEAR:
+            present_connections = create_linear_connections(present_order, chapter_shape, rng)
+        elif topology == TopologyType.HUB:
+            present_connections = create_hub_connections(present_order, chapter_shape, present_plan, rng)
+        elif topology == TopologyType.BRANCHING:
+            present_connections = create_branching_connections(present_order, chapter_shape, present_plan, rng)
+        elif topology == TopologyType.FREEFORM:
+            present_connections = create_freeform_connections(present_order, chapter_shape, rng)
+        else:
+            present_connections = create_branching_connections(present_order, chapter_shape, present_plan, rng)
+
+        all_connections.extend(present_connections)
+
+    # Create connections for PAST sections (separate connection chain)
+    if past_plan.sections:
+        past_order = determine_section_order(
+            past_plan, chapter_shape, dungeon_last, randomize_order, rng
+        )
+        section_order.extend(past_order)
+
+        if topology == TopologyType.LINEAR:
+            past_connections = create_linear_connections(past_order, chapter_shape, rng)
+        elif topology == TopologyType.HUB:
+            past_connections = create_hub_connections(past_order, chapter_shape, past_plan, rng)
+        elif topology == TopologyType.BRANCHING:
+            past_connections = create_branching_connections(past_order, chapter_shape, past_plan, rng)
+        elif topology == TopologyType.FREEFORM:
+            past_connections = create_freeform_connections(past_order, chapter_shape, rng)
+        else:
+            past_connections = create_branching_connections(past_order, chapter_shape, past_plan, rng)
+
+        all_connections.extend(past_connections)
+
+    # Create a TIME DOOR bridge connection between PRESENT and PAST sections
+    # This ensures all sections are reachable (validation requirement)
+    if present_plan.sections and past_plan.sections:
+        # Connect first PRESENT section to first PAST section via time_door method
+        # Phase 5 will handle the actual screen-level Time Door navigation
+        present_section = present_plan.sections[0]
+        past_section = past_plan.sections[0]
+
+        bridge_connection = SectionConnection(
+            from_section_id=present_section.section_id,
+            to_section_id=past_section.section_id,
+            from_screen_id=0,  # Will be resolved in Phase 5
+            to_screen_id=0,    # Will be resolved in Phase 5
+            method="time_door",
+            bidirectional=True,
+        )
+        all_connections.append(bridge_connection)
 
     # Determine start/end sections
     start_section = section_order[0] if section_order else 1
@@ -528,10 +581,30 @@ def connect_chapter(
 
     return ChapterConnections(
         chapter_num=chapter_plan.chapter_num,
-        connections=connections,
+        connections=all_connections,
         section_order=section_order,
         start_section_id=start_section,
         end_section_id=end_section,
+    )
+
+
+def _filter_plan_by_time_period(chapter_plan: ChapterPlan, is_past: bool) -> ChapterPlan:
+    """Create a filtered ChapterPlan containing only sections from one time period.
+
+    Args:
+        chapter_plan: Original chapter plan
+        is_past: If True, return PAST sections; if False, return PRESENT sections
+
+    Returns:
+        ChapterPlan with only sections matching the time period
+    """
+    filtered_sections = [s for s in chapter_plan.sections if s.is_past == is_past]
+
+    return ChapterPlan(
+        chapter_num=chapter_plan.chapter_num,
+        total_screens=chapter_plan.total_screens,
+        sections=filtered_sections,
+        reserved_screens=chapter_plan.reserved_screens,
     )
 
 

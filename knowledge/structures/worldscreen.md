@@ -53,7 +53,7 @@ See [memory/ram-map.md#worldscreen-mirror](../memory/ram-map.md#worldscreen-mirr
 | 2 | `$039EC5` | 137 | `$03A754` | HIGH |
 | 3 | `$03A755` | 153 | `$03B0E4` | HIGH |
 | 4 | `$03B0E5` | 164 | `$03BB24` | HIGH |
-| 5 | `$03BB25` | 154 | `$03C4C6` | HIGH |
+| 5 | `$03BB25` | 154 | `$03C4C4` | HIGH |
 | **TOTAL** | - | **739** | - | - |
 
 ### Address Calculation
@@ -302,3 +302,4 @@ Until the offset mechanism is fully understood:
 | Date | Change |
 |------|--------|
 | 2026-01-24 | Initial consolidation from 4 staging documents |
+| 2026-04-16 | Fixed Ch5 end address `$03C4C6` → `$03C4C4` (off-by-2 typo; math verified: 0x03BB25 + 154*16 − 1) |
