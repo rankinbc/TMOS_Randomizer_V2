@@ -80,6 +80,12 @@ def plan_placement(
                 result.placements[(section.section_id, pos)] = idx
                 assigned.add(idx)
 
+    # Pass 1.5 — anchor screen 0 (chapter entry) at the BFS seed of the
+    # section it originally belonged to. This guarantees screen 0 lives at
+    # the most-connected cell of its section, so the player boots into a
+    # screen with the maximum opportunity for walkably-aligned neighbours.
+    _anchor_chapter_entry(template, result, assigned)
+
     # Pass 2 — fill remaining positions per section with pool candidates.
     for section in template.sections:
         _place_section(
@@ -94,6 +100,41 @@ def plan_placement(
         )
 
     return result
+
+
+def _anchor_chapter_entry(
+    template: ChapterTemplate,
+    result: ChapterPlacement,
+    assigned: Set[int],
+) -> None:
+    """If screen 0 is unfixed, place it at an unoccupied cell adjacent to
+    the BFS seed of its original section. Screen 0 = player start, so
+    anchoring it near the section seed guarantees high neighbour density
+    without clobbering any already-placed fixed screen (which often claims
+    the seed position itself)."""
+    if 0 in assigned:
+        return
+    target_section: Optional[SectionTemplate] = None
+    for sec in template.sections:
+        if 0 in sec.positions:
+            target_section = sec
+            break
+    if target_section is None:
+        return
+
+    positions_set = set(target_section.positions.values())
+    if not positions_set:
+        return
+    section_id = target_section.section_id
+
+    # Pick any unoccupied cell of this section. Prefer the lexicographically
+    # smallest (usually the top-left / BFS-seed neighbourhood).
+    for cand_pos in sorted(positions_set):
+        key = (section_id, cand_pos)
+        if key not in result.placements:
+            result.placements[key] = 0
+            assigned.add(0)
+            return
 
 
 # =============================================================================

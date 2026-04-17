@@ -207,6 +207,11 @@ class OrganicStrategy(RandomizationStrategy):
         chapters_map = {c.chapter_num: c for c in game_world}
         self._last_repair_reports = repair_reports
 
+        # Rebuild the Flow plan from the CONSOLIDATED templates + actual
+        # placements so the UI section pills exactly match the population.
+        plan.world_plan = _plan_from_templates(plan.seed, templates, placements)
+        plan.world_connections = _connections_from_templates(plan.seed, templates)
+
         world_nav = write_world_navigation(
             chapters=chapters_map,
             templates=templates,
@@ -488,24 +493,41 @@ def _restore_worldscreens(game_world, snap: Dict[int, List[Dict[str, int]]]) -> 
 def _plan_from_templates(
     seed: int,
     templates: Dict[int, ChapterTemplate],
+    placements: Optional[Dict[int, ChapterPlacement]] = None,
 ) -> WorldPlan:
     """Build a WorldPlan that mirrors the templates, so the UI and spoiler
-    have per-section section_type/screen_count information."""
+    have per-section section_type/screen_count information.
+
+    When ``placements`` is provided, only include sections that have actual
+    placed screens (avoids phantom sections left over from consolidation).
+    """
     world_plan = WorldPlan(seed=seed)
     for chapter_num in sorted(templates):
         template = templates[chapter_num]
+        placement = placements.get(chapter_num) if placements else None
+
         sections: List[SectionPlan] = []
         for sec in template.sections:
+            if placement is not None:
+                placed_count = len(placement.section_positions(sec.section_id))
+                if placed_count == 0:
+                    continue
+                screen_count = placed_count
+            else:
+                if sec.size == 0:
+                    continue
+                screen_count = sec.size
+
             sections.append(SectionPlan(
                 section_type=sec.section_type,
                 section_id=sec.section_id,
-                target_screen_count=sec.size,
+                target_screen_count=screen_count,
                 shape="organic",
                 is_past=sec.is_past,
             ))
         world_plan.chapters.append(ChapterPlan(
             chapter_num=chapter_num,
-            total_screens=sum(sec.size for sec in template.sections),
+            total_screens=sum(s.target_screen_count for s in sections),
             sections=sections,
         ))
     return world_plan
@@ -517,18 +539,21 @@ def _connections_from_templates(
 ) -> WorldConnections:
     """Build a WorldConnections so the Flow view has edges to draw.
 
-    Draws one connection per unique (from_section, to_section) pair — the
-    template keeps every directional edge that crossed a section boundary
-    in the original ROM, which over-counts for UI purposes. Time-door
-    bridges show up explicitly with method="time_door".
+    Only includes connections whose BOTH endpoints are non-empty sections
+    (sections with placed screens). This prevents the d3 force graph from
+    crashing on dangling node references.
     """
     world = WorldConnections(seed=seed)
     for chapter_num in sorted(templates):
         template = templates[chapter_num]
         ch_conn = ChapterConnections(chapter_num=chapter_num)
 
+        valid_sids = {s.section_id for s in template.sections if s.size > 0}
+
         seen_pairs: set = set()
         for edge in template.inter_section_edges:
+            if edge.from_section_id not in valid_sids or edge.to_section_id not in valid_sids:
+                continue
             pair = (edge.from_section_id, edge.to_section_id)
             if pair in seen_pairs:
                 continue

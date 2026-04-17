@@ -48,45 +48,128 @@ def apply_section_consolidation(
     placements: Dict[int, ChapterPlacement],
     plan: RandomizationPlan,
 ) -> Dict[str, int]:
-    """Merge stray templates (same (type, era) exceeding flow quota) into the
-    largest same-bucket template so the UI section count matches the plan."""
+    """Map every template section to a Flow section and merge N:1.
+
+    The Flow plan (plan.world_plan) declares a small set of sections
+    (1-2 OW, 2-4 TW, 1 DG, etc.). Template extraction produces many more
+    (30+ per chapter). This function consolidates templates onto Flow
+    sections so the UI pill count matches the Flow graph.
+
+    Mapping rule: match by (section_type, is_past) first, fallback to
+    type-only. Within a shared bucket, distribute template sections across
+    flow sections with the fewest templates assigned so far.
+    """
+    from collections import defaultdict
     totals = {"sections_merged": 0, "screens_relocated": 0}
+
+    if plan.world_plan is None:
+        return totals
+
     for chapter_num, template in templates.items():
         placement = placements.get(chapter_num)
         if placement is None:
             continue
-
-        from .detect import _find_stray_templates
-        stray_ids = _find_stray_templates(template, plan)
-        if not stray_ids:
+        flow_ch = plan.world_plan.get_chapter(chapter_num)
+        if flow_ch is None or not flow_ch.sections:
             continue
 
-        section_by_id = {s.section_id: s for s in template.sections}
-        targets_by_key: Dict[Tuple[SectionType, bool], SectionTemplate] = {}
+        # Build (type, era) → [flow_section_id] index.
+        flow_buckets: Dict[Tuple[str, bool], List[int]] = defaultdict(list)
+        flow_section_meta: Dict[int, Tuple[SectionType, bool]] = {}
+        for fs in flow_ch.sections:
+            name = fs.section_type.name if hasattr(fs.section_type, "name") else str(fs.section_type)
+            flow_buckets[(name, fs.is_past)].append(fs.section_id)
+            flow_section_meta[fs.section_id] = (fs.section_type, fs.is_past)
+
+        # Map each template section → flow section.
+        template_to_flow: Dict[int, int] = {}
+        flow_assigned: Dict[int, int] = defaultdict(int)
         for sec in template.sections:
-            if sec.section_id in stray_ids:
-                continue
-            if sec.size <= 1:
-                continue
-            key = (sec.section_type, sec.is_past)
-            curr = targets_by_key.get(key)
-            if curr is None or sec.size > curr.size:
-                targets_by_key[key] = sec
+            name = sec.section_type.name
+            key = (name, sec.is_past)
+            candidates = flow_buckets.get(key, [])
+            if not candidates:
+                # Fallback: same type, any era.
+                candidates = [fid for (t, _p), fids in flow_buckets.items() for fid in fids if t == name]
+            if not candidates:
+                # Last resort: any flow section.
+                candidates = list(flow_section_meta.keys())
+            if candidates:
+                best = min(candidates, key=lambda fid: flow_assigned[fid])
+                template_to_flow[sec.section_id] = best
+                flow_assigned[best] += 1
 
-        for stray_id in stray_ids:
-            stray = section_by_id.get(stray_id)
-            if stray is None:
-                continue
-            target = targets_by_key.get((stray.section_type, stray.is_past))
-            if target is None:
-                continue
-            moved = _merge_section_into(stray, target, placement)
-            if moved > 0:
-                totals["sections_merged"] += 1
-                totals["screens_relocated"] += moved
+        # Group template sections by their target flow section.
+        groups: Dict[int, List[SectionTemplate]] = defaultdict(list)
+        for sec in template.sections:
+            fid = template_to_flow.get(sec.section_id)
+            if fid is not None:
+                groups[fid].append(sec)
 
-        template.sections = [s for s in template.sections if s.positions]
+        # Merge each group into a single SectionTemplate with the flow section_id.
+        merged_sections: List[SectionTemplate] = []
+        for flow_id in sorted(groups):
+            grp = groups[flow_id]
+            # Anchor = largest template section in the group.
+            grp.sort(key=lambda s: s.size, reverse=True)
+            anchor = grp[0]
+
+            # Rewrite placement keys for anchor (template_id → flow_id).
+            _rekey_placement(placement, anchor.section_id, flow_id)
+            anchor_meta = flow_section_meta.get(flow_id)
+            if anchor_meta:
+                anchor.section_type = anchor_meta[0]
+                anchor.is_past = anchor_meta[1]
+            anchor.section_id = flow_id
+
+            # Merge remaining template sections INTO anchor.
+            for other in grp[1:]:
+                moved = _merge_section_into(other, anchor, placement)
+                if moved > 0:
+                    totals["sections_merged"] += 1
+                    totals["screens_relocated"] += moved
+                # Rekey any stragglers still keyed under old section_id.
+                _rekey_placement(placement, other.section_id, flow_id)
+
+            merged_sections.append(anchor)
+
+        template.sections = merged_sections
+        # Rebuild inter-section edges with flow section IDs (InterSectionEdge
+        # is frozen so we create new instances).
+        from .template import InterSectionEdge
+        new_edges: List[InterSectionEdge] = []
+        for edge in template.inter_section_edges:
+            new_from = template_to_flow.get(edge.from_section_id, edge.from_section_id)
+            new_to = template_to_flow.get(edge.to_section_id, edge.to_section_id)
+            if new_from == new_to:
+                continue  # became intra-section after merge
+            new_edges.append(InterSectionEdge(
+                from_section_id=new_from,
+                from_screen=edge.from_screen,
+                direction=edge.direction,
+                to_section_id=new_to,
+                to_screen=edge.to_screen,
+            ))
+        template.inter_section_edges = new_edges
+
     return totals
+
+
+def _rekey_placement(
+    placement: ChapterPlacement,
+    old_section_id: int,
+    new_section_id: int,
+) -> None:
+    """Rewrite all placement keys from old_section_id to new_section_id."""
+    if old_section_id == new_section_id:
+        return
+    entries = [
+        (pos, idx) for (sid, pos), idx in placement.placements.items()
+        if sid == old_section_id
+    ]
+    for pos, idx in entries:
+        del placement.placements[(old_section_id, pos)]
+        placement.placements[(new_section_id, pos)] = idx
 
 
 def _merge_section_into(
@@ -94,8 +177,21 @@ def _merge_section_into(
     target: SectionTemplate,
     placement: ChapterPlacement,
 ) -> int:
-    """Move every screen in ``stray`` to a free cell on ``target``'s edge."""
-    if not stray.positions:
+    """Move every PLACED screen in ``stray`` to a free cell on ``target``'s edge.
+
+    Critical: we iterate the actual placement keys, not ``stray.positions``,
+    because the randomized placement rarely matches the template's original
+    screen-per-position mapping. Using ``stray.positions`` here would duplicate
+    every displaced screen (template.pos → `orphan_idx`, but
+    `placement[(stray.id, pos)]` is usually a different screen).
+    """
+    # Collect what's actually placed in the stray section RIGHT NOW.
+    stray_entries: List[Tuple[Tuple[int, int], int]] = [
+        (pos, idx) for (sid, pos), idx in placement.placements.items()
+        if sid == stray.section_id
+    ]
+    if not stray_entries:
+        stray.positions.clear()
         return 0
 
     target_occupied: Set[Tuple[int, int]] = {
@@ -104,23 +200,35 @@ def _merge_section_into(
     if not target_occupied:
         target_occupied = {(0, 0)}
 
+    # Which screen indices are already placed in target (so we never duplicate)?
+    target_placed_idx: Set[int] = {
+        idx for (sid, _pos), idx in placement.placements.items()
+        if sid == target.section_id
+    }
+
     moved = 0
-    for orphan_idx, orphan_pos in list(stray.positions.items()):
-        placement.placements.pop((stray.section_id, orphan_pos), None)
-        stray.positions.pop(orphan_idx, None)
+    for stray_pos, placed_idx in stray_entries:
+        # Remove from stray.
+        placement.placements.pop((stray.section_id, stray_pos), None)
+
+        if placed_idx in target_placed_idx:
+            # Already lives in target — dropping the stray entry is enough.
+            continue
 
         target_pos = _find_free_adjacent(target_occupied, target_occupied, max_radius=16)
         if target_pos is None:
-            # Force-extend by snapping onto the nearest occupied cell.
             any_occupied = next(iter(target_occupied))
             target_pos = (any_occupied[0] + 1, any_occupied[1])
 
-        placement.placements[(target.section_id, target_pos)] = orphan_idx
-        target.positions[orphan_idx] = target_pos
+        placement.placements[(target.section_id, target_pos)] = placed_idx
+        target.positions[placed_idx] = target_pos
         target.original_exit_mask[target_pos] = frozenset(DIRECTIONS)
         target_occupied.add(target_pos)
+        target_placed_idx.add(placed_idx)
         moved += 1
 
+    # Clear stray template state — nothing lives there any more.
+    stray.positions.clear()
     return moved
 
 

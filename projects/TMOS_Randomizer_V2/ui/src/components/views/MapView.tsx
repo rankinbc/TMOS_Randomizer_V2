@@ -132,12 +132,15 @@ export function MapView({ chapter }: MapViewProps) {
       };
     });
 
-    const links: GraphLink[] = chapter.connections.map((conn) => ({
-      source: conn.from_section,
-      target: conn.to_section,
-      connection_type: conn.method,
-      bidirectional: conn.method === 'edge',
-    }));
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const links: GraphLink[] = chapter.connections
+      .filter((conn) => nodeIds.has(conn.from_section) && nodeIds.has(conn.to_section))
+      .map((conn) => ({
+        source: conn.from_section,
+        target: conn.to_section,
+        connection_type: conn.method,
+        bidirectional: conn.method === 'edge',
+      }));
 
     return { nodes, links };
   }, [chapter]);

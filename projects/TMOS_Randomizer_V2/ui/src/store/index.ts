@@ -49,6 +49,8 @@ export interface SectionMapData {
       section_id: number;
       local_id: number;
       section_type: string;
+      grid_x?: number;
+      grid_y?: number;
     }>;
   }>;
 }

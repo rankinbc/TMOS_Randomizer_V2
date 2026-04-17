@@ -607,12 +607,32 @@ export function NavigationMapView({
     );
   }, [chapter.screens, selectedSection, orphanScreens]);
 
-  // Build navigation map for current section
+  // Build navigation map for current section — prefer backend grid positions
+  // when available (they reflect the 2D placement grid, not the 1D nav-BFS).
   const positions = useMemo(() => {
     if (!selectedSection) return new Map<number, Position>();
+
+    // Try to use backend grid positions from sectionMap (populated after
+    // apply-preview). These give the actual 2D layout from the placement
+    // algorithm, independent of nav-pointer walkability.
+    if (sectionMap?.applied && sectionMap.chapters?.[chapter.chapter_num]) {
+      const chapterData = sectionMap.chapters[chapter.chapter_num];
+      const backendPositions = new Map<number, Position>();
+      for (const idx of selectedSection.screens) {
+        const assignment = chapterData.screens?.[idx];
+        if (assignment && assignment.grid_x !== undefined && assignment.grid_y !== undefined) {
+          backendPositions.set(idx, { x: assignment.grid_x, y: assignment.grid_y });
+        }
+      }
+      if (backendPositions.size > 0) {
+        return normalizePositions(backendPositions);
+      }
+    }
+
+    // Fallback to nav-BFS layout (pre-randomization / no grid data).
     const raw = buildNavigationMap(chapter.screens, selectedSection.screens);
     return normalizePositions(raw);
-  }, [chapter.screens, selectedSection]);
+  }, [chapter.screens, selectedSection, sectionMap, chapter.chapter_num]);
 
   // Calculate grid dimensions
   const { gridWidth, gridHeight } = useMemo(() => {

@@ -94,27 +94,22 @@ def write_chapter_navigation(
                 # otherwise leave both sides for Step 4 to fill with NAV_BLOCKED
 
     # Step 3 — inter-section edges from the template. Wire each edge
-    # bidirectionally whenever walkable alignment passes AND the two screens
-    # sit in different sections with grid-adjacent border cells. Two screens
-    # that ended up in the SAME section (because Pass B merged a stray) are
-    # handled by Step 2 if the merge put them grid-adjacent — otherwise they
-    # aren't wired at all, because a non-grid-adjacent pointer inside one
-    # section is exactly the "spatial mismatch" the user rejects.
+    # bidirectionally whenever walkable alignment passes. Sections have
+    # independent grid coordinate systems, so we don't require grid-adjacency
+    # here — these are designed cross-section warps (overworld → town, etc.)
+    # carried through verbatim from the pristine ROM. We DO skip edges whose
+    # endpoints both live in the same section after Pass B consolidation:
+    # those would be non-grid-adjacent intra-section pointers, exactly the
+    # "crossing arrows" failure mode the user rejected.
     for edge in template.inter_section_edges:
         src_info = placement_by_idx.get(edge.from_screen)
         tgt_info = placement_by_idx.get(edge.to_screen)
         if src_info is None or tgt_info is None:
             continue
-        src_section_id, src_pos = src_info
-        tgt_section_id, tgt_pos = tgt_info
+        src_section_id, _src_pos = src_info
+        tgt_section_id, _tgt_pos = tgt_info
         if src_section_id == tgt_section_id:
-            continue  # intra-section — handled by Step 2 grid-adjacency only.
-
-        # Only honour cross-section edges that are spatially sensible: the
-        # direction must step from src_pos onto tgt_pos in a shared grid.
-        dx, dy = DIRECTION_DELTAS[edge.direction]
-        if (src_pos[0] + dx, src_pos[1] + dy) != tgt_pos:
-            continue
+            continue  # consolidated into same section — intra-section rule owns.
 
         src_idx = edge.from_screen
         tgt_idx = edge.to_screen

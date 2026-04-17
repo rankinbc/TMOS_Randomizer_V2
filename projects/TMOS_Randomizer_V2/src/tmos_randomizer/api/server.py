@@ -1100,12 +1100,16 @@ async def get_section_map():
                 section_is_past[section.section_id] = section.is_past
 
         for assignment in chapter_pop.assignments:
-            screen_sections[assignment.real_screen_index] = {
+            entry = {
                 "section_id": assignment.section_id,
                 "local_id": assignment.local_id,
                 "section_type": assignment.original_section_type.name if hasattr(assignment.original_section_type, 'name') else str(assignment.original_section_type),
                 "is_past": section_is_past.get(assignment.section_id, False),
             }
+            if assignment.grid_position is not None:
+                entry["grid_x"] = assignment.grid_position[0]
+                entry["grid_y"] = assignment.grid_position[1]
+            screen_sections[assignment.real_screen_index] = entry
 
         chapters_map[chapter_num] = {
             "screen_count": len(chapter_pop.assignments),
