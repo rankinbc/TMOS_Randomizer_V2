@@ -112,3 +112,9 @@ projects/TMOS_Strategy_Lab/data/rom/*.nes
 projects/TMOS_Strategy_Lab/data/snapshots/*.json
 # Per-run output directories (dated run folders under harness/benchmark/viz).
 projects/TMOS_Strategy_Lab/output/*/*/
+
+# ===================
+# TMOS_World_Editor — artifacts + derived data
+# ===================
+projects/TMOS_World_Editor/data/rom/*.nes
+projects/TMOS_World_Editor/output/*/*/
