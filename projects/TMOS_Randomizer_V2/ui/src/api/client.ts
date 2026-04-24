@@ -423,6 +423,13 @@ class ApiClient {
     return this.fetch<ApiStatus>('/');
   }
 
+  // Strategies
+  async getStrategies(): Promise<{
+    strategies: Array<{ name: string; description: string; source: 'built-in' | 'lab' }>;
+  }> {
+    return this.fetch('/api/strategies');
+  }
+
   // Config
   async getConfig(): Promise<ApiConfig> {
     return this.fetch<ApiConfig>('/api/config');

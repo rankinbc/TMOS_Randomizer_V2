@@ -81,7 +81,9 @@ def apply_section_consolidation(
             flow_buckets[(name, fs.is_past)].append(fs.section_id)
             flow_section_meta[fs.section_id] = (fs.section_type, fs.is_past)
 
-        # Map each template section → flow section.
+        # Map each template section → flow section. NEVER cross eras —
+        # mixing past and present screens in one section is the original
+        # bug this entire strategy exists to prevent.
         template_to_flow: Dict[int, int] = {}
         flow_assigned: Dict[int, int] = defaultdict(int)
         for sec in template.sections:
@@ -89,15 +91,27 @@ def apply_section_consolidation(
             key = (name, sec.is_past)
             candidates = flow_buckets.get(key, [])
             if not candidates:
-                # Fallback: same type, any era.
-                candidates = [fid for (t, _p), fids in flow_buckets.items() for fid in fids if t == name]
-            if not candidates:
-                # Last resort: any flow section.
-                candidates = list(flow_section_meta.keys())
-            if candidates:
-                best = min(candidates, key=lambda fid: flow_assigned[fid])
-                template_to_flow[sec.section_id] = best
-                flow_assigned[best] += 1
+                # No flow section for this (type, era). Keep the template
+                # section as-is — it will appear as an extra pill in the
+                # Flow view, but at least eras stay clean.
+                continue
+            best = min(candidates, key=lambda fid: flow_assigned[fid])
+            template_to_flow[sec.section_id] = best
+            flow_assigned[best] += 1
+
+        # Rekey UNMAPPED sections to IDs that won't collide with flow IDs.
+        # Template section IDs (1, 2, 3, ...) can accidentally match flow
+        # section IDs. If template section 3 is unmapped (DUNGEON-past) and
+        # flow section 3 is TOWN-present, their placement entries at
+        # (section_id=3, pos) collide, mixing past into present.
+        flow_ids_used = set(flow_section_meta.keys())
+        next_safe_id = max(flow_ids_used | {0}) + 100
+        for sec in template.sections:
+            if sec.section_id not in template_to_flow and sec.section_id in flow_ids_used:
+                old_id = sec.section_id
+                _rekey_placement(placement, old_id, next_safe_id)
+                sec.section_id = next_safe_id
+                next_safe_id += 1
 
         # Group template sections by their target flow section.
         groups: Dict[int, List[SectionTemplate]] = defaultdict(list)
@@ -124,7 +138,8 @@ def apply_section_consolidation(
 
             # Merge remaining template sections INTO anchor.
             for other in grp[1:]:
-                moved = _merge_section_into(other, anchor, placement)
+                chapter = chapters.get(chapter_num)
+                moved = _merge_section_into(other, anchor, placement, chapter=chapter)
                 if moved > 0:
                     totals["sections_merged"] += 1
                     totals["screens_relocated"] += moved
@@ -132,6 +147,17 @@ def apply_section_consolidation(
                 _rekey_placement(placement, other.section_id, flow_id)
 
             merged_sections.append(anchor)
+
+        # Keep unmapped sections (those without a flow match — different era
+        # or exotic type). They'll appear as extra pills in the UI but at
+        # least past/present stays isolated.
+        mapped_template_ids = set()
+        for grp in groups.values():
+            for sec in grp:
+                mapped_template_ids.add(id(sec))
+        for sec in template.sections:
+            if id(sec) not in mapped_template_ids and sec.size > 0:
+                merged_sections.append(sec)
 
         template.sections = merged_sections
         # Rebuild inter-section edges with flow section IDs (InterSectionEdge
@@ -176,16 +202,16 @@ def _merge_section_into(
     stray: SectionTemplate,
     target: SectionTemplate,
     placement: ChapterPlacement,
+    chapter: Optional[Chapter] = None,
 ) -> int:
     """Move every PLACED screen in ``stray`` to a free cell on ``target``'s edge.
 
-    Critical: we iterate the actual placement keys, not ``stray.positions``,
-    because the randomized placement rarely matches the template's original
-    screen-per-position mapping. Using ``stray.positions`` here would duplicate
-    every displaced screen (template.pos → `orphan_idx`, but
-    `placement[(stray.id, pos)]` is usually a different screen).
+    Era guard: if ``chapter`` is provided, screens whose past/present era
+    doesn't match the target's ``is_past`` are silently left in the stray
+    (they'll become standalone sections rather than contaminate the target).
     """
-    # Collect what's actually placed in the stray section RIGHT NOW.
+    from ...core.enums import is_past_screen_index
+
     stray_entries: List[Tuple[Tuple[int, int], int]] = [
         (pos, idx) for (sid, pos), idx in placement.placements.items()
         if sid == stray.section_id
@@ -200,7 +226,6 @@ def _merge_section_into(
     if not target_occupied:
         target_occupied = {(0, 0)}
 
-    # Which screen indices are already placed in target (so we never duplicate)?
     target_placed_idx: Set[int] = {
         idx for (sid, _pos), idx in placement.placements.items()
         if sid == target.section_id
@@ -208,11 +233,15 @@ def _merge_section_into(
 
     moved = 0
     for stray_pos, placed_idx in stray_entries:
-        # Remove from stray.
+        # Era guard — never merge past screen into present section or vice versa.
+        if chapter is not None:
+            screen_past = is_past_screen_index(chapter.chapter_num, placed_idx)
+            if screen_past != target.is_past:
+                continue  # leave it in stray
+
         placement.placements.pop((stray.section_id, stray_pos), None)
 
         if placed_idx in target_placed_idx:
-            # Already lives in target — dropping the stray entry is enough.
             continue
 
         target_pos = _find_free_adjacent(target_occupied, target_occupied, max_radius=16)
@@ -227,7 +256,6 @@ def _merge_section_into(
         target_placed_idx.add(placed_idx)
         moved += 1
 
-    # Clear stray template state — nothing lives there any more.
     stray.positions.clear()
     return moved
 

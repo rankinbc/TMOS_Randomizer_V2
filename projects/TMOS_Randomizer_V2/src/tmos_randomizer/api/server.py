@@ -709,6 +709,32 @@ async def get_screen_tile_grid(chapter_num: int, screen_index: int):
         raise HTTPException(status_code=500, detail=f"Failed to build tile grid: {str(e)}")
 
 
+@app.get("/api/strategies")
+async def get_strategies():
+    """List registered randomization strategies, in display order.
+
+    Built-in strategies come first (classic, organic), then adapters for
+    strategies imported from the TMOS Strategy Lab (prefixed ``lab_``).
+    """
+    from ..strategies import get_strategy, list_strategies
+
+    names = list_strategies()
+    builtins = [n for n in names if not n.startswith("lab_")]
+    lab_adapted = [n for n in names if n.startswith("lab_")]
+
+    def describe(name: str) -> dict:
+        cls = get_strategy(name)
+        return {
+            "name": name,
+            "description": getattr(cls, "description", "") or "",
+            "source": "lab" if name.startswith("lab_") else "built-in",
+        }
+
+    return {
+        "strategies": [describe(n) for n in builtins + lab_adapted],
+    }
+
+
 @app.get("/api/config")
 async def get_config():
     """Get current configuration."""
@@ -921,6 +947,14 @@ async def apply_plan_preview():
                     modified_screens.add(stairway.screen_a)
                     modified_screens.add(stairway.screen_b)
                 modified_count += len(modified_screens)
+
+        # Fallback for strategies (like the lab adapters) that mutate screen
+        # bytes directly without populating world_navigation. The WorldScreen
+        # _modified flag is the ground truth for "byte-level change".
+        if modified_count == 0:
+            modified_count = sum(
+                1 for ch in _game_world for s in ch.screens if s.is_modified
+            )
 
         # Navigability gate (soft). The organic strategy is iterating toward
         # full spatial reachability but still produces seeds with some

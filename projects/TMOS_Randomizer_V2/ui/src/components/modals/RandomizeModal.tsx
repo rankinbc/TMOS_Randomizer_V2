@@ -1,5 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '../../api/client';
 import { useRandomizerStore } from '../../store';
+
+type StrategyOption = {
+  name: string;
+  description: string;
+  source: 'built-in' | 'lab';
+};
 
 export function RandomizeModal() {
   const {
@@ -16,8 +23,32 @@ export function RandomizeModal() {
 
   const [seed, setSeed] = useState<string>('');
   const [useRandomSeed, setUseRandomSeed] = useState(true);
+  const [strategies, setStrategies] = useState<StrategyOption[]>([]);
+  const [strategiesError, setStrategiesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (modalOpen !== 'randomize') return;
+    let cancelled = false;
+    api
+      .getStrategies()
+      .then((res) => {
+        if (cancelled) return;
+        setStrategies(res.strategies);
+        setStrategiesError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setStrategiesError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen]);
 
   if (modalOpen !== 'randomize') return null;
+
+  const activeStrategy = settings.strategy ?? 'organic';
+  const activeStrategyInfo = strategies.find((s) => s.name === activeStrategy);
 
   const handleRandomize = async () => {
     const seedValue = useRandomSeed ? undefined : parseInt(seed, 10) || undefined;
@@ -64,23 +95,28 @@ export function RandomizeModal() {
           <div>
             <label className="block text-sm text-slate-400 mb-1">Strategy</label>
             <select
-              value={settings.strategy ?? 'organic'}
-              onChange={(e) =>
-                setSettings({ strategy: e.target.value as 'organic' | 'classic' })
-              }
+              value={activeStrategy}
+              onChange={(e) => setSettings({ strategy: e.target.value })}
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500"
             >
-              <option value="organic">
-                Organic &mdash; real shapes, shuffled content (recommended)
-              </option>
-              <option value="classic">
-                Classic &mdash; abstract shape pipeline
-              </option>
+              {strategies.length === 0 && (
+                <>
+                  <option value="organic">Organic</option>
+                  <option value="classic">Classic</option>
+                </>
+              )}
+              {strategies.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.name}
+                  {s.source === 'lab' ? ' (lab)' : ''}
+                </option>
+              ))}
             </select>
             <p className="text-xs text-slate-500 mt-1">
-              {settings.strategy === 'classic'
-                ? 'Generates blob / linear / branching section shapes procedurally.'
-                : 'Preserves the original ROM\u2019s section shapes and shuffles screens with edge-aware placement.'}
+              {strategiesError
+                ? `Could not load strategies: ${strategiesError}`
+                : activeStrategyInfo?.description ||
+                  'Loading strategies\u2026'}
             </p>
           </div>
 

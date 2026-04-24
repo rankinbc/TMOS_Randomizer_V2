@@ -223,7 +223,15 @@ export interface ShapeWeights {
   grid: number;
 }
 
-export type RandomizationStrategy = 'organic' | 'classic';
+// Free-form so lab-adapter strategies (`lab_tileshuffle`, `lab_identity`, …)
+// surfaced by /api/strategies are valid without edits on the UI side.
+export type RandomizationStrategy = string;
+
+export interface StrategyDescriptor {
+  name: string;
+  description: string;
+  source: 'built-in' | 'lab';
+}
 
 export interface RandomizerSettings {
   strategy?: RandomizationStrategy;
