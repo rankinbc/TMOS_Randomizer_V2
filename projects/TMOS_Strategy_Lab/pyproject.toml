@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmos_strategy_lab"
+version = "0.1.0"
+description = "Research sandbox for TMOS map randomization strategies"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+viz = ["Pillow>=11", "matplotlib>=3.8", "seaborn>=0.13", "numpy>=2"]
+analysis = ["pandas>=2.2", "numpy>=1.26"]
+dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.8", "nbstripout"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tmos_strategy_lab = ["report/templates/*.j2"]
+
+[tool.ruff]
+cache-dir = "~/.cache/ruff"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+cache_dir = "~/.cache/pytest"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+# importlib mode avoids sys.path collisions when aggregating tests across
+# multiple trees (project root + components/*/tests/).
+addopts = "--import-mode=importlib"
+
+[tool.mypy]
+cache_dir = "~/.cache/mypy"
+files = ["src/tmos_strategy_lab"]
+python_version = "3.11"
+ignore_missing_imports = true

@@ -1,0 +1,8 @@
+# benchmark component dependencies
+# Install: pip install -r components/benchmark/requirements.txt
+
+pandas>=2.2
+jinja2>=3.1
+click>=8.1
+# numpy is a transitive dependency of pandas; listed explicitly for NumpyEncoder usage
+numpy>=1.26

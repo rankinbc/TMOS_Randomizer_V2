@@ -101,3 +101,14 @@ desktop.ini
 
 # Python virtualenv
 .venv/
+
+# ===================
+# TMOS_Strategy_Lab — artifacts + derived data
+# ===================
+# ROM lives canonically in projects/TMOS_Randomizer_V2/; the Lab copy under
+# data/rom/ is a local convenience and should not be committed.
+projects/TMOS_Strategy_Lab/data/rom/*.nes
+# Parsed ROM snapshots are derived data.
+projects/TMOS_Strategy_Lab/data/snapshots/*.json
+# Per-run output directories (dated run folders under harness/benchmark/viz).
+projects/TMOS_Strategy_Lab/output/*/*/

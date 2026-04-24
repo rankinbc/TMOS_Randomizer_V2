@@ -1,0 +1,64 @@
+{
+  "scaffold_version": 1,
+  "scaffolded_at": "2026-04-24",
+  "scaffolder": "claude-project-scaffolder /new-project",
+  "project_name": "TMOS Strategy Lab",
+  "project_slug": "TMOS_Strategy_Lab",
+  "stack": "Python 3.11+ (Click 8, pandas 2.2, Jinja2 3.1, Pillow 11, matplotlib 3.10, seaborn 0.13)",
+  "requirements_doc": "REQUIREMENTS.md",
+  "lifecycle": {
+    "stage": "scaffold",
+    "history": [
+      {"stage": "scaffold", "at": "2026-04-24", "by": "/new-project"}
+    ]
+  },
+  "components": [
+    {
+      "name": "harness",
+      "pattern": "cli.md",
+      "purpose_one_line": "click-based cli that runs one strategy on one seed and emits a validationreport (markdown + json) plus the candidate artifact",
+      "inputs": ["data/rom/", "data/snapshots/"],
+      "outputs": ["output/harness/<YYYY-MM-DD>_<desc>/"],
+      "entry_command": "PYTHONHASHSEED=42 python -m harness run --strategy <name> --seed 42 --input data/rom/<file>",
+      "scaffold_state": "stub",
+      "first_run_setup": [
+        "pip install -e .",
+        "pip install -e components/harness"
+      ]
+    },
+    {
+      "name": "benchmark",
+      "pattern": "analysis.md",
+      "purpose_one_line": "multi-seed sweep runner that fans out across cores and emits summary.md + summary.json + per_seed.ndjson with aggregates, failure-mode breakdown, exemplar seeds, and a/b support",
+      "inputs": ["data/rom/", "data/snapshots/"],
+      "outputs": ["output/benchmark/<YYYY-MM-DD>_<desc>/"],
+      "entry_command": "python components/benchmark/scripts/run.py --strategy <name> --seeds 100 --workers 8 --run-label <desc>",
+      "scaffold_state": "stub",
+      "first_run_setup": [
+        "pip install -r components/benchmark/requirements.txt"
+      ]
+    },
+    {
+      "name": "visualizer",
+      "pattern": "analysis.md",
+      "purpose_one_line": "renders candidates as tile-art grids, plots metric distributions (histogram + ecdf), diffs two candidates per-tile, and overlays reachability heatmaps",
+      "inputs": ["output/harness/<run>/candidate.json", "output/benchmark/<run>/per_seed.ndjson", "output/benchmark/<run>/summary.json"],
+      "outputs": ["output/visualizer/<YYYY-MM-DD>_<desc>/"],
+      "entry_command": "python -m visualizer render-map --candidate output/harness/<run>/candidate.json --out-dir output/visualizer/<desc>/",
+      "scaffold_state": "stub",
+      "first_run_setup": [
+        "pip install -e components/visualizer"
+      ]
+    }
+  ],
+  "data_sources": [
+    {"name": "rom", "purpose": "ROM bytes for The Magic of Scheherazade; shared with TMOS_Randomizer_V2 via path reference, never copy"},
+    {"name": "snapshots", "purpose": "Pre-parsed JSON snapshots of the ROM (cached artifact per REQUIREMENTS.md §8 Q3 — decouples Lab from V2 parser churn and speeds up cold starts)"}
+  ],
+  "project_level_folders": [
+    {"name": "src", "purpose": "Home for the shared tmos_strategy_lab Python package — LabContext, Candidate, registry, metrics/, viz/, strategies/ — imported by all three components"},
+    {"name": "notebooks", "purpose": "Jupyter exploratory work outside the main pipeline; nbstripout pre-commit keeps diffs clean (REQUIREMENTS.md §8 Q6)"},
+    {"name": "tests", "purpose": "Harness and metric tests — strategies explicitly NOT required to be tested per REQUIREMENTS.md §5"}
+  ],
+  "notes_for_generate_prp": "All components are stubs; src/tmos_strategy_lab/ exists but is empty (no .py files yet). Trust CLAUDE.md structure block and PRPs/source/INITIAL.md component blocks as authoritative — no codebase discovery needed on the first /generate-prp pass. REQUIREMENTS.md at project root is the definitive spec. After /execute-prp has built real code, this manifest is stale — disregard its scaffold_state values."
+}

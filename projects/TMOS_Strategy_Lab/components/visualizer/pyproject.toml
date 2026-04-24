@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "visualizer"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "Pillow>=11.0",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "tmos_strategy_lab",
+]
+
+[project.scripts]
+visualizer = "visualizer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+cache_dir = "~/.cache/pytest"
+
+[tool.ruff]
+cache-dir = "~/.cache/ruff"

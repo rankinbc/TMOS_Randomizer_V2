@@ -1,0 +1,67 @@
+# Benchmark Summary — {{ run_meta.run_id }}
+
+- **Timestamp (UTC)**: {{ run_meta.timestamp_utc }}
+- **lab version**: `{{ run_meta.tmos_lab_version }}`
+- **input**: `{{ run_meta.input_path }}`
+- **seeds**: {{ run_meta.num_seeds }} ({{ run_meta.seeds[0] }}..{{ run_meta.seeds[-1] }})
+- **workers**: {{ run_meta.workers }}
+- **wall time**: {{ run_meta.wall_time_s }} s
+
+## Verdict
+
+{% if strategies %}
+{% for sid, stats in strategies.items() %}
+- **`{{ sid }}`** — {{ stats.n_seeds }} seeds, pass rate **{{ "%.1f"|format((stats.pass_rate or 0) * 100) }}%**, {{ "%.2f"|format(stats.repair_mean or 0) }} avg repairs/seed.
+{% endfor %}
+{% else %}
+_No strategies in this sweep._
+{% endif %}
+
+## Per-strategy aggregates
+
+{% for sid, stats in strategies.items() %}
+### `{{ sid }}`
+
+| Metric column | mean | median | p95 | min | max |
+|---|---|---|---|---|---|
+{% for key in stats.keys()|sort %}
+{% if key.endswith('_mean') %}
+{% set metric = key[:-5] %}
+{% if (metric ~ '_median') in stats and (metric ~ '_p95') in stats and (metric ~ '_min') in stats and (metric ~ '_max') in stats %}
+| `{{ metric }}` | {{ "%.3f"|format(stats[metric ~ '_mean']) }} | {{ "%.3f"|format(stats[metric ~ '_median']) }} | {{ "%.3f"|format(stats[metric ~ '_p95']) }} | {{ "%.3f"|format(stats[metric ~ '_min']) }} | {{ "%.3f"|format(stats[metric ~ '_max']) }} |
+{% endif %}
+{% endif %}
+{% endfor %}
+
+{% endfor %}
+
+## Failure-mode breakdown
+
+{% if failure_breakdown %}
+| Strategy | Metric | Failing seeds |
+|---|---|---|
+{% for sid, buckets in failure_breakdown.items() %}
+{% for metric, count in buckets.items() %}
+{% if count > 0 %}
+| `{{ sid }}` | `{{ metric }}` | {{ count }} |
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% else %}
+_No failure breakdown — every seed passed every metric._
+{% endif %}
+
+## Exemplar seeds
+
+{% if exemplars %}
+| Strategy | Fastest | Median | Slowest |
+|---|---|---|---|
+{% for sid, ex in exemplars.items() %}
+| `{{ sid }}` | {{ ex.fastest_seed }} | {{ ex.median_seed }} | {{ ex.slowest_seed }} |
+{% endfor %}
+{% else %}
+_No exemplars (no generation_time data)._
+{% endif %}
+
+---
+Raw per-seed data: `per_seed.ndjson`.
