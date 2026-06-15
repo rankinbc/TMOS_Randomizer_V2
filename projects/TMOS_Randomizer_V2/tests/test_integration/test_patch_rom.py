@@ -86,6 +86,20 @@ def test_patch_filename_sanitized(client):
     assert "\\" not in cd
 
 
+def test_patch_filename_strips_header_injection(client):
+    """Double-quote and CR/LF are stripped so they can't break/inject the header."""
+    resp = client.post(
+        "/api/rom/patch", params={"filename": 'ev"il\r\nX-Injected: 1.nes'}
+    )
+    assert resp.status_code == 200
+    cd = resp.headers["content-disposition"]
+    # The Content-Disposition value must remain a single well-formed quoted
+    # string: exactly the two wrapping quotes, no CR/LF, and no injected header.
+    assert cd.count('"') == 2
+    assert "\r" not in cd and "\n" not in cd
+    assert "x-injected" not in {k.lower() for k in resp.headers.keys()}
+
+
 def test_patch_after_randomization(client):
     """Applying a randomization plan then patching reflects the applied screens."""
     vanilla = bytes(server._rom_vanilla)

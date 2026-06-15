@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1140,13 +1141,18 @@ async def patch_rom(filename: Optional[str] = Query(default=None)):
     report = _check_world_connectivity(_game_world)
     warning_count = sum(1 for r in report if not r["fully_reachable"])
 
-    # Resolve a safe download filename.
+    # Resolve a safe download filename: strip path components, then remove
+    # characters that could break or inject into the Content-Disposition header
+    # (double-quote and CR/LF). Fall back to the default if nothing usable remains.
     if filename:
-        name = Path(filename).name  # strip any path components
-    elif _rom_filename:
-        name = f"{Path(_rom_filename).stem}-edited.nes"
+        name = re.sub(r'[\r\n"]', "", Path(filename).name).strip()
     else:
-        name = "edited.nes"
+        name = ""
+    if not name:
+        if _rom_filename:
+            name = f"{Path(_rom_filename).stem}-edited.nes"
+        else:
+            name = "edited.nes"
 
     return Response(
         content=_rom_data,
