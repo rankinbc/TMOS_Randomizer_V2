@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import type { RandomizationPlan, RandomizerSettings } from '../types/randomizer';
+import type { FieldMetadataResponse } from '../types/metadata';
 import {
   api,
   type AssetManifest,
@@ -93,6 +94,9 @@ interface RandomizerState {
   apiError: string | null;
   assets: AssetManifest | null;
 
+  // Field metadata (safety tiers, descriptions, enums) — loaded once on startup.
+  fieldMetadata: FieldMetadataResponse | null;
+
   // Drag-drop state
   draggingScreen: number | null;
 
@@ -160,6 +164,7 @@ interface RandomizerState {
   fetchPlanFromApi: (seed?: number) => Promise<void>;
   loadAssetManifest: () => Promise<void>;
   loadSectionMap: () => Promise<void>;
+  loadFieldMetadata: () => Promise<void>;
 
   // Drag-drop actions
   setDraggingScreen: (screen: number | null) => void;
@@ -295,6 +300,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   apiConnected: false,
   apiError: null,
   assets: null,
+  fieldMetadata: null,
   draggingScreen: null,
 
   // Tile Bank state
@@ -389,9 +395,23 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   checkApiConnection: async () => {
     try {
       const status = await api.getStatus();
-      set({ apiConnected: status.status === 'running', apiError: null });
+      const connected = status.status === 'running';
+      set({ apiConnected: connected, apiError: null });
+      // Static field metadata needs no ROM — load it once the API is reachable.
+      if (connected) {
+        get().loadFieldMetadata();
+      }
     } catch (error) {
       set({ apiConnected: false, apiError: error instanceof Error ? error.message : 'Connection failed' });
+    }
+  },
+
+  loadFieldMetadata: async () => {
+    try {
+      const meta = await api.getFieldMetadata();
+      set({ fieldMetadata: meta });
+    } catch (e) {
+      console.error('Failed to load field metadata', e);
     }
   },
 
