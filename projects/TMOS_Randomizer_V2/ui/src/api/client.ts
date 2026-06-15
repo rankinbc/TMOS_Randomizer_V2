@@ -560,6 +560,35 @@ class ApiClient {
     });
   }
 
+  // Patch — stream the fully-edited ROM as a download blob.
+  async patchRom(filename?: string): Promise<{
+    blob: Blob;
+    filename: string;
+    warnings: number;
+    screensModified: number;
+  }> {
+    const qs = filename ? `?filename=${encodeURIComponent(filename)}` : '';
+    const response = await fetch(`${this.baseUrl}/api/rom/patch${qs}`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ detail: `HTTP ${response.status}` }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const cd = response.headers.get('Content-Disposition') ?? '';
+    const match = cd.match(/filename="([^"]+)"/);
+    return {
+      blob,
+      filename: match?.[1] ?? filename ?? 'edited.nes',
+      warnings: Number(response.headers.get('X-Patch-Warnings') ?? '0'),
+      screensModified: Number(response.headers.get('X-Screens-Modified') ?? '0'),
+    };
+  }
+
   // Assets
   async getAssetManifest(): Promise<AssetManifest> {
     return this.fetch<AssetManifest>('/api/assets/manifest');

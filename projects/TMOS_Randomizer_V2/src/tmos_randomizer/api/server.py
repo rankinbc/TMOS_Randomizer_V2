@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -46,7 +47,14 @@ from ..randomizer import Randomizer, RandomizationPlan, RandomizationResult, pre
 from ..io.config_loader import RandomizerConfig, get_default_config
 from ..io.rom_reader import ROMReader, load_rom
 from ..core.chapter import Chapter, GameWorld
-from ..core.constants import get_chr_index, TILE_TABLE_ADDR, TILE_COUNT, TILE_SIZE
+from ..core.constants import (
+    get_chr_index,
+    TILE_TABLE_ADDR,
+    TILE_COUNT,
+    TILE_SIZE,
+    CHAPTER_BASES,
+    WORLDSCREEN_SIZE,
+)
 from ..core import inventory_caps as _inv_caps
 from ..core import exp_table as _exp_table
 from ..core import player_stats as _player_stats
@@ -565,6 +573,9 @@ async def update_screen_navigation(
             if update.bidirectional:
                 modified_screens.add(target_index)
 
+    # Flush edited screens into _rom_data (single source of truth).
+    _flush_screens(s for i in modified_screens if (s := chapter.get_screen(i)))
+
     # Return updated screen data for all modified screens
     result = []
     for idx in modified_screens:
@@ -638,6 +649,7 @@ async def update_screen_tiles(
     screen.set_tiles(top=resolved["top_tiles"], bottom=resolved["bottom_tiles"])
     screen.datapointer = resolved["datapointer"]
     screen.mark_modified()
+    _flush_screens([screen])
 
     return {
         "status": "updated",
@@ -1178,6 +1190,10 @@ async def apply_plan_preview():
             ]
             logger.warning(f"Navigability incomplete (soft): {failing}")
 
+        # Flush all randomized/edited screens into _rom_data so a later
+        # /api/rom/patch captures the applied plan.
+        _flush_screens(s for ch in _game_world for s in ch.screens if s.is_modified)
+
         return {
             "status": "applied",
             "seed": _current_plan.seed,
@@ -1198,6 +1214,56 @@ async def apply_plan_preview():
     except Exception as e:
         logger.exception("apply-preview failed")
         raise HTTPException(status_code=500, detail=f"Failed to apply preview: {str(e)}")
+
+
+@app.post("/api/rom/patch")
+async def patch_rom(filename: Optional[str] = Query(default=None)):
+    """Stream the fully-edited ROM as a browser download.
+
+    _rom_data is the single source of truth (table edits write to it directly;
+    screen edits are flushed via _flush_screens). A defensive reconcile flushes
+    any still-dirty screens so a forgotten flush site cannot drop edits.
+    Runs a non-blocking navigability check and reports the count via a header.
+    """
+    _require_rom_pair()  # raises HTTPException(400) if no ROM loaded
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    # Defensive reconcile: capture any dirty screens not yet flushed.
+    # _flush_screens rebuilds the _rom_data buffer in place.
+    _flush_screens(s for ch in _game_world for s in ch.screens if s.is_modified)
+    modified_count = sum(
+        1 for ch in _game_world for s in ch.screens if s.is_modified
+    )
+
+    # Non-blocking navigability check: count chapters with unreachable screens.
+    report = _check_world_connectivity(_game_world)
+    warning_count = sum(1 for r in report if not r["fully_reachable"])
+
+    # Resolve a safe download filename: strip path components, then remove
+    # characters that could break or inject into the Content-Disposition header
+    # (double-quote and CR/LF). Fall back to the default if nothing usable remains.
+    if filename:
+        name = re.sub(r'[\r\n"]', "", Path(filename).name).strip()
+    else:
+        name = ""
+    if not name:
+        if _rom_filename:
+            name = f"{Path(_rom_filename).stem}-edited.nes"
+        else:
+            name = "edited.nes"
+
+    return Response(
+        content=_rom_data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "X-Patch-Warnings": str(warning_count),
+            "X-Screens-Modified": str(modified_count),
+            "Access-Control-Expose-Headers":
+                "X-Patch-Warnings, X-Screens-Modified, Content-Disposition",
+        },
+    )
 
 
 def _check_world_connectivity(game_world) -> List[Dict[str, Any]]:
@@ -2334,6 +2400,26 @@ def _require_rom_pair() -> tuple[bytes, bytes]:
     if _rom_vanilla is None:
         _rom_vanilla = _rom_data
     return _rom_data, _rom_vanilla
+
+
+def _flush_screens(screens) -> int:
+    """Serialize modified WorldScreen objects into the live _rom_data buffer.
+
+    This keeps _rom_data the single source of truth: every screen mutation is
+    written back to its WorldScreen file offset so /api/rom/patch can stream
+    _rom_data directly. Returns the number of screens written.
+    """
+    global _rom_data
+    if _rom_data is None:
+        return 0
+    rom_array = bytearray(_rom_data)
+    count = 0
+    for s in screens:
+        off = CHAPTER_BASES[s.chapter] + s.relative_index * WORLDSCREEN_SIZE
+        rom_array[off:off + WORLDSCREEN_SIZE] = s.to_bytes()
+        count += 1
+    _rom_data = bytes(rom_array)
+    return count
 
 
 @app.get("/api/rom/inventory-caps")

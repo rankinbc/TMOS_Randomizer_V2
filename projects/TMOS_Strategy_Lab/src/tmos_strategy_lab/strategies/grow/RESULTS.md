@@ -66,24 +66,49 @@ PYTHONHASHSEED=0 python components/benchmark/scripts/run.py \
   that can't be joined to screen 0's component are reported in
   `breadcrumbs.grow_nav.unlinked_sections`, never silently islanded (test 7).
 
-## Why ch2/4/5 regress (hypotheses for v0.4.0)
+## Why ch2/4/5 regress — measured decomposition (seed 42)
 
-Directed reachability is lost two ways, not yet disentangled:
+The gap was decomposed by comparing grow's **directed** reachable count (the gate),
+grow's **undirected** count (same edges, ignore direction), and the PRESENT cells in
+**unlinked** sections:
 
-1. **Unlinked PRESENT sections.** Walk-across requires a free boundary edge with ≥1
-   aligned walkable tile between two same-era sections. Sections with no such viable
-   pair stay islanded (visible in `unlinked_sections`, e.g. Ch5 leaves many sections
-   unlinked on seed 42). Stock connects these via hand-authored nav that grow's strict
-   alignment filter rejects.
-2. **Directed dead-ends.** Preserved 0xFE building entrances make some intra-section
-   adjacencies one-way, so a directed BFS can enter but not leave a subtree even within
-   a linked component (undirected reachability is materially higher — see test 7).
+| Ch | stock_dir | grow_dir | grow_undir | gap | unlinked PRESENT cells | dead-end PRESENT cells (undir−dir) |
+|----|-----------|----------|------------|-----|------------------------|------------------------------------|
+| 2  | 91        | 77       | **90**     | 14  | 0                      | **13**                             |
+| 4  | 70        | 67       | **78**     | 3   | 0                      | **11**                             |
+| 5  | 55        | 38       | 48         | 17  | **9**                  | **10**                             |
 
-**Candidate v0.4.0 operators:** allow a stairway to act as a *directional* connector (not
-just a connectivity warp) so warp-linked sections become directionally reachable; add a
-"repair" link pass that connects an islanded PRESENT section through its nearest
-edge-compatible boundary even at lower alignment; bias section planning toward fewer,
-larger PRESENT sections in ch2/4/5.
+**Verdict — the dominant cause is directional dead-ends, not unlinked sections.**
+
+- **ch2 & ch4 are connected, just one-way.** grow's *undirected* reachability already
+  matches/exceeds stock (90≈91; 78>70). All ~14 / ~3 missing screens are reachable if
+  edge direction is ignored — i.e. they sit behind one-way edges. **No PRESENT section
+  is islanded.**
+- **ch5 has both:** ~10 dead-end cells **plus** ~9 cells in genuinely unlinked PRESENT
+  sections (no edge-aligned walk-across partner), so even undirected (48) < stock (55).
+
+**Root cause of the one-wayness:** preserved `NAV_BUILDING_ENTRANCE` (0xFE). When a placed
+cell's edge toward a grid neighbor is a stock 0xFE, navwrite preserves the entrance
+(documented in `apply_grid_navigation`): the neighbor points back, but the cell's own
+0xFE blocks the forward step, so the adjacency is one-way and a directed BFS can enter a
+subtree but not traverse out of it. Stairways/time-doors compound this — they connect the
+world richly (undirected+warp reaches 134/161/144) but the gate counts no warp traversal,
+so warp-only-reachable regions score zero.
+
+**Candidate v0.4.0 levers (with the tradeoff each carries):**
+1. **Relax 0xFE preservation where it breaks a grid adjacency** — overwrite the entrance
+   with the neighbor index. Highest leverage (would likely flip ch2 & ch4 green), but
+   *sacrifices a building entrance* — violates the current "preserve 0xFE everywhere"
+   invariant; needs an explicit decision.
+2. **Filter growth** so a screen is not placed where a needed adjacency direction is a
+   stock 0xFE (treat 0xFE directions as non-growable). Preserves entrances; cost is
+   smaller sections / lower coverage.
+3. **ch5 linking** — a repair link pass connecting islanded PRESENT sections through the
+   nearest edge-compatible boundary (only ~9 cells; secondary to the 0xFE issue).
+4. **Reconsider the gate** — V2's `_reach_counts` gives no credit for stairway/time-door
+   traversal, which the real game uses; grow leans on warps far more than the hand-built
+   stock map, so the gate arguably under-credits grow's true playability. Out of scope
+   here; a question for the V2 owner.
 
 ## Verdict
 

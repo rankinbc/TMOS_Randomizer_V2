@@ -4,11 +4,12 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainContent } from './components/layout/MainContent';
 import { Footer } from './components/layout/Footer';
 import { RandomizeModal } from './components/modals/RandomizeModal';
+import { PatchRomModal } from './components/modals/PatchRomModal';
 import { useRandomizerStore } from './store';
 import './index.css';
 
 function App() {
-  const { checkApiConnection, checkRomStatus } = useRandomizerStore();
+  const { checkApiConnection, checkRomStatus, romFilename } = useRandomizerStore();
 
   // Check API connection and ROM status on mount
   useEffect(() => {
@@ -25,6 +26,7 @@ function App() {
       </div>
       <Footer />
       <RandomizeModal />
+      <PatchRomModal key={romFilename ?? 'none'} />
     </div>
   );
 }
