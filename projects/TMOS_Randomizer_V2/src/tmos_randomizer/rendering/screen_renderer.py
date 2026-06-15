@@ -411,6 +411,60 @@ class ScreenRenderer:
         img.save(buffer, format=format)
         return buffer.getvalue()
 
+    def render_tilesection(
+        self,
+        index: int,
+        chr_bank: int = 0,
+        scale: int = 1,
+        ws_color: Optional[int] = None,
+    ) -> "Image.Image":
+        """Render a single TileSection (8 wide x 4 rows) in isolation.
+
+        Args:
+            index: GLOBAL section index (0..470 incl. bank offset).
+            chr_bank: CHR bank index for tile graphics (0-63).
+            scale: scale factor.
+            ws_color: optional WorldScreen color for the canvas / missing-tile
+                fallback; black if not given.
+        """
+        section = read_tilesection(self.rom_data, index)
+        grid = get_tilesection_grid(section)  # 4 rows x 8 tiles
+
+        base_color = get_ground_color(ws_color) if ws_color is not None else (0, 0, 0)
+        width = 8 * TILE_PIXEL_SIZE * scale
+        height = 4 * TILE_PIXEL_SIZE * scale
+        output = Image.new('RGB', (width, height), base_color)
+
+        for row_idx, row in enumerate(grid):
+            for col_idx, tile_id in enumerate(row):
+                tile_img = self._load_tile_image(tile_id, chr_bank)
+                if tile_img is None:
+                    tile_img = self._create_fallback_tile(
+                        tile_id, base_color if ws_color is not None else None
+                    )
+                if scale > 1:
+                    tile_img = tile_img.resize(
+                        (TILE_PIXEL_SIZE * scale, TILE_PIXEL_SIZE * scale),
+                        Image.NEAREST,
+                    )
+                output.paste(tile_img, (col_idx * TILE_PIXEL_SIZE * scale,
+                                        row_idx * TILE_PIXEL_SIZE * scale))
+        return output
+
+    def render_tilesection_to_bytes(
+        self,
+        index: int,
+        chr_bank: int = 0,
+        scale: int = 1,
+        format: str = 'PNG',
+        ws_color: Optional[int] = None,
+    ) -> bytes:
+        """Render a single TileSection and return image bytes."""
+        img = self.render_tilesection(index, chr_bank, scale, ws_color=ws_color)
+        buffer = BytesIO()
+        img.save(buffer, format=format)
+        return buffer.getvalue()
+
 
 # Convenience function for quick rendering
 def render_worldscreen(
