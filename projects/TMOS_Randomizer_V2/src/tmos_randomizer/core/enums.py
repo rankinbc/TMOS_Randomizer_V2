@@ -377,6 +377,14 @@ SAFE_EVENTS: Set[int] = {0x00, 0x08, 0x22, 0x40}
 # Events that should not be randomized
 DANGEROUS_EVENTS: Set[int] = {0x01, 0x03, 0x09, 0x10, 0x20, 0x47, 0x48, 0x60, 0x62, 0x80, 0xC0}
 
+# Turn-based enemy byte IDs that hard-crash the game if loaded into an
+# encounter lineup. Source: GameAnalysis2 combat/enemies/README.md [ROM_VERIFIED].
+CRASH_ENEMY_IDS: Set[int] = {0x0B, 0x0C}
+
+# Crash IDs plus unknown-status IDs (0x0F, 0x17, 0x25) treated conservatively
+# as dangerous — never offered as selectable enemy values in the UI.
+CONSERVATIVE_DANGER_ENEMY_IDS: Set[int] = CRASH_ENEMY_IDS | {0x0F, 0x17, 0x25}
+
 
 def is_stairway_event(event: int) -> bool:
     """Check if Event indicates a stairway (Content = destination)."""
