@@ -11,6 +11,14 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+# V2 imports for edge math
+from tmos_randomizer.validation.tiles.categories import is_walkable  # type: ignore[import-untyped]
+from tmos_randomizer.validation.tiles.edges import (  # type: ignore[import-untyped]
+    OPPOSITE_DIRECTIONS,
+    ScreenEdges,
+    extract_edges,
+)
+
 from ..._v2_compat.parsers import (
     DO_NOT_RANDOMIZE,
     SectionType,
@@ -25,15 +33,6 @@ from .ts_swap import (
     TileSectionCache,
     find_ts_swap,
 )
-
-# V2 imports for edge math
-from tmos_randomizer.validation.tiles.categories import is_walkable  # type: ignore[import-untyped]
-from tmos_randomizer.validation.tiles.edges import (  # type: ignore[import-untyped]
-    OPPOSITE_DIRECTIONS,
-    ScreenEdges,
-    extract_edges,
-)
-
 
 # =============================================================================
 # Config — per-chapter section plans
@@ -874,21 +873,42 @@ class GrowStrategy:
         "seed screen, only placing candidates whose edges align with all "
         "already-placed grid neighbors. Broken edges by construction = 0."
     )
-    strategy_version = "0.1.0"
+    strategy_version = "0.3.0"
 
     def generate(self, ctx: LabContext, seed: int) -> Candidate:
-        # Deepcopy protection — same pattern as tileshuffle.
+        # Deepcopy protection — same pattern as tileshuffle. Never mutate shared ctx.
         world = copy.deepcopy(ctx.game_world)
         rng = random.Random(seed)
 
+        # Edge/walkability checks (intra-section nav + inter-section linking) need raw
+        # ROM bytes — fail loud rather than silently degrade (same as graph_mutate /
+        # organic_port). Snapshots do not carry rom_bytes.
+        if ctx.rom_bytes is None:
+            raise ValueError(
+                "grow requires --input <rom.nes> (rom_bytes). Snapshots do not carry "
+                "the raw ROM bytes needed by V2's walkability/edge helpers."
+            )
+        rom_bytes = ctx.rom_bytes
+
+        # navwrite imported lazily here to avoid an impl <-> navwrite import cycle.
+        from .navwrite import write_navigation
+
         # Build world-wide biome + TS cache ONCE (expensive-ish, shared
         # across chapters so TS swaps can draw on every chapter's data).
-        rom_bytes = ctx.rom_bytes or b""
         biome = BiomeRegistry.build_from_world(world)
         ts_cache = TileSectionCache.build(rom_bytes)
 
         chapters_out: dict[int, list[dict[str, Any]]] = {}
         growth_summary: dict[str, Any] = {}
+
+        # Aggregate grow_nav breadcrumb across chapters.
+        total_walkacross = 0
+        total_warp = 0
+        total_stairways = 0
+        total_time_doors = 0
+        total_blocked = 0
+        total_swaps = 0
+        unlinked_summary: list[dict[str, Any]] = []
 
         for ch_num in sorted(world.chapters.keys()):
             chapter = world.chapters[ch_num]
@@ -917,9 +937,25 @@ class GrowStrategy:
                     for s in growth.sections
                 ],
             }
-            # This prototype does not yet write the grown layout back into
-            # WorldScreen nav bytes. Chapters are emitted unchanged; the
-            # headline signal lives in ``breadcrumbs["growth"]``.
+
+            # Write the grown layout into nav bytes: tile-swaps, intra-section nav,
+            # inter-section linking. Mutates chapter.screens in place. A dedicated nav
+            # RNG (derived after grow_chapter consumed chapter_rng) — this extra
+            # per-chapter draw is why 0.1.0 -> 0.2.0 changes bytes.
+            nav_rng = random.Random(rng.randrange(2**31))
+            nav_stats = write_navigation(chapter, ch_num, growth, rom_bytes, nav_rng)
+            total_walkacross += nav_stats["walkacross_links"]
+            total_warp += nav_stats["warp_links"]
+            total_stairways += nav_stats["stairways_preserved"]
+            total_time_doors += nav_stats["time_doors_preserved"]
+            total_blocked += nav_stats["blocked_edges_written"]
+            total_swaps += nav_stats["swaps_applied"]
+            if nav_stats["unlinked_sections"]:
+                unlinked_summary.append(
+                    {"chapter": ch_num, "section_ids": nav_stats["unlinked_sections"]}
+                )
+
+            # Emit from the MUTATED chapter — the Candidate is now navigable.
             chapters_out[ch_num] = [s.to_dict() for s in chapter.screens]
 
         return Candidate(
@@ -932,10 +968,15 @@ class GrowStrategy:
                 "source": ctx.source,
                 "rom_md5": ctx.rom_md5,
                 "growth": growth_summary,
-                "notice": (
-                    "Prototype: nav bytes are NOT written from grown "
-                    "layout. breadcrumbs.growth holds the grown plan."
-                ),
+                "grow_nav": {
+                    "walkacross_links": total_walkacross,
+                    "warp_links": total_warp,
+                    "stairways_preserved": total_stairways,
+                    "time_doors_preserved": total_time_doors,
+                    "unlinked_sections": unlinked_summary,
+                    "blocked_edges_written": total_blocked,
+                    "swaps_applied": total_swaps,
+                },
             },
         )
 

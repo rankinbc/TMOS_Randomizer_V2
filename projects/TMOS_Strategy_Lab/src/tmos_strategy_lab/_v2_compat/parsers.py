@@ -22,6 +22,7 @@ if V2_AVAILABLE:
     from tmos_randomizer.core.enums import (  # type: ignore[import-untyped]
         NAV_BLOCKED,
         NAV_BUILDING_ENTRANCE,
+        PAST_SCREEN_INDICES,
     )
     from tmos_randomizer.io.rom_reader import (  # type: ignore[import-untyped]
         ROMReader,
@@ -34,6 +35,7 @@ else:  # pragma: no cover — degraded shim; real run always has V2 available
     DO_NOT_RANDOMIZE: set[int] = set()
     NAV_BLOCKED = 0xFF
     NAV_BUILDING_ENTRANCE = 0xFE
+    PAST_SCREEN_INDICES: dict[int, set[int]] = {}
 
     class _Unavailable:
         def __getattr__(self, name: str):  # noqa: ANN001
@@ -53,6 +55,7 @@ __all__ = [
     "DO_NOT_RANDOMIZE",
     "NAV_BLOCKED",
     "NAV_BUILDING_ENTRANCE",
+    "PAST_SCREEN_INDICES",
     "Chapter",
     "ContentType",
     "EventType",

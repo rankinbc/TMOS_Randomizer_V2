@@ -78,7 +78,12 @@ cand = strat.generate(ctx, seed=42)
 - `_v2_compat/` — path-import adapters for V2 (parsers, pathfinding, renderer).
   **Never** copy-paste V2 code; always go through here.
 - `metrics/` — the 9-metric battery from REQUIREMENTS.md §4.3.
-- `strategies/` — shipped strategies (`identity`, `organic_port`).
+- `strategies/` — shipped strategies (`identity`, `organic_port`, `graph_mutate`,
+  `tileshuffle`, `grow`). `grow` (v0.3.0) is satisfiability-driven section growth
+  that emits **era-safe, warp-aware navigable** output: the grown grid is written
+  into WorldScreen nav bytes (intra-section + edge-verified **same-era** walk-across
+  links), stairways (Event 0x40) and time doors (Content 0xC0) are preserved and used
+  as connectivity warps, and tile-swaps are applied; requires `--input <rom.nes>`.
 - `viz/` — rendering primitives consumed by the visualizer CLI.
 - `report/` — Jinja2 templates + markdown rendering for ValidationReport.
 

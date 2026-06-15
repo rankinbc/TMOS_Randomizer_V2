@@ -13,9 +13,6 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Optional
-
-from ..._v2_compat.parsers import SectionType
 
 # V2 reuse — tile walkability + section grid helpers.
 from tmos_randomizer.validation.tiles.categories import is_walkable  # type: ignore[import-untyped]
@@ -24,6 +21,8 @@ from tmos_randomizer.validation.tiles.edges import (  # type: ignore[import-unty
     get_tilesection_grid,
     read_tilesection,
 )
+
+from ..._v2_compat.parsers import SectionType
 
 
 @dataclass(frozen=True)
@@ -55,7 +54,7 @@ class BiomeRegistry:
     bottom_by_type: dict[tuple[SectionType, int], set[int]]
 
     @classmethod
-    def build_from_world(cls, game_world) -> "BiomeRegistry":
+    def build_from_world(cls, game_world) -> BiomeRegistry:
         top_by_type: dict[tuple[SectionType, int], set[int]] = {}
         bottom_by_type: dict[tuple[SectionType, int], set[int]] = {}
         for chapter in game_world.chapters.values():
@@ -87,7 +86,7 @@ class TileSectionCache:
     walkable: dict[int, dict[int, list[list[bool]]]]
 
     @classmethod
-    def build(cls, rom_data: bytes) -> "TileSectionCache":
+    def build(cls, rom_data: bytes) -> TileSectionCache:
         walk: dict[int, dict[int, list[list[bool]]]] = {0: {}, 256: {}}
         for bank in (0, 256):
             for byte in range(256):
@@ -180,7 +179,7 @@ def _seam_ok(
     """
     top_row3 = ts_cache.top_row3(top_bank, top_byte)
     bot_row0 = ts_cache.bot_row0(bot_bank, bot_byte)
-    return any(a and b for a, b in zip(top_row3, bot_row0))
+    return any(a and b for a, b in zip(top_row3, bot_row0, strict=False))
 
 
 def find_ts_swap(
@@ -192,7 +191,7 @@ def find_ts_swap(
     ts_cache: TileSectionCache,
     rng: random.Random,
     max_attempts: int = 2000,
-) -> Optional[tuple[int, int]]:
+) -> tuple[int, int] | None:
     """Search for a (top_tiles, bottom_tiles) pair that:
 
       - Is biome-compatible with ``section_type`` in the banks implied by
