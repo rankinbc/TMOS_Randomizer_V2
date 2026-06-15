@@ -1,0 +1,121 @@
+import { api } from '../../api/client';
+import type { BossStat } from '../../api/client';
+import { ByteField } from './ByteField';
+import { PanelFrame, TierBadge, useRomResource } from './panelHelpers';
+import type { Tier } from './panelHelpers';
+import { HelpChip } from '../stats/HelpChip';
+
+function vanillaFieldValue(vanilla: BossStat[] | undefined, bossId: string, field: string): number | undefined {
+  const f = vanilla?.find((b) => b.boss_id === bossId)?.fields.find((x) => x.field === field);
+  return f?.value;
+}
+
+// Boss portraits from extracted-data/images/DemonImages, served via
+// /api/assets/bosses/<file>. Multiple entries = phase / form variants.
+const BOSS_IMAGES: Record<string, string[]> = {
+  gilga: ['gilga-1.gif', 'gilga-2.gif', 'gilga-3.gif'],
+  curly: ['curly-1.gif', 'curly-2.gif'],
+  troll: ['troll1.gif', 'troll2.gif'],
+  salamander: ['salamander.gif'],
+  goragora: ['goragora.gif', 'gora2.gif'],
+};
+
+function BossPortraits({ bossId }: { bossId: string }) {
+  const files = BOSS_IMAGES[bossId];
+  if (!files?.length) return null;
+  return (
+    <div className="flex items-center gap-1.5">
+      {files.map((f) => (
+        <img
+          key={f}
+          src={api.getBossImageUrl(f)}
+          alt={`${bossId} ${f}`}
+          className="h-10 w-10 object-contain rounded bg-slate-900/70 border border-slate-700"
+          style={{ imageRendering: 'pixelated' }}
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function BossesPanel() {
+  const { data, setData, loading, error, reload } = useRomResource(() => api.getBossStats());
+
+  const commit = async (bossId: string, field: string, next: number) => {
+    if (!data) return;
+    const prev = data;
+    // optimistic
+    setData({
+      ...data,
+      stats: data.stats.map((b) =>
+        b.boss_id === bossId
+          ? { ...b, fields: b.fields.map((f) => (f.field === field ? { ...f, value: next } : f)) }
+          : b
+      ),
+    });
+    try {
+      const res = await api.patchBossStat(bossId, field, next);
+      setData((d) =>
+        d ? { ...d, stats: d.stats.map((b) => (b.boss_id === bossId ? res.stat : b)) } : d
+      );
+    } catch (e) {
+      setData(prev); // rollback
+      throw e;
+    }
+  };
+
+  return (
+    <PanelFrame
+      title="Bosses"
+      tier="safe"
+      romNote="Per-boss HP, projectile damage & timing · ROM_VERIFIED single bytes ($17248–$1875D)"
+      help={
+        <div className="text-xs space-y-1">
+          <p>Tune each boss fight directly. Every value here is a single ROM-verified byte (0–255).</p>
+          <p>HP raises/lowers how long a boss survives; projectile damage is what its attacks deal to you; cooldown is the frame delay between attacks (higher = slower).</p>
+        </div>
+      }
+      loading={loading}
+      error={error}
+      hasData={!!data}
+      onReload={reload}
+    >
+      {data && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {data.stats.map((boss) => (
+            <div key={boss.boss_id} className="rounded-lg border border-slate-700 overflow-hidden">
+              <div className="px-4 py-2 bg-slate-800/60 flex items-center gap-3">
+                <BossPortraits bossId={boss.boss_id} />
+                <span className="text-sm font-semibold text-slate-200">{boss.boss_label}</span>
+              </div>
+              <ul className="divide-y divide-slate-800">
+                {boss.fields.map((f) => (
+                  <li key={f.field} className="px-4 py-2 flex items-center gap-2">
+                    <TierBadge tier={f.tier as Tier} />
+                    <span className="flex-1 text-sm text-slate-200 flex items-center gap-1.5">
+                      {f.field.replace(`${boss.boss_id}_`, '').replace(/_/g, ' ')}
+                      <HelpChip content={f.tooltip} />
+                    </span>
+                    <code className="text-[10px] text-slate-600">{f.rom_offset}</code>
+                    <ByteField
+                      value={f.value}
+                      vanilla={vanillaFieldValue(data.vanilla, boss.boss_id, f.field)}
+                      min={f.min}
+                      max={f.max}
+                      disabled={f.tier === 'display'}
+                      onCommit={(next) => commit(boss.boss_id, f.field, next)}
+                      ariaLabel={`${boss.boss_label} ${f.field}`}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelFrame>
+  );
+}

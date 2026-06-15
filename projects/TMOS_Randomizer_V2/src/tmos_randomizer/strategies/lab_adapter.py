@@ -322,8 +322,27 @@ class IdentityAdapter(LabAdapterStrategy):
     lab_strategy_name = "identity"
 
 
+@register_strategy
+class GrowAdapter(LabAdapterStrategy):
+    """Lab 'grow' (v0.2.0+) — satisfiability-driven growth with navigable output.
+
+    Grows each section from a seed screen, only placing candidates whose edges
+    align with all placed grid-neighbors (0 broken edges by construction), then
+    writes the grown layout into navigation + inter-section links. The base
+    adapter's reachability gate enforces 'no worse than vanilla'.
+    """
+
+    name = "lab_grow"
+    description = (
+        "Lab grow: zero-broken-edge section growth, written to navigation with "
+        "inter-section linking. Output is navigable by construction."
+    )
+    lab_strategy_name = "grow"
+
+
 __all__ = [
     "LabAdapterStrategy",
     "TileShuffleAdapter",
     "IdentityAdapter",
+    "GrowAdapter",
 ]

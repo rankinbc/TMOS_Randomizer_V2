@@ -25,7 +25,7 @@ import {
   type EnemyStatPatch,
 } from '../api/client';
 
-export type TabType = 'map' | 'flow' | 'tiles' | 'tilebank' | 'items' | 'stats' | 'enemies' | 'allies' | 'validation' | 'debug';
+export type TabType = 'map' | 'flow' | 'tiles' | 'tilebank' | 'items' | 'stats' | 'enemies' | 'allies' | 'advanced' | 'validation' | 'debug';
 
 export interface EditLogEntry {
   ts: number;                     // ms since epoch

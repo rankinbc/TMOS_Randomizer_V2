@@ -400,6 +400,76 @@ export interface EncounterGroupPatch {
   flag?: number;
 }
 
+// ---- Advanced page systems ----
+export interface BossField {
+  field: string; rom_offset: string; tier: string;
+  value: number; min: number; max: number; tooltip: string;
+}
+export interface BossStat { boss_id: string; boss_label: string; fields: BossField[]; }
+export interface BossStatsResponse { stats: BossStat[]; vanilla: BossStat[]; boss_ids: string[]; }
+
+export interface ShopSlot {
+  shop_index: number; slot_index: number; rom_offset: string;
+  item_code: number; item_code_hex: string; item_label: string; base_price: number;
+}
+export interface TrooperCost { rom_offset: string; cost: number; }
+export interface ShopEconomyResponse {
+  shops: ShopSlot[]; vanilla: ShopSlot[]; shop_count: number; slots_per_shop: number;
+  shop_table_offset: string; trooper_cost: TrooperCost; trooper_vanilla: TrooperCost;
+}
+
+export interface OverworldEnemyStat {
+  enemy_type: number; enemy_type_hex: string; rom_offset: string;
+  hp_by_chapter: number[]; record_byte_0: number; record_byte_1: number; record_byte_2: number;
+  contact_damage: number; contact_damage_class: number;
+  exp_reward: number; exp_tier: number; emergence_contact_damage: number;
+}
+export interface OverworldEnemyStatsResponse {
+  stats: OverworldEnemyStat[]; vanilla: OverworldEnemyStat[];
+  type_range: [number, number]; chapter_count: number; rom_offset: string;
+}
+
+export interface TbDamageTable {
+  which: string; label: string; cpu_addr: string; rom_offset: string;
+  length: number; shape: number[]; tier: string; tooltip: string; values: number[];
+}
+export interface TbDamageTablesResponse { tables: TbDamageTable[]; vanilla: TbDamageTable[]; tier: string; }
+
+export interface EncounterTable {
+  name: string; tier: string; cpu_addr: string; rom_offset: string;
+  length: number; values: number[]; marker_indices: number[];
+}
+export interface EncounterRatesResponse { current: EncounterTable[]; vanilla: EncounterTable[]; tier: string; }
+
+export interface WeaponDamageEntry {
+  attack_id: number; attack_id_hex: string; rom_offset: string; raw_byte: number;
+  weapon_class: number; damage_base: number; applied_damage: number; is_dedicated_data: boolean;
+}
+export interface WeaponDamageResponse {
+  table: WeaponDamageEntry[]; vanilla: WeaponDamageEntry[];
+  id_range: [number, number]; writable_range: [number, number]; rom_offset: string;
+}
+
+export interface MpEntry { level: number; value: number; rom_offset: string; }
+export interface MpTableResponse {
+  level_count: number; rom_offset: string; stride: number; entries: MpEntry[]; vanilla: MpEntry[];
+}
+
+export interface PaletteColorField {
+  key: string; label: string; ram_address: string; rom_offset: string | null;
+  tier: string; valid_min: number; valid_max: number; tooltip: string;
+  color_index?: number; color_index_hex?: string;
+}
+export interface PaletteColorsResponse {
+  tier: string; editable: boolean; shadow_page: string; fields: PaletteColorField[]; _note: string;
+}
+
+export interface LevelCap { chapter: number; level_cap: number; rom_offset: string; tier: string; source: string; }
+export interface LevelCapsResponse {
+  caps: LevelCap[]; vanilla: LevelCap[]; chapter_range: [number, number];
+  tier: string; editable: boolean; _note: string;
+}
+
 // API Client class
 class ApiClient {
   private baseUrl: string;
@@ -550,6 +620,10 @@ class ApiClient {
 
   getMapUrl(filename: string): string {
     return `${this.baseUrl}/api/assets/maps/${filename}`;
+  }
+
+  getBossImageUrl(filename: string): string {
+    return `${this.baseUrl}/api/assets/bosses/${filename}`;
   }
 
   // ROM Operations
@@ -821,6 +895,96 @@ class ApiClient {
       `/api/rom/encounter-groups/${chapter}/${entryIndex}`,
       { method: 'PATCH', body: JSON.stringify(patch) }
     );
+  }
+
+  // ---- Advanced page systems ----
+  // Bosses (safe)
+  async getBossStats(): Promise<BossStatsResponse> {
+    return this.fetch<BossStatsResponse>('/api/rom/boss-stats');
+  }
+  async patchBossStat(bossId: string, field: string, value: number): Promise<{ status: string; stat: BossStat }> {
+    return this.fetch(`/api/rom/boss-stats/${bossId}`, {
+      method: 'PATCH', body: JSON.stringify({ field, value }),
+    });
+  }
+
+  // Economy & Shops (shop slots = expert; trooper cost = safe)
+  async getShopEconomy(): Promise<ShopEconomyResponse> {
+    return this.fetch<ShopEconomyResponse>('/api/rom/shop-economy');
+  }
+  async patchShopSlot(
+    shopIndex: number, slotIndex: number, patch: { item_code?: number; base_price?: number }
+  ): Promise<{ status: string; slot: ShopSlot }> {
+    return this.fetch(`/api/rom/shop-economy/${shopIndex}/${slotIndex}`, {
+      method: 'PATCH', body: JSON.stringify(patch),
+    });
+  }
+  async patchTrooperCost(cost: number): Promise<{ status: string; trooper: TrooperCost }> {
+    return this.fetch('/api/rom/trooper-cost', {
+      method: 'PATCH', body: JSON.stringify({ cost }),
+    });
+  }
+
+  // Overworld (real-time) enemy stats (HP editable, expert)
+  async getOverworldEnemyStats(): Promise<OverworldEnemyStatsResponse> {
+    return this.fetch<OverworldEnemyStatsResponse>('/api/rom/overworld-enemy-stats');
+  }
+  async patchOverworldEnemyHp(enemyType: number, hpByChapter: number[]): Promise<{ status: string; stat: OverworldEnemyStat }> {
+    return this.fetch(`/api/rom/overworld-enemy-stats/${enemyType}`, {
+      method: 'PATCH', body: JSON.stringify({ hp_by_chapter: hpByChapter }),
+    });
+  }
+
+  // Turn-based combat damage tables (expert)
+  async getTbDamageTables(): Promise<TbDamageTablesResponse> {
+    return this.fetch<TbDamageTablesResponse>('/api/rom/tb-damage-tables');
+  }
+  async patchTbDamageEntry(which: string, index: number, value: number): Promise<{ status: string; table: TbDamageTable }> {
+    return this.fetch(`/api/rom/tb-damage-tables/${which}/${index}`, {
+      method: 'PATCH', body: JSON.stringify({ value }),
+    });
+  }
+
+  // Encounter rate tables (expert)
+  async getEncounterRates(): Promise<EncounterRatesResponse> {
+    return this.fetch<EncounterRatesResponse>('/api/rom/encounter-rates');
+  }
+  async patchEncounterRate(
+    table: string, index: number, value: number, allowMarker = false
+  ): Promise<{ status: string; table: EncounterTable }> {
+    return this.fetch(`/api/rom/encounter-rates/${table}/${index}`, {
+      method: 'PATCH', body: JSON.stringify({ value, allow_marker: allowMarker }),
+    });
+  }
+
+  // Weapon vs attack-object damage (expert)
+  async getWeaponDamage(): Promise<WeaponDamageResponse> {
+    return this.fetch<WeaponDamageResponse>('/api/rom/weapon-damage');
+  }
+  async patchWeaponDamage(
+    attackId: number, patch: { weapon_class?: number; damage_base?: number }
+  ): Promise<{ status: string; entry: WeaponDamageEntry }> {
+    return this.fetch(`/api/rom/weapon-damage/${attackId}`, {
+      method: 'PATCH', body: JSON.stringify(patch),
+    });
+  }
+
+  // Max-MP-per-level table (safe)
+  async getMpTable(): Promise<MpTableResponse> {
+    return this.fetch<MpTableResponse>('/api/rom/mp-table');
+  }
+  async patchMpEntry(level: number, value: number): Promise<{ status: string; entry: MpEntry }> {
+    return this.fetch(`/api/rom/mp-table/${level}`, {
+      method: 'PATCH', body: JSON.stringify({ value }),
+    });
+  }
+
+  // Display-only systems (GET only)
+  async getPaletteColors(): Promise<PaletteColorsResponse> {
+    return this.fetch<PaletteColorsResponse>('/api/rom/palette-colors');
+  }
+  async getLevelCaps(): Promise<LevelCapsResponse> {
+    return this.fetch<LevelCapsResponse>('/api/rom/level-caps');
   }
 }
 

@@ -62,6 +62,16 @@ from ..core import enemy_stats as _enemy_stats
 from ..core import encounter_lineups as _encounter_lineups
 from ..core import encounter_groups as _encounter_groups
 from ..core import items as _items
+# Advanced page systems (built + verified vs GameAnalysis2 ROM knowledge base)
+from ..core import boss_stats as _boss_stats
+from ..core import shop_economy as _shop_economy
+from ..core import overworld_enemy_stats as _overworld_enemy_stats
+from ..core import tb_damage_tables as _tb_damage_tables
+from ..core import encounter_rates as _encounter_rates
+from ..core import weapon_damage as _weapon_damage
+from ..core import mp_table as _mp_table
+from ..core import palette_colors as _palette_colors
+from ..core import level_caps as _level_caps
 from ..core.enums import NAV_BLOCKED, NAV_BUILDING_ENTRANCE
 from ..logic.navigation import connect_screens, disconnect_screens, OPPOSITE_DIRECTIONS
 
@@ -210,6 +220,53 @@ class EnemyStatUpdate(BaseModel):
     hp: Optional[int] = None
     ep: Optional[int] = None
     rupia: Optional[int] = None
+
+
+# --- Advanced page update models ---
+class BossStatUpdate(BaseModel):
+    """Set one boss byte field (field name + value). ROM_VERIFIED single bytes."""
+    field: str
+    value: int
+
+
+class ShopSlotUpdate(BaseModel):
+    """Partial update to one shop slot (item_code / base_price). Omitted untouched."""
+    item_code: Optional[int] = None
+    base_price: Optional[int] = None
+
+
+class TrooperCostUpdate(BaseModel):
+    """Set the trooper recruitment cost byte at file 0x4577."""
+    cost: int
+
+
+class OverworldHpUpdate(BaseModel):
+    """Set overworld enemy HP: all 5 chapters (hp_by_chapter) or one (chapter+hp)."""
+    hp_by_chapter: Optional[List[int]] = None
+    chapter: Optional[int] = None
+    hp: Optional[int] = None
+
+
+class TbTableEntryUpdate(BaseModel):
+    """Set one byte of a turn-based damage table (Expert)."""
+    value: int
+
+
+class EncounterRateUpdate(BaseModel):
+    """Set one byte of an encounter ramp/curve table (Expert). allow_marker for ramp."""
+    value: int
+    allow_marker: bool = False
+
+
+class WeaponDamageUpdate(BaseModel):
+    """Set weapon_class (0-3) and/or damage_base (0-63) for an attack object (Expert)."""
+    weapon_class: Optional[int] = None
+    damage_base: Optional[int] = None
+
+
+class MpEntryUpdate(BaseModel):
+    """Set the Max-MP byte for one level (1-25)."""
+    value: int
 
 
 # =============================================================================
@@ -2611,6 +2668,258 @@ async def patch_enemy_stat(enemy_id: int, update: EnemyStatUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     _rom_data = bytes(rom_array)
     return {"status": "updated", "stat": result}
+
+
+# =============================================================================
+# API Endpoints - Advanced page systems
+#   Verified vs C:\...\GameAnalysis2\analysis_games\TMOS. Editable systems use
+#   the standard _require_rom_pair -> bytearray -> mutate -> _rom_data pattern,
+#   always returning a vanilla snapshot for diff highlighting. palette-colors
+#   and level-caps are display-only (no confirmed ROM write target) -> GET only.
+# =============================================================================
+
+# --- Bosses (ROM_VERIFIED, safe) ---
+@app.get("/api/rom/boss-stats")
+async def get_boss_stats():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "stats": _boss_stats.read_all_boss_stats(rom),
+        "vanilla": _boss_stats.read_all_boss_stats(vanilla),
+        "boss_ids": list(_boss_stats.BOSS_IDS),
+    }
+
+
+@app.patch("/api/rom/boss-stats/{boss_id}")
+async def patch_boss_stat(boss_id: str, update: BossStatUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _boss_stats.write_boss_stat(rom_array, boss_id, update.field, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "stat": result}
+
+
+# --- Economy & Shops (shop slots = expert/DISASSEMBLY; trooper cost = safe) ---
+@app.get("/api/rom/shop-economy")
+async def get_shop_economy():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "shops": _shop_economy.read_all_shops(rom),
+        "vanilla": _shop_economy.read_all_shops(vanilla),
+        "shop_count": _shop_economy.SHOP_COUNT,
+        "slots_per_shop": _shop_economy.SHOP_SLOTS,
+        "shop_table_offset": f"0x{_shop_economy.SHOP_TABLE:05X}",
+        "trooper_cost": _shop_economy.read_trooper_cost(rom),
+        "trooper_vanilla": _shop_economy.read_trooper_cost(vanilla),
+    }
+
+
+@app.patch("/api/rom/shop-economy/{shop_index}/{slot_index}")
+async def patch_shop_slot(shop_index: int, slot_index: int, update: ShopSlotUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _shop_economy.write_shop_slot(
+            rom_array, shop_index, slot_index,
+            item_code=update.item_code, base_price=update.base_price,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "slot": result}
+
+
+@app.patch("/api/rom/trooper-cost")
+async def patch_trooper_cost(update: TrooperCostUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _shop_economy.write_trooper_cost(rom_array, update.cost)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "trooper": result}
+
+
+# --- Overworld (real-time) enemy stats (HP editable, expert) ---
+@app.get("/api/rom/overworld-enemy-stats")
+async def get_overworld_enemy_stats():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "stats": _overworld_enemy_stats.read_all_overworld_enemy_stats(rom),
+        "vanilla": _overworld_enemy_stats.read_all_overworld_enemy_stats(vanilla),
+        "type_range": [_overworld_enemy_stats.TYPE_FIRST, _overworld_enemy_stats.TYPE_LAST],
+        "chapter_count": _overworld_enemy_stats.CHAPTER_COUNT,
+        "rom_offset": f"0x{_overworld_enemy_stats.OVERWORLD_HP_TABLE:05X}",
+    }
+
+
+@app.patch("/api/rom/overworld-enemy-stats/{enemy_type}")
+async def patch_overworld_enemy_stat(enemy_type: int, update: OverworldHpUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        if update.hp_by_chapter is not None:
+            result = _overworld_enemy_stats.write_overworld_enemy_stat(
+                rom_array, enemy_type, hp_by_chapter=update.hp_by_chapter,
+            )
+        elif update.chapter is not None and update.hp is not None:
+            result = _overworld_enemy_stats.write_overworld_enemy_hp(
+                rom_array, enemy_type, chapter=update.chapter, hp=update.hp,
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Provide hp_by_chapter or chapter+hp")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "stat": result}
+
+
+# --- Turn-based combat damage tables (Expert) ---
+@app.get("/api/rom/tb-damage-tables")
+async def get_tb_damage_tables():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "tables": _tb_damage_tables.read_all_tables(rom),
+        "vanilla": _tb_damage_tables.read_all_tables(vanilla),
+        "tier": _tb_damage_tables.TIER,
+    }
+
+
+@app.patch("/api/rom/tb-damage-tables/{which}/{index}")
+async def patch_tb_damage_entry(which: str, index: int, update: TbTableEntryUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _tb_damage_tables.write_table_entry(rom_array, which, index, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "table": result}
+
+
+# --- Encounter rate tables (ramp + curve, Expert) ---
+@app.get("/api/rom/encounter-rates")
+async def get_encounter_rates():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "current": _encounter_rates.read_encounter_rates(rom),
+        "vanilla": _encounter_rates.read_encounter_rates(vanilla),
+        "tier": _encounter_rates.TIER,
+    }
+
+
+@app.patch("/api/rom/encounter-rates/{table}/{index}")
+async def patch_encounter_rate(table: str, index: int, update: EncounterRateUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        if table == "ramp":
+            result = _encounter_rates.write_encounter_ramp_byte(
+                rom_array, index, update.value, allow_marker=update.allow_marker,
+            )
+        elif table == "curve":
+            result = _encounter_rates.write_encounter_curve_byte(rom_array, index, update.value)
+        else:
+            raise HTTPException(status_code=400, detail="table must be 'ramp' or 'curve'")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "table": result}
+
+
+# --- Weapon vs attack-object damage table (Expert) ---
+@app.get("/api/rom/weapon-damage")
+async def get_weapon_damage():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "table": _weapon_damage.read_table(rom),
+        "vanilla": _weapon_damage.read_table(vanilla),
+        "id_range": [_weapon_damage.ATTACK_ID_FIRST, _weapon_damage.ATTACK_ID_LAST],
+        "writable_range": [_weapon_damage.WRITABLE_ID_FIRST, _weapon_damage.WRITABLE_ID_LAST],
+        "rom_offset": f"0x{_weapon_damage.WEAPON_DAMAGE_TABLE:05X}",
+    }
+
+
+@app.patch("/api/rom/weapon-damage/{attack_id}")
+async def patch_weapon_damage(attack_id: int, update: WeaponDamageUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _weapon_damage.write_table_entry(
+            rom_array, attack_id,
+            weapon_class=update.weapon_class, damage_base=update.damage_base,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "entry": result}
+
+
+# --- Max-MP-per-level table (safe) ---
+@app.get("/api/rom/mp-table")
+async def get_mp_table():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "level_count": _mp_table.LEVEL_COUNT,
+        "rom_offset": f"0x{_mp_table.MP_TABLE_OFFSET:05X}",
+        "stride": _mp_table.MP_TABLE_STRIDE,
+        "entries": _mp_table.read_mp_table(rom),
+        "vanilla": _mp_table.read_mp_table(vanilla),
+    }
+
+
+@app.patch("/api/rom/mp-table/{level}")
+async def patch_mp_entry(level: int, update: MpEntryUpdate):
+    global _rom_data
+    rom, _ = _require_rom_pair()
+    rom_array = bytearray(rom)
+    try:
+        result = _mp_table.write_mp_entry(rom_array, level, update.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _rom_data = bytes(rom_array)
+    return {"status": "updated", "entry": result}
+
+
+# --- Display-only systems (no confirmed ROM write target; GET only) ---
+@app.get("/api/rom/palette-colors")
+async def get_palette_colors():
+    return {
+        "tier": _palette_colors.TIER,
+        "editable": False,
+        "shadow_page": f"0x{_palette_colors.PALETTE_SHADOW_BASE:04X}",
+        "fields": _palette_colors.palette_color_fields(),
+        "_note": (
+            "Environment/menu colors live in the $04A0 palette shadow RAM page "
+            "(uploaded to PPU $3F00 each frame), not a ROM data table — display-only."
+        ),
+    }
+
+
+@app.get("/api/rom/level-caps")
+async def get_level_caps():
+    rom, vanilla = _require_rom_pair()
+    return {
+        "caps": _level_caps.read_all_level_caps(rom),
+        "vanilla": _level_caps.read_all_level_caps(vanilla),
+        "chapter_range": [_level_caps.CHAPTER_FIRST, _level_caps.CHAPTER_LAST],
+        "tier": _level_caps.TIER,
+        "editable": False,
+        "_note": (
+            "Per-chapter level cap is GUIDE_SOURCED with no confirmed ROM write "
+            "target (6:$97EC is the EXP threshold table) — display-only."
+        ),
+    }
 
 
 @app.get("/api/rom/encounter-lineups")
