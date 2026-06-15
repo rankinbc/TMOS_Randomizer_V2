@@ -25,6 +25,7 @@ export function RandomizeModal() {
   const [useRandomSeed, setUseRandomSeed] = useState(true);
   const [strategies, setStrategies] = useState<StrategyOption[]>([]);
   const [strategiesError, setStrategiesError] = useState<string | null>(null);
+  const [randomizeError, setRandomizeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (modalOpen !== 'randomize') return;
@@ -52,13 +53,19 @@ export function RandomizeModal() {
 
   const handleRandomize = async () => {
     const seedValue = useRandomSeed ? undefined : parseInt(seed, 10) || undefined;
+    setRandomizeError(null);
     try {
       await fetchPlanFromApi(seedValue);
       setModalOpen(null);
       // Switch to map tab to show the randomized world
       setSelectedTab('map');
     } catch (error) {
+      // Keep the modal open and show why randomization produced no result
+      // (e.g. an experimental strategy that failed the navigability gate).
       console.error('Randomization failed:', error);
+      setRandomizeError(
+        error instanceof Error ? error.message : 'Randomization failed',
+      );
     }
   };
 
@@ -108,7 +115,7 @@ export function RandomizeModal() {
               {strategies.map((s) => (
                 <option key={s.name} value={s.name}>
                   {s.name}
-                  {s.source === 'lab' ? ' (lab)' : ''}
+                  {s.source === 'lab' ? ' (experimental)' : ''}
                 </option>
               ))}
             </select>
@@ -118,6 +125,12 @@ export function RandomizeModal() {
                 : activeStrategyInfo?.description ||
                   'Loading strategies\u2026'}
             </p>
+            {activeStrategyInfo?.source === 'lab' && (
+              <p className="text-xs text-amber-400 mt-1">
+                &#9888; Experimental research strategy &mdash; may fail
+                navigability validation and produce no changes.
+              </p>
+            )}
           </div>
 
           {/* Seed Input */}
@@ -218,6 +231,12 @@ export function RandomizeModal() {
           {!apiConnected && (
             <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-sm text-red-300">
               API is not connected
+            </div>
+          )}
+          {randomizeError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-sm text-red-300">
+              <div className="font-medium mb-1">Randomization failed</div>
+              {randomizeError}
             </div>
           )}
         </div>

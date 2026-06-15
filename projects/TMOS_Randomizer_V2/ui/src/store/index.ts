@@ -543,8 +543,15 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
         // Load section map after apply-preview to get actual screen assignments
         await state.loadSectionMap();
       } catch (previewError) {
-        console.warn('Failed to apply preview:', previewError);
-        // Continue even if preview fails - plan is still valid
+        // A hard preview failure means the strategy could NOT produce a
+        // navigable map (e.g. an experimental/lab strategy that fails the
+        // navigability gate, which returns HTTP 500). Surface it instead of
+        // silently leaving the map unchanged. Organic's soft warnings return
+        // HTTP 200 and never reach here. The outer catch sets apiError and
+        // re-throws to the caller (the Randomize modal shows the message).
+        throw previewError instanceof Error
+          ? previewError
+          : new Error('Randomization preview failed');
       }
 
       set({ planLoading: false });
