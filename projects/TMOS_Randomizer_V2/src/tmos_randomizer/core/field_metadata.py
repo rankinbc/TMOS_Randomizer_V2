@@ -12,6 +12,7 @@ Tiers:
 
 from __future__ import annotations
 
+from enum import IntEnum
 from typing import Any, Dict, List
 
 from .enums import ContentType, EventType, ParentWorld
@@ -19,7 +20,7 @@ from .enums import ContentType, EventType, ParentWorld
 METADATA_VERSION = "1"
 
 
-def _enum_options(enum_cls) -> List[Dict[str, Any]]:
+def _enum_options(enum_cls: type[IntEnum]) -> List[Dict[str, Any]]:
     """Render an IntEnum as a list of {value, label} dicts, sorted by value."""
     return [
         {"value": int(member.value), "label": f"{member.name} (0x{int(member.value):02X})"}

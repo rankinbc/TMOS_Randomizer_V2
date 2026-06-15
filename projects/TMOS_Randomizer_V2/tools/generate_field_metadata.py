@@ -1,5 +1,14 @@
 """Generate the baked field-metadata JSON artifact.
 
+This artifact (``src/tmos_randomizer/data/field_metadata.json``) is a versioned,
+build-time *snapshot* of :func:`build_field_metadata`, shipped with the package
+for frontend/offline consumption and reproducibility. It is NOT the runtime
+source of truth: the live ``GET /api/metadata/fields`` endpoint always serves
+the builder's output directly, so ``build_field_metadata()`` remains the single
+source of truth. The staleness test (``tests/test_core/test_field_metadata_artifact.py``)
+guards that this snapshot stays in sync with the builder; re-run this script
+whenever the builder changes.
+
 Usage:
     python tools/generate_field_metadata.py
 """
