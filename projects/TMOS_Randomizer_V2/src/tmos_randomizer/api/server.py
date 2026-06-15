@@ -1247,6 +1247,42 @@ async def apply_plan_preview():
             ]
             logger.warning(f"Navigability incomplete (soft): {failing}")
 
+        # Honest navigability check. Directed BFS understates reachability (even
+        # the stock ROM isn't 100% by it because most screens connect via
+        # warps), so we judge "fragmented" RELATIVE to the stock baseline using
+        # warp-aware reachability per chapter — not against an absolute bar.
+        baseline = _baseline_reachability()
+        nav_chapters = []
+        nav_ok = True
+        for ch in _game_world:
+            r = _analyze_full_reachability(ch)
+            base = baseline.get(ch.chapter_num, {})
+            base_comp = base.get("full_components")
+            base_pct = base.get("percent")
+            fragmented = False
+            if base_comp is not None and base_pct is not None:
+                # More disconnected pieces than stock, or notably less reachable.
+                fragmented = (
+                    r["full_components"] > base_comp
+                    or r["percent"] < base_pct - 5.0
+                )
+            if fragmented:
+                nav_ok = False
+            nav_chapters.append({
+                "chapter_num": ch.chapter_num,
+                "reachable_percent": round(r["percent"], 1),
+                "components": r["full_components"],
+                "baseline_percent": round(base_pct, 1) if base_pct is not None else None,
+                "baseline_components": base_comp,
+                "fragmented": fragmented,
+            })
+        if not nav_ok:
+            frag = [c["chapter_num"] for c in nav_chapters if c["fragmented"]]
+            logger.warning(
+                f"Navigability gate: world more fragmented than stock in "
+                f"chapters {frag}"
+            )
+
         # Flush all randomized/edited screens into _rom_data so a later
         # /api/rom/patch captures the applied plan.
         _flush_screens(s for ch in _game_world for s in ch.screens if s.is_modified)
@@ -1256,7 +1292,14 @@ async def apply_plan_preview():
             "seed": _current_plan.seed,
             "strategy": strategy.name,
             "screens_modified": modified_count,
-            "navigability_ok": True,
+            "navigability_ok": nav_ok,
+            "navigability": {
+                "ok": nav_ok,
+                "fragmented_chapters": [
+                    c["chapter_num"] for c in nav_chapters if c["fragmented"]
+                ],
+                "chapters": nav_chapters,
+            },
             "connectivity": connectivity_report,
             "chapters": [
                 {
@@ -1321,6 +1364,38 @@ async def patch_rom(filename: Optional[str] = Query(default=None)):
                 "X-Patch-Warnings, X-Screens-Modified, Content-Disposition",
         },
     )
+
+
+_baseline_reach_cache: tuple = (None, {})
+
+
+def _baseline_reachability() -> Dict[int, Dict[str, float]]:
+    """Per-chapter warp-aware reachability of the PRISTINE (stock) ROM, cached.
+
+    The stock ROM file at ``_rom_path`` is never mutated (edits live in memory),
+    so re-parsing it yields the stock baseline. Used to judge whether a
+    randomized world is more fragmented than the real game. Cached by ROM path,
+    so it recomputes automatically when a different ROM is loaded.
+    """
+    global _baseline_reach_cache
+    key = str(_rom_path) if _rom_path else None
+    if key is not None and _baseline_reach_cache[0] == key:
+        return _baseline_reach_cache[1]
+    result: Dict[int, Dict[str, float]] = {}
+    try:
+        if _rom_path and Path(_rom_path).exists():
+            stock = load_rom(_rom_path)
+            for ch in stock:
+                r = _analyze_full_reachability(ch)
+                result[ch.chapter_num] = {
+                    "percent": r["percent"],
+                    "full_components": r["full_components"],
+                }
+    except Exception:
+        logger.exception("baseline reachability computation failed")
+        result = {}
+    _baseline_reach_cache = (key, result)
+    return result
 
 
 def _check_world_connectivity(game_world) -> List[Dict[str, Any]]:

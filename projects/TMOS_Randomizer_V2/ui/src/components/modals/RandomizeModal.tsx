@@ -26,6 +26,7 @@ export function RandomizeModal() {
   const [strategies, setStrategies] = useState<StrategyOption[]>([]);
   const [strategiesError, setStrategiesError] = useState<string | null>(null);
   const [randomizeError, setRandomizeError] = useState<string | null>(null);
+  const [navWarning, setNavWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (modalOpen !== 'randomize') return;
@@ -54,8 +55,23 @@ export function RandomizeModal() {
   const handleRandomize = async () => {
     const seedValue = useRandomSeed ? undefined : parseInt(seed, 10) || undefined;
     setRandomizeError(null);
+    setNavWarning(null);
     try {
       await fetchPlanFromApi(seedValue);
+      // Honest navigability gate: if the generated world is more fragmented
+      // than the original game, keep the modal open and warn instead of
+      // silently presenting an unplayable map.
+      const nav = useRandomizerStore.getState().lastNavigability;
+      if (nav && !nav.ok) {
+        const chs = nav.fragmentedChapters.join(', ');
+        setNavWarning(
+          'The generated map is more fragmented than the original game' +
+            (chs ? ` (chapter${nav.fragmentedChapters.length > 1 ? 's' : ''} ${chs} have unreachable areas)` : '') +
+            '. It may not be fully playable — try another seed or strategy. ' +
+            'You can still close this dialog to use it as-is.',
+        );
+        return;
+      }
       setModalOpen(null);
       // Switch to map tab to show the randomized world
       setSelectedTab('map');
@@ -237,6 +253,12 @@ export function RandomizeModal() {
             <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-sm text-red-300">
               <div className="font-medium mb-1">Randomization failed</div>
               {randomizeError}
+            </div>
+          )}
+          {navWarning && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-sm text-amber-300">
+              <div className="font-medium mb-1">&#9888; Navigability warning</div>
+              {navWarning}
             </div>
           )}
         </div>

@@ -74,6 +74,9 @@ interface RandomizerState {
   plan: RandomizationPlan | null;
   planLoading: boolean;
 
+  // Navigability of the last applied plan (warp-aware, vs stock baseline)
+  lastNavigability: { ok: boolean; fragmentedChapters: number[] } | null;
+
   // Section Map (from backend after apply-preview)
   sectionMap: SectionMapData | null;
 
@@ -281,6 +284,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   settings: getDefaultSettings(),
   plan: null,
   planLoading: false,
+  lastNavigability: null,
   sectionMap: null,
   selectedChapter: 1,
   selectedTab: 'flow',
@@ -506,11 +510,17 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
         },
       };
 
-      set({ plan: transformedPlan });
+      set({ plan: transformedPlan, lastNavigability: null });
 
       // Apply the plan to in-memory ROM data so views show randomized world
       try {
-        await api.applyPlanPreview();
+        const previewResult = await api.applyPlanPreview();
+        set({
+          lastNavigability: {
+            ok: previewResult.navigability_ok ?? true,
+            fragmentedChapters: previewResult.navigability?.fragmented_chapters ?? [],
+          },
+        });
 
         // Re-fetch the plan: strategies like "organic" populate the
         // world_plan/world_population/world_navigation only during

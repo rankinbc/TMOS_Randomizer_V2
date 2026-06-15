@@ -565,6 +565,19 @@ class ApiClient {
     status: string;
     seed: number;
     screens_modified: number;
+    navigability_ok: boolean;
+    navigability?: {
+      ok: boolean;
+      fragmented_chapters: number[];
+      chapters: {
+        chapter_num: number;
+        reachable_percent: number;
+        components: number;
+        baseline_percent: number | null;
+        baseline_components: number | null;
+        fragmented: boolean;
+      }[];
+    };
     chapters: { chapter_num: number; screen_count: number }[];
   }> {
     return this.fetch('/api/plan/apply-preview', { method: 'POST' });
