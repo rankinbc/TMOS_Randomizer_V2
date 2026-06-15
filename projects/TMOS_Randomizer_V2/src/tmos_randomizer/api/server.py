@@ -143,6 +143,19 @@ class TileSectionUpdate(BaseModel):
     bottom_tiles: Optional[int] = None
 
 
+class ScreenFieldsUpdate(BaseModel):
+    """Allowlisted low-risk WorldScreen fields for the editor modal.
+
+    Deliberately EXCLUDES parent_world, ambient_sound, navigation, exit_position,
+    and datapointer/chr — those are managed elsewhere and are not safe to set here.
+    """
+    objectset: Optional[int] = None
+    content: Optional[int] = None
+    event: Optional[int] = None
+    worldscreen_color: Optional[int] = None
+    sprites_color: Optional[int] = None
+
+
 class TileBankUpdate(BaseModel):
     """Request to update a tile's MiniTile IDs."""
     minitiles: List[int]  # [TL, TR, BL, BR], each 0-255
@@ -630,6 +643,74 @@ async def update_screen_tiles(
         "status": "updated",
         "datapointer_changed": resolved["datapointer_changed"],
         "chr_changed": resolved["chr_changed"],
+        "screen": {
+            "index": screen.relative_index,
+            "global_index": screen.global_index,
+            "datapointer": screen.datapointer,
+            "chr_index": get_chr_index(screen.datapointer),
+            "top_tiles": screen.top_tiles,
+            "bottom_tiles": screen.bottom_tiles,
+            "objectset": screen.objectset,
+            "parent_world": screen.parent_world,
+            "event": screen.event,
+            "content": screen.content,
+            "nav_right": screen.screen_index_right,
+            "nav_left": screen.screen_index_left,
+            "nav_down": screen.screen_index_down,
+            "nav_up": screen.screen_index_up,
+            "worldscreen_color": screen.worldscreen_color,
+            "sprites_color": screen.sprites_color,
+            "exit_position": screen.exit_position,
+        },
+    }
+
+
+@app.patch("/api/rom/screen/{chapter_num}/{screen_index}/fields")
+async def update_screen_fields(
+    chapter_num: int,
+    screen_index: int,
+    update: ScreenFieldsUpdate,
+):
+    """Update a screen's low-risk fields (live, in-memory).
+
+    Strict allowlist: objectset, content, event, worldscreen_color, sprites_color.
+    Each provided value must be 0-255. Mirrors the tiles PATCH guard order.
+    """
+    from ..core.constants import get_chr_index
+
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    chapter = _game_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+    screen = chapter.get_screen(screen_index)
+    if screen is None:
+        raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
+
+    # Allowlist: explicit so excluded fields can never be set here.
+    fields = {
+        "objectset": update.objectset,
+        "content": update.content,
+        "event": update.event,
+        "worldscreen_color": update.worldscreen_color,
+        "sprites_color": update.sprites_color,
+    }
+    provided = {k: v for k, v in fields.items() if v is not None}
+    if not provided:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one of: objectset, content, event, worldscreen_color, sprites_color",
+        )
+    for label, val in provided.items():
+        if val < 0 or val > 255:
+            raise HTTPException(status_code=400, detail=f"{label} must be 0-255, got {val}")
+
+    for label, val in provided.items():
+        setattr(screen, label, val)
+    screen.mark_modified()
+
+    return {
+        "status": "updated",
         "screen": {
             "index": screen.relative_index,
             "global_index": screen.global_index,
