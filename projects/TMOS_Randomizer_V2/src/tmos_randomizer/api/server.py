@@ -1116,6 +1116,51 @@ async def apply_plan_preview():
         raise HTTPException(status_code=500, detail=f"Failed to apply preview: {str(e)}")
 
 
+@app.post("/api/rom/patch")
+async def patch_rom(filename: Optional[str] = Query(default=None)):
+    """Stream the fully-edited ROM as a browser download.
+
+    _rom_data is the single source of truth (table edits write to it directly;
+    screen edits are flushed via _flush_screens). A defensive reconcile flushes
+    any still-dirty screens so a forgotten flush site cannot drop edits.
+    Runs a non-blocking navigability check and reports the count via a header.
+    """
+    _require_rom_pair()  # raises HTTPException(400) if no ROM loaded
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    # Defensive reconcile: capture any dirty screens not yet flushed.
+    # _flush_screens rebuilds the _rom_data buffer in place.
+    _flush_screens(s for ch in _game_world for s in ch.screens if s.is_modified)
+    modified_count = sum(
+        1 for ch in _game_world for s in ch.screens if s.is_modified
+    )
+
+    # Non-blocking navigability check: count chapters with unreachable screens.
+    report = _check_world_connectivity(_game_world)
+    warning_count = sum(1 for r in report if not r["fully_reachable"])
+
+    # Resolve a safe download filename.
+    if filename:
+        name = Path(filename).name  # strip any path components
+    elif _rom_filename:
+        name = f"{Path(_rom_filename).stem}-edited.nes"
+    else:
+        name = "edited.nes"
+
+    return Response(
+        content=_rom_data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}"',
+            "X-Patch-Warnings": str(warning_count),
+            "X-Screens-Modified": str(modified_count),
+            "Access-Control-Expose-Headers":
+                "X-Patch-Warnings, X-Screens-Modified, Content-Disposition",
+        },
+    )
+
+
 def _check_world_connectivity(game_world) -> List[Dict[str, Any]]:
     """Per-chapter directed reachability from screen 0 (ignoring 0xFE/0xFF)."""
     from collections import deque as _deque
