@@ -4,4 +4,5 @@ export { ItemsView } from './ItemsView';
 export { PlayerStatsView } from './PlayerStatsView';
 export { EnemiesView } from './EnemiesView';
 export { AlliesView } from './AlliesView';
+export { AdvancedView } from './AdvancedView';
 export { ValidationView } from './ValidationView';

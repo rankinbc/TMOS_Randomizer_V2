@@ -6,7 +6,7 @@ import { ScreenGrid } from '../screen/ScreenGrid';
 import { ScreenDetailPanel } from '../screen/ScreenDetailPanel';
 import { TileGridView } from '../screen/TileGridView';
 import { TileBankView } from '../tilebank';
-import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, ValidationView, MapView } from '../views';
+import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, AdvancedView, ValidationView, MapView } from '../views';
 import { JsonDebugPanel } from '../debug/JsonDebugPanel';
 
 const TABS: { id: TabType; label: string }[] = [
@@ -18,6 +18,7 @@ const TABS: { id: TabType; label: string }[] = [
   { id: 'stats', label: 'Player Stats' },
   { id: 'enemies', label: 'Enemies' },
   { id: 'allies', label: 'Allies' },
+  { id: 'advanced', label: 'Advanced' },
   { id: 'validation', label: 'Validation' },
   { id: 'debug', label: 'Debug' },
 ];
@@ -26,6 +27,10 @@ const VIEW_MODES: { id: ViewMode; label: string }[] = [
   { id: 'navigation', label: 'Navigation Map' },
   { id: 'grid', label: 'Grid View' },
 ];
+
+// Tabs that edit ROM-global data and don't need a chapter selected first.
+// (The screen/tiles/flow tabs are chapter-scoped and still require chapterData.)
+const GLOBAL_TABS = new Set<TabType>(['stats', 'enemies', 'advanced', 'tilebank', 'debug']);
 
 export function MainContent() {
   const {
@@ -113,7 +118,7 @@ export function MainContent() {
           <div className="flex items-center justify-center h-full text-slate-400">
             Loading chapter data...
           </div>
-        ) : !chapterData ? (
+        ) : !chapterData && !GLOBAL_TABS.has(selectedTab) ? (
           <div className="flex items-center justify-center h-full text-slate-500">
             Select a chapter to view screens.
           </div>
@@ -173,6 +178,9 @@ export function MainContent() {
               )}
               {selectedTab === 'allies' && planChapter && (
                 <AlliesView chapter={planChapter} />
+              )}
+              {selectedTab === 'advanced' && (
+                <AdvancedView />
               )}
               {selectedTab === 'validation' && planChapter && (
                 <ValidationView chapter={planChapter} />
