@@ -86,7 +86,14 @@ function TileSectionDropdown({
         {showNeighborhood && (
           <ScreenNeighborhood selected={screen} byIndex={byIndex} chapterNum={chapterNum} />
         )}
-        <div className="overflow-y-auto p-3 grid grid-cols-4 gap-2">
+        {/* A grid item's own aspect-ratio does NOT size its auto-row track, so the
+            rows would collapse and the thumbnails overlap into flat strips. The modal
+            is fixed-width (4 cols in w-820), so each column is ~189px wide; set the row
+            height to half that to give every cell the section's true 8x4 (2:1) shape. */}
+        <div
+          className="overflow-y-auto p-3 grid grid-cols-4 gap-2"
+          style={{ gridAutoRows: '94px' }}
+        >
           {indices.map((g) => (
             <SectionThumb
               key={g}
@@ -138,7 +145,7 @@ function SectionThumb({
         selected ? 'border-yellow-400 ring-2 ring-yellow-400' : 'border-slate-700 hover:border-blue-400'
       }`}
       title={`Section ${globalIndex} (0x${byte.toString(16).toUpperCase()}${crossBank ? ', bank 1' : ''})`}
-      style={{ aspectRatio: '2 / 1', backgroundColor: '#0f172a' }}
+      style={{ backgroundColor: '#0f172a' }}
     >
       {visible && (
         <img
