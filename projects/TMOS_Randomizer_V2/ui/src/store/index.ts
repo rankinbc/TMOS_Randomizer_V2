@@ -163,6 +163,10 @@ interface RandomizerState {
     screenIndex: number,
     update: NavigationUpdateRequest
   ) => Promise<void>;
+  updateScreenTiles: (
+    screenIndex: number,
+    update: { top_tiles?: number; bottom_tiles?: number }
+  ) => Promise<{ datapointer_changed: boolean; chr_changed: boolean }>;
 
   // Tile Bank actions
   loadTileBankData: () => Promise<void>;
@@ -603,6 +607,35 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     } catch (error) {
       set({
         apiError: error instanceof Error ? error.message : 'Failed to update navigation',
+      });
+      throw error;
+    }
+  },
+
+  updateScreenTiles: async (screenIndex, update) => {
+    const state = get();
+    if (!state.chapterData) {
+      throw new Error('No chapter data loaded');
+    }
+    try {
+      const response = await api.updateScreenTiles(
+        state.selectedChapter,
+        screenIndex,
+        update
+      );
+      const updatedScreens = state.chapterData.screens.map((screen) =>
+        screen.index === response.screen.index ? response.screen : screen
+      );
+      set({
+        chapterData: { ...state.chapterData, screens: updatedScreens },
+      });
+      return {
+        datapointer_changed: response.datapointer_changed,
+        chr_changed: response.chr_changed,
+      };
+    } catch (error) {
+      set({
+        apiError: error instanceof Error ? error.message : 'Failed to update tiles',
       });
       throw error;
     }
