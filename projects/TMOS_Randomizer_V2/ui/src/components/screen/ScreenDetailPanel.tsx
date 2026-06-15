@@ -4,7 +4,7 @@ import { ScreenRenderer } from './ScreenRenderer';
 import { Tooltip } from '../shared/Tooltip';
 import { formatScreenId } from '../../utils/formatters';
 import { useRandomizerStore } from '../../store';
-import { TileSectionPicker } from './TileSectionPicker';
+import { ScreenEditorModal } from './ScreenEditorModal';
 
 interface ScreenDetailPanelProps {
   screen: ScreenData;
@@ -240,8 +240,26 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
   const bottomTileBank = (screen.datapointer & 0x40) ? 1 : 0;
 
   const updateScreenTiles = useRandomizerStore((s) => s.updateScreenTiles);
+  const updateScreenFields = useRandomizerStore((s) => s.updateScreenFields);
   const [tileNote, setTileNote] = useState<string | null>(null);
-  const banks = getBanks(screen.datapointer);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [activeHalf, setActiveHalf] = useState<'top' | 'bottom'>('top');
+
+  const openEditor = (half: 'top' | 'bottom') => {
+    setActiveHalf(half);
+    setEditorOpen(true);
+  };
+
+  const handleFieldChange = async (
+    field: 'objectset' | 'content' | 'event' | 'worldscreen_color' | 'sprites_color',
+    value: number,
+  ) => {
+    try {
+      await updateScreenFields(screen.index, { [field]: value });
+    } catch {
+      // store already surfaced the error via apiError
+    }
+  };
 
   const handlePickTile = async (which: 'top' | 'bottom', globalIndex: number) => {
     setTileNote(null);
@@ -416,26 +434,26 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
           <DataRow label="Top Tile Bank" value={`Bank ${topTileBank}`} />
           <DataRow label="Bottom Tile Bank" value={`Bank ${bottomTileBank}`} />
           <div className="border-t border-slate-700 mt-2 pt-2 space-y-1">
-            <TileSectionPicker
-              which="top"
-              currentByte={screen.top_tiles}
-              currentBank={banks.top}
-              chr={chrBankIndex}
-              screen={screen}
-              screens={screens}
-              chapterNum={chapterNum}
-              onPick={(g) => handlePickTile('top', g)}
-            />
-            <TileSectionPicker
-              which="bottom"
-              currentByte={screen.bottom_tiles}
-              currentBank={banks.bottom}
-              chr={chrBankIndex}
-              screen={screen}
-              screens={screens}
-              chapterNum={chapterNum}
-              onPick={(g) => handlePickTile('bottom', g)}
-            />
+            <div className="flex justify-between text-sm items-center">
+              <span className="text-slate-500">Top TileSection</span>
+              <button
+                onClick={() => openEditor('top')}
+                className="text-slate-200 font-mono px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 hover:ring-1 hover:ring-blue-400 transition-all"
+                title="Open the screen editor on the top section"
+              >
+                0x{screen.top_tiles.toString(16).toUpperCase()} ({screen.top_tiles})
+              </button>
+            </div>
+            <div className="flex justify-between text-sm items-center">
+              <span className="text-slate-500">Bottom TileSection</span>
+              <button
+                onClick={() => openEditor('bottom')}
+                className="text-slate-200 font-mono px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 hover:ring-1 hover:ring-blue-400 transition-all"
+                title="Open the screen editor on the bottom section"
+              >
+                0x{screen.bottom_tiles.toString(16).toUpperCase()} ({screen.bottom_tiles})
+              </button>
+            </div>
             {tileNote && (
               <div className="text-xs text-amber-400 pt-1">{tileNote}</div>
             )}
@@ -444,7 +462,16 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
 
         {/* ObjectSet */}
         <DataSection title="Enemy Spawning">
-          <DataRow label="ObjectSet" value={`0x${screen.objectset.toString(16).toUpperCase()} (${screen.objectset})`} />
+          <div className="flex justify-between text-sm items-center">
+            <span className="text-slate-500">ObjectSet</span>
+            <button
+              onClick={() => openEditor(activeHalf)}
+              className="text-slate-200 font-mono px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 hover:ring-1 hover:ring-blue-400 transition-all"
+              title="Open the screen editor to change ObjectSet"
+            >
+              0x{screen.objectset.toString(16).toUpperCase()} ({screen.objectset})
+            </button>
+          </div>
           <div className="text-xs text-slate-500 mt-1">
             {getObjectSetDescription(screen.objectset)}
           </div>
@@ -472,6 +499,20 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
           </div>
         </DataSection>
       </div>
+
+      {editorOpen && (
+        <ScreenEditorModal
+          screen={screen}
+          screens={screens}
+          chapterNum={chapterNum}
+          activeHalf={activeHalf}
+          onHalfChange={setActiveHalf}
+          onClose={() => setEditorOpen(false)}
+          onScreenSelect={onScreenSelect}
+          onFieldChange={handleFieldChange}
+          onTilePick={handlePickTile}
+        />
+      )}
     </div>
   );
 }
@@ -540,15 +581,6 @@ function getCategoryBg(category: string): string {
     'service': 'bg-slate-500/10',
   };
   return colors[category] || 'bg-slate-500/10';
-}
-
-// Bank selection per half from the DataPointer (value-range model — matches
-// the backend renderer's get_bank_offset, NOT the bit model).
-function getBanks(datapointer: number): { top: number; bottom: number } {
-  if (datapointer >= 0xC0) return { top: 1, bottom: 1 };
-  if (datapointer >= 0x8F && datapointer < 0xA0) return { top: 1, bottom: 0 };
-  if (datapointer >= 0x40 && datapointer < 0x8F) return { top: 0, bottom: 1 };
-  return { top: 0, bottom: 0 };
 }
 
 function getObjectSetDescription(objectSet: number): string {
