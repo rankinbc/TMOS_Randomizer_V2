@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import type { ScreenData } from '../../api/client';
 import { ScreenRenderer } from './ScreenRenderer';
 import { Tooltip } from '../shared/Tooltip';
 import { formatScreenId } from '../../utils/formatters';
+import { useRandomizerStore } from '../../store';
+import { TileSectionPicker } from './TileSectionPicker';
 
 interface ScreenDetailPanelProps {
   screen: ScreenData;
@@ -236,6 +239,25 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
   const topTileBank = (screen.datapointer & 0x80) ? 1 : 0;
   const bottomTileBank = (screen.datapointer & 0x40) ? 1 : 0;
 
+  const updateScreenTiles = useRandomizerStore((s) => s.updateScreenTiles);
+  const [tileNote, setTileNote] = useState<string | null>(null);
+  const banks = getBanks(screen.datapointer);
+
+  const handlePickTile = async (which: 'top' | 'bottom', globalIndex: number) => {
+    setTileNote(null);
+    const result = await updateScreenTiles(
+      screen.index,
+      which === 'top' ? { top_tiles: globalIndex } : { bottom_tiles: globalIndex }
+    );
+    if (result.datapointer_changed) {
+      setTileNote(
+        result.chr_changed
+          ? 'Bank change also adjusted the DataPointer and CHR bank.'
+          : 'Bank change also adjusted the DataPointer.'
+      );
+    }
+  };
+
   return (
     <div className="bg-slate-800 h-full overflow-y-auto">
       {/* Header */}
@@ -388,9 +410,24 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
           <DataRow label="CHR Bank Index" value={`0x${chrBankIndex.toString(16).toUpperCase()} (${chrBankIndex})`} />
           <DataRow label="Top Tile Bank" value={`Bank ${topTileBank}`} />
           <DataRow label="Bottom Tile Bank" value={`Bank ${bottomTileBank}`} />
-          <div className="border-t border-slate-700 mt-2 pt-2">
-            <DataRow label="Top TileSection" value={`0x${screen.top_tiles.toString(16).toUpperCase()} (${screen.top_tiles})`} />
-            <DataRow label="Bottom TileSection" value={`0x${screen.bottom_tiles.toString(16).toUpperCase()} (${screen.bottom_tiles})`} />
+          <div className="border-t border-slate-700 mt-2 pt-2 space-y-1">
+            <TileSectionPicker
+              which="top"
+              currentByte={screen.top_tiles}
+              currentBank={banks.top}
+              chr={chrBankIndex}
+              onPick={(g) => handlePickTile('top', g)}
+            />
+            <TileSectionPicker
+              which="bottom"
+              currentByte={screen.bottom_tiles}
+              currentBank={banks.bottom}
+              chr={chrBankIndex}
+              onPick={(g) => handlePickTile('bottom', g)}
+            />
+            {tileNote && (
+              <div className="text-xs text-amber-400 pt-1">{tileNote}</div>
+            )}
           </div>
         </DataSection>
 
@@ -492,6 +529,15 @@ function getCategoryBg(category: string): string {
     'service': 'bg-slate-500/10',
   };
   return colors[category] || 'bg-slate-500/10';
+}
+
+// Bank selection per half from the DataPointer (value-range model — matches
+// the backend renderer's get_bank_offset, NOT the bit model).
+function getBanks(datapointer: number): { top: number; bottom: number } {
+  if (datapointer >= 0xC0) return { top: 1, bottom: 1 };
+  if (datapointer >= 0x8F && datapointer < 0xA0) return { top: 1, bottom: 0 };
+  if (datapointer >= 0x40 && datapointer < 0x8F) return { top: 0, bottom: 1 };
+  return { top: 0, bottom: 0 };
 }
 
 function getObjectSetDescription(objectSet: number): string {
