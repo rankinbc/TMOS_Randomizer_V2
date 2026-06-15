@@ -15,7 +15,7 @@ interface ScreenDetailPanelProps {
 }
 
 // Content type descriptions from knowledge/enums/content-types.md
-const CONTENT_TYPES: Record<number, { name: string; category: string; description?: string }> = {
+export const CONTENT_TYPES: Record<number, { name: string; category: string; description?: string }> = {
   0x00: { name: 'Empty', category: 'special', description: 'Normal screen, no building' },
   0x01: { name: 'Wizard Battle', category: 'battle', description: 'Triggers wizard battle on entry' },
   0x1D: { name: 'Frozen Palace', category: 'special', description: 'Frozen Palace area' },
@@ -78,7 +78,7 @@ const CONTENT_TYPES: Record<number, { name: string; category: string; descriptio
 };
 
 // Chapter-specific NPCs (0x80-0x8F range)
-const CHAPTER_NPCS: Record<number, Record<number, { name: string; description?: string }>> = {
+export const CHAPTER_NPCS: Record<number, Record<number, { name: string; description?: string }>> = {
   1: {
     0x80: { name: 'Jad', description: 'NPC' },
     0x81: { name: 'Faruk', description: 'Genie ally - attacks 2x per turn' },
@@ -133,7 +133,7 @@ const CHAPTER_NPCS: Record<number, Record<number, { name: string; description?: 
 };
 
 // Event types from knowledge/enums/content-types.md
-const EVENT_TYPES: Record<number, { name: string; description: string }> = {
+export const EVENT_TYPES: Record<number, { name: string; description: string }> = {
   0x00: { name: 'None', description: 'No special event' },
   0x01: { name: 'Coronya: Listen', description: '"Listen to the people of the town"' },
   0x02: { name: 'Use Oprin', description: 'Oprin item required' },
