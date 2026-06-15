@@ -834,6 +834,24 @@ async def render_tilesection(
     )
 
 
+@app.get("/api/rom/objectset/{chapter_num}/{objectset_id}/enemies")
+async def get_objectset_enemies(chapter_num: int, objectset_id: int):
+    """Return the enemies an ObjectSet spawns, with sprite filenames (read-only)."""
+    from ..core.overworld_enemies import parse_objectset_enemy_types, enemy_info
+
+    if _rom_data is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    if objectset_id < 0 or objectset_id > 255:
+        raise HTTPException(status_code=400, detail="objectset_id must be 0-255")
+
+    types = parse_objectset_enemy_types(_rom_data, chapter_num, objectset_id)
+    enemies = []
+    for t in types:
+        info = enemy_info(t)
+        enemies.append({"type": t, "name": info["name"], "image": info["image"]})
+    return {"chapter": chapter_num, "objectset_id": objectset_id, "enemies": enemies}
+
+
 @app.get("/api/rom/render/status")
 async def get_render_status():
     """Check if screen rendering is available."""
