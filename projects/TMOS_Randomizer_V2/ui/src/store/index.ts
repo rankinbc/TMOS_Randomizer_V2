@@ -27,7 +27,8 @@ import {
   type ScreenFieldsUpdate,
 } from '../api/client';
 
-export type TabType = 'map' | 'flow' | 'tiles' | 'tilebank' | 'items' | 'stats' | 'enemies' | 'allies' | 'advanced' | 'validation' | 'debug';
+// Entity-centric IA: 7 entity tabs + 1 gated Expert tab.
+export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'expert';
 
 export interface EditLogEntry {
   ts: number;                     // ms since epoch
@@ -292,7 +293,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   lastNavigability: null,
   sectionMap: null,
   selectedChapter: 1,
-  selectedTab: 'flow',
+  selectedTab: 'world',
   selectedSection: null,
   selectedScreen: null,
   modalOpen: null,
@@ -751,7 +752,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   navigateToTile: (index) => {
     set({
       selectedTileIndex: index,
-      selectedTab: 'tilebank',
+      selectedTab: 'graphics',
     });
   },
 

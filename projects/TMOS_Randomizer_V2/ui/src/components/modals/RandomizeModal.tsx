@@ -73,8 +73,8 @@ export function RandomizeModal() {
         return;
       }
       setModalOpen(null);
-      // Switch to map tab to show the randomized world
-      setSelectedTab('map');
+      // Switch to the Randomize tab to show the randomized plan flow.
+      setSelectedTab('randomize');
     } catch (error) {
       // Keep the modal open and show why randomization produced no result
       // (e.g. an experimental strategy that failed the navigability gate).
