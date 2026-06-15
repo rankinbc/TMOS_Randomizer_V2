@@ -178,10 +178,10 @@ export function Header() {
 
           {/* Patch ROM Button */}
           <button
-            disabled={!romLoaded || !plan}
-            onClick={() => alert('Patch ROM - Not yet implemented')}
+            disabled={!romLoaded}
+            onClick={() => setModalOpen('export')}
             className={`px-3 py-1.5 text-white text-sm rounded transition-colors flex items-center gap-2 ${
-              romLoaded && plan
+              romLoaded
                 ? 'bg-green-600 hover:bg-green-500'
                 : 'bg-slate-600 cursor-not-allowed'
             }`}

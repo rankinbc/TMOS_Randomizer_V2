@@ -4,6 +4,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { MainContent } from './components/layout/MainContent';
 import { Footer } from './components/layout/Footer';
 import { RandomizeModal } from './components/modals/RandomizeModal';
+import { PatchRomModal } from './components/modals/PatchRomModal';
 import { useRandomizerStore } from './store';
 import './index.css';
 
@@ -25,6 +26,7 @@ function App() {
       </div>
       <Footer />
       <RandomizeModal />
+      <PatchRomModal />
     </div>
   );
 }
