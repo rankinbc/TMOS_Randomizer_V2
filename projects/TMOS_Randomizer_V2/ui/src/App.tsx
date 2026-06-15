@@ -9,7 +9,7 @@ import { useRandomizerStore } from './store';
 import './index.css';
 
 function App() {
-  const { checkApiConnection, checkRomStatus } = useRandomizerStore();
+  const { checkApiConnection, checkRomStatus, romFilename } = useRandomizerStore();
 
   // Check API connection and ROM status on mount
   useEffect(() => {
@@ -26,7 +26,7 @@ function App() {
       </div>
       <Footer />
       <RandomizeModal />
-      <PatchRomModal />
+      <PatchRomModal key={romFilename ?? 'none'} />
     </div>
   );
 }
