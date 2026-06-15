@@ -137,6 +137,12 @@ class NavigationUpdate(BaseModel):
     parent_world: Optional[int] = None  # Update parent_world if provided (0-255)
 
 
+class TileSectionUpdate(BaseModel):
+    """Update a screen's tile sections. Values are GLOBAL section indices 0-470."""
+    top_tiles: Optional[int] = None
+    bottom_tiles: Optional[int] = None
+
+
 class TileBankUpdate(BaseModel):
     """Request to update a tile's MiniTile IDs."""
     minitiles: List[int]  # [TL, TR, BL, BR], each 0-255
@@ -578,6 +584,74 @@ async def update_screen_navigation(
     }
 
 
+@app.patch("/api/rom/screen/{chapter_num}/{screen_index}/tiles")
+async def update_screen_tiles(
+    chapter_num: int,
+    screen_index: int,
+    update: TileSectionUpdate,
+):
+    """Update a screen's Top/Bottom TileSection (live, in-memory).
+
+    `top_tiles`/`bottom_tiles` are GLOBAL section indices (0..470). The backend
+    splits each into (byte, bank) and rewrites the DataPointer so the renderer
+    selects the right bank, preserving CHR where the bank rules allow.
+    """
+    from ..core.constants import TILESECTION_COUNT, get_chr_index
+    from ..logic.tilesection_bank import resolve_tile_update
+
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    chapter = _game_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+    screen = chapter.get_screen(screen_index)
+    if screen is None:
+        raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
+
+    if update.top_tiles is None and update.bottom_tiles is None:
+        raise HTTPException(status_code=400, detail="Provide top_tiles and/or bottom_tiles")
+    for label, val in (("top_tiles", update.top_tiles), ("bottom_tiles", update.bottom_tiles)):
+        if val is not None and (val < 0 or val >= TILESECTION_COUNT):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label} must be 0-{TILESECTION_COUNT - 1}, got {val}",
+            )
+
+    resolved = resolve_tile_update(
+        current_datapointer=screen.datapointer,
+        top_index=update.top_tiles,
+        bottom_index=update.bottom_tiles,
+    )
+    screen.set_tiles(top=resolved["top_tiles"], bottom=resolved["bottom_tiles"])
+    screen.datapointer = resolved["datapointer"]
+    screen.mark_modified()
+
+    return {
+        "status": "updated",
+        "datapointer_changed": resolved["datapointer_changed"],
+        "chr_changed": resolved["chr_changed"],
+        "screen": {
+            "index": screen.relative_index,
+            "global_index": screen.global_index,
+            "datapointer": screen.datapointer,
+            "chr_index": get_chr_index(screen.datapointer),
+            "top_tiles": screen.top_tiles,
+            "bottom_tiles": screen.bottom_tiles,
+            "objectset": screen.objectset,
+            "parent_world": screen.parent_world,
+            "event": screen.event,
+            "content": screen.content,
+            "nav_right": screen.screen_index_right,
+            "nav_left": screen.screen_index_left,
+            "nav_down": screen.screen_index_down,
+            "nav_up": screen.screen_index_up,
+            "worldscreen_color": screen.worldscreen_color,
+            "sprites_color": screen.sprites_color,
+            "exit_position": screen.exit_position,
+        },
+    }
+
+
 # =============================================================================
 # API Endpoints - Screen Rendering
 # =============================================================================
@@ -642,6 +716,41 @@ async def render_screen(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rendering failed: {str(e)}")
+
+
+@app.get("/api/rom/tilesection/{index}")
+async def render_tilesection(
+    index: int,
+    chr: int = Query(default=0, ge=0, le=63),
+    scale: int = Query(default=4, ge=1, le=8),
+    ws_color: Optional[int] = Query(default=None, ge=0, le=255),
+):
+    """Render a single TileSection (8x4 tiles) in isolation as a PNG.
+
+    `index` is a global section index (0..470). Decoupled from any screen's
+    DataPointer — bank selection is already baked into the global index.
+    """
+    from ..core.constants import TILESECTION_COUNT
+
+    if not RENDERING_AVAILABLE or _screen_renderer is None:
+        raise HTTPException(status_code=501, detail="Rendering not available")
+    if index < 0 or index >= TILESECTION_COUNT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"section index must be 0-{TILESECTION_COUNT - 1}, got {index}",
+        )
+    try:
+        image_bytes = _screen_renderer.render_tilesection_to_bytes(
+            index, chr_bank=chr, scale=scale, format='PNG', ws_color=ws_color
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Rendering failed: {e}")
+
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600", "X-Section-Index": str(index)},
+    )
 
 
 @app.get("/api/rom/render/status")

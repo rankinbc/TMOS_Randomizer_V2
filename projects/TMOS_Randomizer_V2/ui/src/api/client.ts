@@ -132,6 +132,13 @@ export interface NavigationUpdateResponse {
   screens: ScreenData[];
 }
 
+export interface ScreenTilesUpdateResponse {
+  status: string;
+  datapointer_changed: boolean;
+  chr_changed: boolean;
+  screen: ScreenData;
+}
+
 // Per-screen edge walkability flags. true = edge is fully non-walkable (collision wall).
 export interface ScreenEdgeBlocked {
   top: boolean;
@@ -616,6 +623,26 @@ class ApiClient {
         body: JSON.stringify(update),
       }
     );
+  }
+
+  // Tile section operations. top_tiles/bottom_tiles are GLOBAL section indices (0-470).
+  async updateScreenTiles(
+    chapterNum: number,
+    screenIndex: number,
+    update: { top_tiles?: number; bottom_tiles?: number }
+  ): Promise<ScreenTilesUpdateResponse> {
+    return this.fetch<ScreenTilesUpdateResponse>(
+      `/api/rom/screen/${chapterNum}/${screenIndex}/tiles`,
+      { method: 'PATCH', body: JSON.stringify(update) }
+    );
+  }
+
+  // Total number of selectable tile sections.
+  static readonly TILESECTION_COUNT = 471;
+
+  // URL for a single section preview (8x4 tiles). index is a global index 0-470.
+  getTileSectionPreviewUrl(index: number, chr: number, scale = 2): string {
+    return `${this.baseUrl}/api/rom/tilesection/${index}?chr=${chr}&scale=${scale}`;
   }
 
   // Tile Bank Operations
