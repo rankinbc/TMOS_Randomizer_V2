@@ -23,6 +23,7 @@ import {
   type ChapterGroups,
   type EncounterGroupPatch,
   type EnemyStatPatch,
+  type ScreenFieldsUpdate,
 } from '../api/client';
 
 export type TabType = 'map' | 'flow' | 'tiles' | 'tilebank' | 'items' | 'stats' | 'enemies' | 'allies' | 'validation' | 'debug';
@@ -167,6 +168,10 @@ interface RandomizerState {
     screenIndex: number,
     update: { top_tiles?: number; bottom_tiles?: number }
   ) => Promise<{ datapointer_changed: boolean; chr_changed: boolean }>;
+  updateScreenFields: (
+    screenIndex: number,
+    fields: ScreenFieldsUpdate
+  ) => Promise<void>;
 
   // Tile Bank actions
   loadTileBankData: () => Promise<void>;
@@ -636,6 +641,31 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     } catch (error) {
       set({
         apiError: error instanceof Error ? error.message : 'Failed to update tiles',
+      });
+      throw error;
+    }
+  },
+
+  updateScreenFields: async (screenIndex, fields) => {
+    const state = get();
+    if (!state.chapterData) {
+      throw new Error('No chapter data loaded');
+    }
+    try {
+      const response = await api.updateScreenFields(
+        state.selectedChapter,
+        screenIndex,
+        fields
+      );
+      const updatedScreens = state.chapterData.screens.map((screen) =>
+        screen.index === response.screen.index ? response.screen : screen
+      );
+      set({
+        chapterData: { ...state.chapterData, screens: updatedScreens },
+      });
+    } catch (error) {
+      set({
+        apiError: error instanceof Error ? error.message : 'Failed to update fields',
       });
       throw error;
     }
