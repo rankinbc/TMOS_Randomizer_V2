@@ -139,6 +139,19 @@ export interface ScreenTilesUpdateResponse {
   screen: ScreenData;
 }
 
+export interface ScreenFieldsUpdateResponse {
+  status: string;
+  screen: ScreenData;
+}
+
+export interface ScreenFieldsUpdate {
+  objectset?: number;
+  content?: number;
+  event?: number;
+  worldscreen_color?: number;
+  sprites_color?: number;
+}
+
 // Per-screen edge walkability flags. true = edge is fully non-walkable (collision wall).
 export interface ScreenEdgeBlocked {
   top: boolean;
@@ -634,6 +647,18 @@ class ApiClient {
     return this.fetch<ScreenTilesUpdateResponse>(
       `/api/rom/screen/${chapterNum}/${screenIndex}/tiles`,
       { method: 'PATCH', body: JSON.stringify(update) }
+    );
+  }
+
+  // Update low-risk screen fields (objectset, content, event, colors).
+  async updateScreenFields(
+    chapterNum: number,
+    screenIndex: number,
+    fields: ScreenFieldsUpdate
+  ): Promise<ScreenFieldsUpdateResponse> {
+    return this.fetch<ScreenFieldsUpdateResponse>(
+      `/api/rom/screen/${chapterNum}/${screenIndex}/fields`,
+      { method: 'PATCH', body: JSON.stringify(fields) }
     );
   }
 
