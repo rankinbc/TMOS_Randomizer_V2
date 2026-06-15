@@ -25,7 +25,7 @@ const VIEW_MODES: { id: ViewMode; label: string }[] = [
 
 // Tabs that edit ROM-global data and don't need a chapter selected first.
 // (The screen/tiles/flow tabs are chapter-scoped and still require chapterData.)
-const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'expert', 'items', 'randomize']);
+const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'expert', 'randomize']);
 
 export function MainContent() {
   const {
