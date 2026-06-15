@@ -139,6 +139,18 @@ export interface ScreenTilesUpdateResponse {
   screen: ScreenData;
 }
 
+export interface ObjectSetEnemy {
+  type: number;
+  name: string;
+  image: string | null;   // bare filename under /sprites/OverworldEnemyImages/, or null
+}
+
+export interface ObjectSetEnemiesResponse {
+  chapter: number;
+  objectset_id: number;
+  enemies: ObjectSetEnemy[];
+}
+
 // Per-screen edge walkability flags. true = edge is fully non-walkable (collision wall).
 export interface ScreenEdgeBlocked {
   top: boolean;
@@ -643,6 +655,21 @@ class ApiClient {
   // URL for a single section preview (8x4 tiles). index is a global index 0-470.
   getTileSectionPreviewUrl(index: number, chr: number, scale = 2): string {
     return `${this.baseUrl}/api/rom/tilesection/${index}?chr=${chr}&scale=${scale}`;
+  }
+
+  // ObjectSet enemy spawns (read-only).
+  async getObjectSetEnemies(
+    chapterNum: number,
+    objectsetId: number
+  ): Promise<ObjectSetEnemiesResponse> {
+    return this.fetch<ObjectSetEnemiesResponse>(
+      `/api/rom/objectset/${chapterNum}/${objectsetId}/enemies`
+    );
+  }
+
+  // Vite-served overworld enemy sprite (public/sprites/...). Not under baseUrl.
+  objectSetImageUrl(file: string): string {
+    return `/sprites/OverworldEnemyImages/${file}`;
   }
 
   // Tile Bank Operations
