@@ -245,16 +245,21 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
 
   const handlePickTile = async (which: 'top' | 'bottom', globalIndex: number) => {
     setTileNote(null);
-    const result = await updateScreenTiles(
-      screen.index,
-      which === 'top' ? { top_tiles: globalIndex } : { bottom_tiles: globalIndex }
-    );
-    if (result.datapointer_changed) {
-      setTileNote(
-        result.chr_changed
-          ? 'Bank change also adjusted the DataPointer and CHR bank.'
-          : 'Bank change also adjusted the DataPointer.'
+    try {
+      const result = await updateScreenTiles(
+        screen.index,
+        which === 'top' ? { top_tiles: globalIndex } : { bottom_tiles: globalIndex }
       );
+      if (result.datapointer_changed) {
+        setTileNote(
+          result.chr_changed
+            ? 'Bank change also adjusted the DataPointer and CHR bank.'
+            : 'Bank change also adjusted the DataPointer.'
+        );
+      }
+    } catch {
+      // The store already surfaced the failure via apiError; swallow here so the
+      // click handler doesn't produce an unhandled promise rejection.
     }
   };
 
