@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { api, ApiClient } from '../../api/client';
+import type { ScreenData } from '../../api/client';
+import { ScreenNeighborhood } from './ScreenNeighborhood';
 
 interface TileSectionPickerProps {
   which: 'top' | 'bottom';
@@ -11,12 +13,18 @@ interface TileSectionPickerProps {
   chr: number;
   /** Called with the chosen GLOBAL section index (0-470). */
   onPick: (globalIndex: number) => void;
+  /** The selected screen (for the context header). */
+  screen?: ScreenData;
+  /** All chapter screens (for neighbor lookup). */
+  screens?: ScreenData[];
+  /** Chapter number (for rendering screen minis). */
+  chapterNum?: number;
 }
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
 
 export function TileSectionPicker({
-  which, currentByte, currentBank, chr, onPick,
+  which, currentByte, currentBank, chr, onPick, screen, screens, chapterNum,
 }: TileSectionPickerProps) {
   const [open, setOpen] = useState(false);
   const currentGlobal = currentBank * 256 + currentByte;
@@ -36,6 +44,9 @@ export function TileSectionPicker({
         <TileSectionDropdown
           chr={chr}
           currentGlobal={currentGlobal}
+          screen={screen}
+          screens={screens}
+          chapterNum={chapterNum}
           onClose={() => setOpen(false)}
           onPick={(g) => { onPick(g); setOpen(false); }}
         />
@@ -45,25 +56,37 @@ export function TileSectionPicker({
 }
 
 function TileSectionDropdown({
-  chr, currentGlobal, onClose, onPick,
+  chr, currentGlobal, screen, screens, chapterNum, onClose, onPick,
 }: {
   chr: number;
   currentGlobal: number;
+  screen?: ScreenData;
+  screens?: ScreenData[];
+  chapterNum?: number;
   onClose: () => void;
   onPick: (globalIndex: number) => void;
 }) {
   const indices = Array.from({ length: TOTAL }, (_, i) => i);
+  const byIndex = useMemo(
+    () => new Map((screens ?? []).map((s) => [s.index, s])),
+    [screens],
+  );
+  const showNeighborhood = screen && chapterNum !== undefined && byIndex.size > 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl w-[640px] max-h-[80vh] flex flex-col"
+        className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl w-[820px] max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-3 border-b border-slate-700">
           <h4 className="text-slate-200 font-semibold">Select Tile Section ({TOTAL} total)</h4>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">&times;</button>
         </div>
-        <div className="overflow-y-auto p-3 grid grid-cols-6 gap-2">
+        {showNeighborhood && (
+          <ScreenNeighborhood selected={screen} byIndex={byIndex} chapterNum={chapterNum} />
+        )}
+        <div className="overflow-y-auto p-3 grid grid-cols-4 gap-2">
           {indices.map((g) => (
             <SectionThumb
               key={g}
@@ -119,9 +142,9 @@ function SectionThumb({
     >
       {visible && (
         <img
-          src={api.getTileSectionPreviewUrl(globalIndex, chr, 2)}
+          src={api.getTileSectionPreviewUrl(globalIndex, chr, 3)}
           alt={`Section ${globalIndex}`}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           style={{ imageRendering: 'auto' }}
           loading="lazy"
           onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}

@@ -421,6 +421,9 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
               currentByte={screen.top_tiles}
               currentBank={banks.top}
               chr={chrBankIndex}
+              screen={screen}
+              screens={screens}
+              chapterNum={chapterNum}
               onPick={(g) => handlePickTile('top', g)}
             />
             <TileSectionPicker
@@ -428,6 +431,9 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
               currentByte={screen.bottom_tiles}
               currentBank={banks.bottom}
               chr={chrBankIndex}
+              screen={screen}
+              screens={screens}
+              chapterNum={chapterNum}
               onPick={(g) => handlePickTile('bottom', g)}
             />
             {tileNote && (
