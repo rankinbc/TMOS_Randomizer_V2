@@ -4,7 +4,7 @@ import type { ScreenData } from '../../api/client';
 import { ScreenNeighborhood } from './ScreenNeighborhood';
 import { EnumSelectField, type EnumOption } from './EnumSelectField';
 import { ObjectSetField } from './ObjectSetField';
-import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './ScreenDetailPanel';
+import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './screenEnums';
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
 
