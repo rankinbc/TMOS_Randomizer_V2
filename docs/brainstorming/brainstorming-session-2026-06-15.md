@@ -97,6 +97,14 @@ Reverted (don't ship an untrustworthy gate).
   "≥ vanilla" to absolute "100% reachable (all-items)"; build it generic so it fixes organic too.
   Scope decision: generic V2 post-pass.
 
+## Repair pass — open-in-place measured on grow seed 42 (2026-06-16)
+Warp-aware reachable, 0xFE preserved 79→79. Ch1 68→121, Ch2 87→88, Ch3 78→83, Ch4 68→72,
+Ch5 44→110. **Pattern:** huge gains where unreachable regions are connected blobs with one
+alignable boundary (Ch1/Ch5 — a few links cascade through whole components); ~no help where
+screens are stranded with no edge-aligned free port (Ch2/3/4). **265 screens still
+unrepaired, ~211 for lack of an aligned port.** → next lever = TS-swap-then-open (make an
+edge alignable), then warp-link for islanded components.
+
 ## Status & next
 - Working on **grow** (lab_grow), not organic. Both currently fail the (proxy) gate.
 - Repair pass v1 foundation shipped (compute_reachable + open-in-place). NEXT increments:
