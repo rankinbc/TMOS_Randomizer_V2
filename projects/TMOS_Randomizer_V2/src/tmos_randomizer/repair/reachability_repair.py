@@ -28,7 +28,7 @@ from ..core.enums import (
     is_past_screen_index,
 )
 from ..validation.tiles.categories import is_walkable
-from ..validation.tiles.edges import OPPOSITE_DIRECTIONS
+from ..validation.tiles.edges import OPPOSITE_DIRECTIONS, extract_edges
 
 _DIRECTIONS = ("right", "left", "down", "up")
 
@@ -51,6 +51,19 @@ class ChapterRepairReport:
     reachable_after: Set[int] = field(default_factory=set)
     records: List[RepairRecord] = field(default_factory=list)
     unrepaired: Set[int] = field(default_factory=set)
+
+
+@dataclass
+class WorldRepairReport:
+    chapters: dict = field(default_factory=dict)  # chapter_num -> ChapterRepairReport
+
+    @property
+    def total_records(self) -> int:
+        return sum(len(r.records) for r in self.chapters.values())
+
+    @property
+    def total_unrepaired(self) -> int:
+        return sum(len(r.unrepaired) for r in self.chapters.values())
 
 
 def _edges_aligned(edge_a: List[int], edge_b: List[int]) -> bool:
@@ -200,3 +213,46 @@ def _try_open_in_place(
             ))
             return True
     return False
+
+
+def _rom_edges_provider(chapter: Any, rom_data: bytes) -> Callable[[int], Any]:
+    """Real edges provider: extract_edges from ROM, cached per screen index.
+
+    Cache is safe for the open-in-place lever (it never changes a screen's tiles).
+    A future TS-swap lever must invalidate the cache for any swapped screen.
+    """
+    cache: dict = {}
+
+    def provider(idx: int) -> Any:
+        if idx not in cache:
+            scr = chapter.get_screen(idx)
+            cache[idx] = extract_edges(
+                rom_data, idx, scr.top_tiles, scr.bottom_tiles, scr.datapointer
+            )
+        return cache[idx]
+
+    return provider
+
+
+def repair_reachability(
+    game_world: Any,
+    rom_data: bytes,
+    *,
+    era_of: Callable[[int, int], bool] = is_past_screen_index,
+    edges_provider_for: Optional[Callable[[Any], Callable[[int], Any]]] = None,
+) -> WorldRepairReport:
+    """Run reachability repair over every chapter of a finished GameWorld.
+
+    Strategy-agnostic: call after any generator, before the oracle. ``edges_provider_for``
+    is injectable for testing; production uses ROM-backed ``extract_edges``.
+    """
+    report = WorldRepairReport()
+    for chapter in game_world:
+        provider = (
+            edges_provider_for(chapter) if edges_provider_for is not None
+            else _rom_edges_provider(chapter, rom_data)
+        )
+        report.chapters[chapter.chapter_num] = repair_chapter(
+            chapter, provider, era_of=era_of
+        )
+    return report

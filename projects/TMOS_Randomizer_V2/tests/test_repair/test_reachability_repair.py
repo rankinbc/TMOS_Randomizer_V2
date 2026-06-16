@@ -9,13 +9,15 @@ present<->past) -- all derived from the world, matching the ROM_VERIFIED structu
 
 from __future__ import annotations
 
-from tmos_randomizer.core.chapter import Chapter
+from tmos_randomizer.core.chapter import Chapter, GameWorld
 from tmos_randomizer.core.worldscreen import WorldScreen
 from tmos_randomizer.core.enums import (
     EventType, ContentType, NAV_BLOCKED, NAV_BUILDING_ENTRANCE,
 )
 from tmos_randomizer.validation.tiles.categories import is_walkable
-from tmos_randomizer.repair.reachability_repair import compute_reachable, repair_chapter
+from tmos_randomizer.repair.reachability_repair import (
+    compute_reachable, repair_chapter, repair_reachability,
+)
 
 # Real walkable / non-walkable tile ids (alignment uses the real is_walkable predicate).
 WALK = next(i for i in range(256) if is_walkable(i))
@@ -143,3 +145,26 @@ def test_repair_refuses_cross_era_walk_links():
 
     assert s0.screen_index_right == NAV_BLOCKED
     assert 1 in report.unrepaired
+
+
+# --- Increment 3: world-level wrapper ---------------------------------------
+
+def test_world_wrapper_repairs_each_chapter():
+    """`repair_reachability` runs the chapter pass over every chapter and aggregates."""
+    s0, s1 = _scr(0), _scr(1)
+    ch = Chapter(chapter_num=1)
+    ch.add_screen(s0)
+    ch.add_screen(s1)
+    gw = GameWorld()
+    gw.add_chapter(ch)
+    table = {0: {"right": [WALK, WALK]}, 1: {"left": [WALK, WALK]}}
+
+    report = repair_reachability(
+        gw, rom_data=b"", era_of=_ALL_PRESENT,
+        edges_provider_for=lambda chapter: _edges_provider(table),
+    )
+
+    assert report.chapters[1].reachable_after == {0, 1}
+    assert s0.screen_index_right == 1
+    assert report.total_records == 1
+    assert report.total_unrepaired == 0
