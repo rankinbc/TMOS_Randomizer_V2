@@ -116,6 +116,15 @@ the era boundary, so a PAST island can only join via the single time door. → n
 warp-link / time-door-landing repair for cross-era islands (+ a few portless screens).
 Committed: 532ca00 (TS-swap), 0fafa09 (wrapper), cf1ab04 (foundation).
 
+## Ch2 diagnostic (2026-06-16) — why 49 stay stranded
+Post-repair Ch2: 49 unrepaired = 44 PAST + 5 PRESENT, in 12 components (two big PAST blobs
+of 19+20). **PRESENT-side time door (screen 1) is itself UNREACHABLE** → its warp never
+fires → past partner (79) + the whole PAST region stay islanded. This is a SAME-ERA fix
+(connect present screen 1 to the present component) that open-in-place/TS-swap couldn't make
+because both only wire FREE (0xFF) ports and screen 1's island has no free alignable same-era
+port. → CONFIRMS warp-link as the next lever: a warp connects regardless of free port / edge
+alignment (the game's own mechanism); connecting screen 1 cascade-reaches ~39 PAST screens.
+
 ## Status & next
 - Working on **grow** (lab_grow), not organic. Both currently fail the (proxy) gate.
 - Repair pass v1 foundation shipped (compute_reachable + open-in-place). NEXT increments:
