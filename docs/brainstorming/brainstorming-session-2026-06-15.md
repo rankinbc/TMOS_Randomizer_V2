@@ -125,6 +125,20 @@ because both only wire FREE (0xFF) ports and screen 1's island has no free align
 port. → CONFIRMS warp-link as the next lever: a warp connects regardless of free port / edge
 alignment (the game's own mechanism); connecting screen 1 cascade-reaches ~39 PAST screens.
 
+## 🎉 Repair pass COMPLETE — 100% reachable, grow seed 42 (2026-06-16)
+All 3 levers (open-in-place + TS-swap + warp-link). Reachable after: **131/131, 137/137,
+153/153, 164/164, 154/154 — every screen on every chapter. 0 unrepaired. 0xFE preserved
+79→79.** 74 repairs total. Lever progression: 265 → 95 (+TS-swap) → 0 (+warp-link).
+**Core goal met at the static level:** grow's output is now autonomously, deterministically
+guaranteed navigable with zero content removed. Commits: 8a6896f (warp-link), 532ca00
+(TS-swap), 0fafa09 (wrapper), cf1ab04 (foundation).
+
+CAVEATS (honest): (1) static warp-aware proxy — 100% = no walled-off screens assuming full
+movement, NOT item-gated playability (P4 emulator is the true check). (2) Repair connects
+more than vanilla (flattens progression gating — intended for "all-items") and some
+warp-links are teleports P3 coherence may flag. (3) Verified on seed 42 only — needs a
+multi-seed batch. (4) Not yet wired into the generation→oracle pipeline.
+
 ## Status & next
 - Working on **grow** (lab_grow), not organic. Both currently fail the (proxy) gate.
 - Repair pass v1 foundation shipped (compute_reachable + open-in-place). NEXT increments:
