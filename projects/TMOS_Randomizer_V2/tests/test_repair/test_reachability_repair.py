@@ -224,3 +224,50 @@ def test_ts_swap_rejected_if_it_breaks_an_existing_link():
 
     assert (s1.top_tiles, s1.bottom_tiles) == (0, 0)  # swap NOT applied
     assert 1 in report.unrepaired
+
+
+# --- Increment 5: warp-link (last resort) -----------------------------------
+
+def test_warp_link_connects_a_stranded_screen():
+    """Screen 1 has no walk route and no alignable port; warp-link adds a same-era
+    stairway from an expendable reachable screen (never the start screen)."""
+    s0 = _scr(0, content=5, right=2)   # start; non-expendable so it won't be the source
+    s2 = _scr(2, left=0)               # reachable via walk; expendable (content/event 0)
+    s1 = _scr(1)                       # stranded; expendable
+    chapter = _chapter(s0, s1, s2)
+
+    report = repair_chapter(chapter, _edges_provider({}), era_of=_ALL_PRESENT)
+
+    assert 1 in report.reachable_after
+    assert s2.event == EventType.STAIRWAY and s2.content == 1
+    assert s1.event == EventType.STAIRWAY and s1.content == 2  # bidirectional (no soft-lock)
+    assert any(rec.action == "warp_link" for rec in report.records)
+
+
+def test_warp_link_disabled_leaves_screen_stranded():
+    s0 = _scr(0, content=5, right=2)
+    s2 = _scr(2, left=0)
+    s1 = _scr(1)
+    chapter = _chapter(s0, s1, s2)
+
+    report = repair_chapter(
+        chapter, _edges_provider({}), era_of=_ALL_PRESENT, allow_warp_links=False
+    )
+
+    assert 1 in report.unrepaired
+    assert s2.event == 0  # untouched
+
+
+def test_warp_link_refuses_cross_era_and_protects_start_screen():
+    """No same-era expendable reachable screen (start is era-skipped/expendable-but-0)
+    -> a PAST stranded screen can't be warp-linked from a PRESENT-only reachable set."""
+    s0 = _scr(0, right=2)   # start (reachable); skipped as source (r==0)
+    s2 = _scr(2, left=0)    # reachable, PRESENT, expendable
+    s1 = _scr(1)            # stranded, PAST
+    chapter = _chapter(s0, s1, s2)
+    era = lambda c, i: (i == 1)  # only screen 1 is PAST  # noqa: E731
+
+    report = repair_chapter(chapter, _edges_provider({}), era_of=era)
+
+    assert 1 in report.unrepaired
+    assert s2.event == 0 and s0.event == 0  # neither repurposed (era mismatch / start)

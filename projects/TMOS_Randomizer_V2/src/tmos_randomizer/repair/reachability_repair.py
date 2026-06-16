@@ -153,21 +153,24 @@ def repair_chapter(
     *,
     candidate_tiles_of: Optional[Callable[[int], List[Tuple[int, int]]]] = None,
     era_of: Callable[[int, int], bool] = is_past_screen_index,
+    allow_warp_links: bool = True,
 ) -> ChapterRepairReport:
     """Make every screen reachable from screen 0 by least-damage edits.
 
-    Levers tried per unreachable screen: open-in-place, then (if ``candidate_tiles_of``
-    is given) ts-swap-then-open. Preserves all 0xFE; adds no broken edges; never crosses
-    eras by walk; deterministic. Unreachable leftovers are reported (no silent failure).
-
-    ``edges_of(idx, top, bot)`` returns an object with ``get_edge(direction) -> list[int]``
-    for the screen rendered with the given TileSection pair.
+    Two phases. **Phase 1 (walk levers):** open-in-place, then -- if ``candidate_tiles_of``
+    is given -- ts-swap-then-open, applied until no progress. **Phase 2 (warp-link, last
+    resort):** for components still stranded (e.g. behind an unreachable time door, or with
+    no free/alignable port), add a same-era stairway (Event 0x40 -> Content destination)
+    from an expendable reachable screen. Preserves all 0xFE; adds no broken walk edges;
+    never crosses eras; deterministic. Leftovers are reported (no silent failure).
     """
     report = ChapterRepairReport(chapter_num=chapter.chapter_num)
     report.reachable_before = compute_reachable(chapter)
 
     reachable = set(report.reachable_before)
     total = chapter.screen_count
+
+    # Phase 1 — walk levers.
     progress = True
     while progress:
         progress = False
@@ -182,9 +185,71 @@ def repair_chapter(
                 progress = True
                 break
 
+    # Phase 2 — warp-link the genuinely-stranded remainder.
+    if allow_warp_links:
+        progress = True
+        while progress:
+            progress = False
+            for u in sorted(set(range(total)) - reachable):
+                if _try_warp_link(chapter, u, reachable, era_of, report):
+                    reachable = compute_reachable(chapter)
+                    progress = True
+                    break
+
     report.reachable_after = reachable
     report.unrepaired = set(range(total)) - reachable
     return report
+
+
+def _is_expendable(screen: Any) -> bool:
+    """A screen with no content/event role -- safe to repurpose as a stairway endpoint
+    (its Content byte is free to hold a destination; nothing is clobbered)."""
+    return screen.content == 0 and screen.event == 0
+
+
+def _try_warp_link(
+    chapter: Any,
+    u: int,
+    reachable: Set[int],
+    era_of: Callable[[int, int], bool],
+    report: ChapterRepairReport,
+) -> bool:
+    """Connect stranded screen ``u`` via a same-era stairway from an expendable reachable
+    screen (Event 0x40, Content = u). Bidirectional when ``u`` is itself expendable (avoids
+    a one-way soft-lock); one-way otherwise (e.g. a time door, which provides its own return).
+    """
+    ch_num = chapter.chapter_num
+    u_past = era_of(ch_num, u)
+    u_scr = chapter.get_screen(u)
+    if u_scr is None:
+        return False
+
+    for r in sorted(reachable):
+        if r == 0:
+            continue  # never repurpose the start screen
+        r_scr = chapter.get_screen(r)
+        if r_scr is None or era_of(ch_num, r) != u_past or not _is_expendable(r_scr):
+            continue
+        r_scr.event = EventType.STAIRWAY
+        r_scr.content = u
+        r_scr.mark_modified()
+        bidirectional = _is_expendable(u_scr)
+        if bidirectional:
+            u_scr.event = EventType.STAIRWAY
+            u_scr.content = r
+            u_scr.mark_modified()
+        report.records.append(RepairRecord(
+            action="warp_link",
+            screens=(r, u),
+            direction="",
+            reason=(
+                f"screen {u} was stranded (no walk route); added a "
+                f"{'bidirectional' if bidirectional else 'one-way'} stairway from "
+                f"expendable reachable screen {r}"
+            ),
+        ))
+        return True
+    return False
 
 
 def _try_open_in_place(
