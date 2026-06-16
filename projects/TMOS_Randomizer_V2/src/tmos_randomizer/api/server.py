@@ -73,6 +73,7 @@ from ..core import weapon_damage as _weapon_damage
 from ..core import mp_table as _mp_table
 from ..core import palette_colors as _palette_colors
 from ..core import level_caps as _level_caps
+from ..core.field_metadata import build_field_metadata
 from ..core.enums import NAV_BLOCKED, NAV_BUILDING_ENTRANCE
 from ..logic.navigation import connect_screens, disconnect_screens, OPPOSITE_DIRECTIONS
 
@@ -2648,6 +2649,15 @@ async def get_items():
             "battle_items = Bank 6 $98E8 table (0-29). IDs do NOT cross-reference."
         ),
     }
+
+
+@app.get("/api/metadata/fields")
+async def get_field_metadata():
+    """Static field metadata: safety tiers, descriptions, enums, warnings.
+
+    Drives the guided-editing UI and the 3-tier safety model. No ROM required.
+    """
+    return build_field_metadata()
 
 
 # =============================================================================

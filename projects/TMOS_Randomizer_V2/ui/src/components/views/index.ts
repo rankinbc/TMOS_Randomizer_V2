@@ -6,3 +6,4 @@ export { EnemiesView } from './EnemiesView';
 export { AlliesView } from './AlliesView';
 export { AdvancedView } from './AdvancedView';
 export { ValidationView } from './ValidationView';
+export { ExpertView } from './ExpertView';

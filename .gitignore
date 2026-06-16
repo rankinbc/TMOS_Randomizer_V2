@@ -118,3 +118,4 @@ projects/TMOS_Strategy_Lab/output/*/*/
 # ===================
 projects/TMOS_World_Editor/data/rom/*.nes
 projects/TMOS_World_Editor/output/*/*/
+.superpowers/

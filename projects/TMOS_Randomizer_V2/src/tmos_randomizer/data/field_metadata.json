@@ -1,0 +1,517 @@
+{
+  "version": "1",
+  "generated_from": "tmos_randomizer.core.enums + curated descriptions",
+  "entities": {
+    "worldscreen": {
+      "label": "World Screen",
+      "fields": {
+        "parent_world": {
+          "label": "Parent World / Music",
+          "byte": 0,
+          "tier": "caution",
+          "control": "enum",
+          "enum": [
+            {
+              "value": 16,
+              "label": "TOWN_VARIANT (0x10)"
+            },
+            {
+              "value": 32,
+              "label": "TOWN_MAIN (0x20)"
+            },
+            {
+              "value": 48,
+              "label": "OVERWORLD_CH4_ALT (0x30)"
+            },
+            {
+              "value": 64,
+              "label": "OVERWORLD_GREEN (0x40)"
+            },
+            {
+              "value": 83,
+              "label": "MAZE_CH1 (0x53)"
+            },
+            {
+              "value": 85,
+              "label": "MAZE_CH2 (0x55)"
+            },
+            {
+              "value": 88,
+              "label": "MAZE_CH3 (0x58)"
+            },
+            {
+              "value": 93,
+              "label": "MAZE_CH5 (0x5D)"
+            },
+            {
+              "value": 96,
+              "label": "SPECIAL_SINGLE (0x60)"
+            },
+            {
+              "value": 97,
+              "label": "SPECIAL_CH1 (0x61)"
+            },
+            {
+              "value": 100,
+              "label": "SPECIAL_CH2 (0x64)"
+            },
+            {
+              "value": 103,
+              "label": "SPECIAL_CH3 (0x67)"
+            },
+            {
+              "value": 105,
+              "label": "SPECIAL_CH4 (0x69)"
+            },
+            {
+              "value": 106,
+              "label": "SPECIAL_CH4_ALT (0x6A)"
+            },
+            {
+              "value": 108,
+              "label": "SPECIAL_CH5 (0x6C)"
+            },
+            {
+              "value": 110,
+              "label": "SPECIAL_CH5_ALT (0x6E)"
+            },
+            {
+              "value": 128,
+              "label": "OVERWORLD_CH5 (0x80)"
+            },
+            {
+              "value": 159,
+              "label": "PRE_BOSS_CH5 (0x9F)"
+            },
+            {
+              "value": 160,
+              "label": "FINAL_CH5 (0xA0)"
+            },
+            {
+              "value": 172,
+              "label": "BOSS_CH5 (0xAC)"
+            },
+            {
+              "value": 176,
+              "label": "DUNGEON_CH1_ALT (0xB0)"
+            },
+            {
+              "value": 192,
+              "label": "BOSS_CH1 (0xC0)"
+            },
+            {
+              "value": 196,
+              "label": "BOSS_CH2 (0xC4)"
+            },
+            {
+              "value": 199,
+              "label": "BOSS_CH3 (0xC7)"
+            },
+            {
+              "value": 201,
+              "label": "BOSS_CH4 (0xC9)"
+            },
+            {
+              "value": 208,
+              "label": "DUNGEON_MAIN (0xD0)"
+            },
+            {
+              "value": 224,
+              "label": "OVERWORLD_DESERT (0xE0)"
+            },
+            {
+              "value": 240,
+              "label": "DUNGEON_CH3 (0xF0)"
+            }
+          ],
+          "description": "Section type + background music for this screen.",
+          "warning": "Must be a valid section-type value or audio/state may glitch.",
+          "used_by": [
+            "section classification",
+            "music"
+          ]
+        },
+        "ambient_sound": {
+          "label": "Ambient Sound",
+          "byte": 1,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Ambient sound-effect ID played on the screen.",
+          "warning": "",
+          "used_by": []
+        },
+        "content": {
+          "label": "Content / Building",
+          "byte": 2,
+          "tier": "caution",
+          "control": "enum",
+          "enum": [
+            {
+              "value": 0,
+              "label": "NONE (0x00)"
+            },
+            {
+              "value": 1,
+              "label": "WIZARD_BATTLE (0x01)"
+            },
+            {
+              "value": 33,
+              "label": "BOSS_STAGE_1 (0x21)"
+            },
+            {
+              "value": 34,
+              "label": "BOSS_STAGE_2 (0x22)"
+            },
+            {
+              "value": 35,
+              "label": "BOSS_STAGE_3 (0x23)"
+            },
+            {
+              "value": 36,
+              "label": "BOSS_STAGE_4 (0x24)"
+            },
+            {
+              "value": 37,
+              "label": "BOSS_STAGE_5 (0x25)"
+            },
+            {
+              "value": 38,
+              "label": "BOSS_STAGE_6 (0x26)"
+            },
+            {
+              "value": 39,
+              "label": "BOSS_STAGE_7 (0x27)"
+            },
+            {
+              "value": 40,
+              "label": "BOSS_STAGE_8 (0x28)"
+            },
+            {
+              "value": 41,
+              "label": "BOSS_STAGE_9 (0x29)"
+            },
+            {
+              "value": 42,
+              "label": "BOSS_STAGE_10 (0x2A)"
+            },
+            {
+              "value": 43,
+              "label": "VICTORY (0x2B)"
+            },
+            {
+              "value": 96,
+              "label": "SHOP_START (0x60)"
+            },
+            {
+              "value": 125,
+              "label": "SHOP_END (0x7D)"
+            },
+            {
+              "value": 126,
+              "label": "MOSQUE (0x7E)"
+            },
+            {
+              "value": 127,
+              "label": "TROOPERS (0x7F)"
+            },
+            {
+              "value": 128,
+              "label": "ALLY_GUBIBI (0x80)"
+            },
+            {
+              "value": 129,
+              "label": "ALLY_FARUK (0x81)"
+            },
+            {
+              "value": 160,
+              "label": "HOTEL_START (0xA0)"
+            },
+            {
+              "value": 176,
+              "label": "HOTEL_END (0xB0)"
+            },
+            {
+              "value": 190,
+              "label": "CASINO (0xBE)"
+            },
+            {
+              "value": 192,
+              "label": "TIME_DOOR (0xC0)"
+            },
+            {
+              "value": 199,
+              "label": "TIME_DOOR_C7 (0xC7)"
+            },
+            {
+              "value": 215,
+              "label": "TIME_DOOR_D7 (0xD7)"
+            }
+          ],
+          "description": "Building, NPC, shop, boss stage, or time door on this screen.",
+          "warning": "NPC values 0x80-0x8F summon a different character per chapter; do not move such a screen across chapters.",
+          "used_by": [
+            "objectset spawn lookup",
+            "NPC dialog"
+          ]
+        },
+        "objectset": {
+          "label": "ObjectSet (enemy spawn set)",
+          "byte": 3,
+          "tier": "danger",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Pointer into the per-chapter enemy spawn table.",
+          "warning": "Out-of-range values crash on screen load.",
+          "used_by": [
+            "overworld enemy spawns"
+          ]
+        },
+        "screen_index_right": {
+          "label": "Exit \u2192 Right",
+          "byte": 4,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Destination screen when walking right (0xFE=building, 0xFF=blocked).",
+          "warning": "Index must be < the chapter's screen count.",
+          "used_by": [
+            "navigation graph"
+          ]
+        },
+        "screen_index_left": {
+          "label": "Exit \u2192 Left",
+          "byte": 5,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Destination screen when walking left (0xFE=building, 0xFF=blocked).",
+          "warning": "Index must be < the chapter's screen count.",
+          "used_by": [
+            "navigation graph"
+          ]
+        },
+        "screen_index_down": {
+          "label": "Exit \u2192 Down",
+          "byte": 6,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Destination screen when walking down (0xFE=building, 0xFF=blocked).",
+          "warning": "Index must be < the chapter's screen count.",
+          "used_by": [
+            "navigation graph"
+          ]
+        },
+        "screen_index_up": {
+          "label": "Exit \u2192 Up",
+          "byte": 7,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Destination screen when walking up (0xFE=building, 0xFF=blocked).",
+          "warning": "Index must be < the chapter's screen count.",
+          "used_by": [
+            "navigation graph"
+          ]
+        },
+        "datapointer": {
+          "label": "DataPointer / CHR bank",
+          "byte": 8,
+          "tier": "danger",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Selects CHR graphics bank (bits 0-5) and TileSection bank (bits 6-7).",
+          "warning": "Invalid banks corrupt graphics; change only via tile-section swaps.",
+          "used_by": [
+            "tile rendering"
+          ]
+        },
+        "exit_position": {
+          "label": "Exit Position",
+          "byte": 9,
+          "tier": "danger",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Player spawn position when entering the screen.",
+          "warning": "Bad values can spawn the player out of bounds.",
+          "used_by": [
+            "player spawn"
+          ]
+        },
+        "top_tiles": {
+          "label": "Top TileSection",
+          "byte": 10,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "TileSection index drawn in the top 4 rows.",
+          "warning": "",
+          "used_by": [
+            "tile rendering"
+          ]
+        },
+        "bottom_tiles": {
+          "label": "Bottom TileSection",
+          "byte": 11,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "TileSection index drawn in the bottom rows.",
+          "warning": "",
+          "used_by": [
+            "tile rendering"
+          ]
+        },
+        "worldscreen_color": {
+          "label": "Background Palette",
+          "byte": 12,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Background color palette selector.",
+          "warning": "",
+          "used_by": [
+            "palette"
+          ]
+        },
+        "sprites_color": {
+          "label": "Sprite Palette",
+          "byte": 13,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Sprite color palette selector (0x12 = town).",
+          "warning": "",
+          "used_by": [
+            "palette"
+          ]
+        },
+        "unknown": {
+          "label": "Unknown (byte 14)",
+          "byte": 14,
+          "tier": "danger",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Purpose not yet reverse-engineered.",
+          "warning": "Unknown effect \u2014 do not modify.",
+          "used_by": []
+        },
+        "event": {
+          "label": "Event byte",
+          "byte": 15,
+          "tier": "danger",
+          "control": "enum",
+          "enum": [
+            {
+              "value": 0,
+              "label": "NONE (0x00)"
+            },
+            {
+              "value": 1,
+              "label": "DIALOG_1 (0x01)"
+            },
+            {
+              "value": 3,
+              "label": "DIALOG_3 (0x03)"
+            },
+            {
+              "value": 8,
+              "label": "SAFE_8 (0x08)"
+            },
+            {
+              "value": 9,
+              "label": "PRE_BOSS (0x09)"
+            },
+            {
+              "value": 16,
+              "label": "AREA_TRANSITION (0x10)"
+            },
+            {
+              "value": 32,
+              "label": "NPC_DIALOG (0x20)"
+            },
+            {
+              "value": 34,
+              "label": "OPRIN_DOOR (0x22)"
+            },
+            {
+              "value": 64,
+              "label": "STAIRWAY (0x40)"
+            },
+            {
+              "value": 71,
+              "label": "SPECIAL_47 (0x47)"
+            },
+            {
+              "value": 72,
+              "label": "BOSS_PREP (0x48)"
+            },
+            {
+              "value": 96,
+              "label": "STORY_EVENT (0x60)"
+            },
+            {
+              "value": 98,
+              "label": "SPECIAL_ENCOUNTER (0x62)"
+            },
+            {
+              "value": 128,
+              "label": "MAZE_PUZZLE (0x80)"
+            },
+            {
+              "value": 192,
+              "label": "MAZE_SPECIAL (0xC0)"
+            }
+          ],
+          "description": "Dialog/door/transition trigger. Many values are story- or navigation-critical.",
+          "warning": "Most event values break story/navigation or crash; safe values are only 0x00, 0x08, 0x22, 0x40.",
+          "used_by": [
+            "story scripting",
+            "stairways",
+            "maze logic"
+          ]
+        }
+      }
+    }
+  }
+}

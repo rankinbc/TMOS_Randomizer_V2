@@ -4,6 +4,8 @@
  * Default backend URL: http://localhost:8000
  */
 
+import type { FieldMetadataResponse } from '../types/metadata';
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Types matching backend responses
@@ -853,6 +855,11 @@ class ApiClient {
   // Items registry (static metadata; two namespaces)
   async getItems(): Promise<ItemsResponse> {
     return this.fetch<ItemsResponse>('/api/rom/items');
+  }
+
+  // Field metadata (static; safety tiers, descriptions, enums, warnings). No ROM required.
+  async getFieldMetadata(): Promise<FieldMetadataResponse> {
+    return this.fetch<FieldMetadataResponse>('/api/metadata/fields');
   }
 
   // EXP Table Operations

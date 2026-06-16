@@ -4,23 +4,18 @@ import { RomUpload } from '../RomUpload';
 import { NavigationMapView } from '../screen/NavigationMapView';
 import { ScreenGrid } from '../screen/ScreenGrid';
 import { ScreenDetailPanel } from '../screen/ScreenDetailPanel';
-import { TileGridView } from '../screen/TileGridView';
 import { TileBankView } from '../tilebank';
-import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, AdvancedView, ValidationView, MapView } from '../views';
-import { JsonDebugPanel } from '../debug/JsonDebugPanel';
+import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, MapView, ExpertView } from '../views';
 
 const TABS: { id: TabType; label: string }[] = [
-  { id: 'flow', label: 'Flow' },
-  { id: 'map', label: 'Screens' },
-  { id: 'tiles', label: 'Tiles' },
-  { id: 'tilebank', label: 'Tile Bank' },
-  { id: 'items', label: 'Items' },
-  { id: 'stats', label: 'Player Stats' },
+  { id: 'world', label: 'World' },
   { id: 'enemies', label: 'Enemies' },
+  { id: 'items', label: 'Items & Economy' },
+  { id: 'hero', label: 'Hero' },
   { id: 'allies', label: 'Allies' },
-  { id: 'advanced', label: 'Advanced' },
-  { id: 'validation', label: 'Validation' },
-  { id: 'debug', label: 'Debug' },
+  { id: 'graphics', label: 'Graphics' },
+  { id: 'randomize', label: 'Randomize' },
+  { id: 'expert', label: '⚠ Expert' },
 ];
 
 const VIEW_MODES: { id: ViewMode; label: string }[] = [
@@ -30,7 +25,7 @@ const VIEW_MODES: { id: ViewMode; label: string }[] = [
 
 // Tabs that edit ROM-global data and don't need a chapter selected first.
 // (The screen/tiles/flow tabs are chapter-scoped and still require chapterData.)
-const GLOBAL_TABS = new Set<TabType>(['stats', 'enemies', 'advanced', 'tilebank', 'debug']);
+const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'expert', 'randomize']);
 
 export function MainContent() {
   const {
@@ -80,7 +75,7 @@ export function MainContent() {
           </div>
 
           {/* View Mode Switcher */}
-          {selectedTab === 'map' && romLoaded && chapterData && (
+          {selectedTab === 'world' && romLoaded && chapterData && (
             <div className="flex items-center gap-2 px-4">
               {VIEW_MODES.map((mode) => (
                 <button
@@ -126,7 +121,8 @@ export function MainContent() {
           <div className="flex h-full">
             {/* Main View Area */}
             <div className="flex-1 overflow-hidden">
-              {selectedTab === 'map' && viewMode === 'navigation' && (
+              {/* World: screen map/grid (Phase 2 will merge tiles + side-panel editing) */}
+              {selectedTab === 'world' && viewMode === 'navigation' && chapterData && (
                 <NavigationMapView
                   chapter={chapterData}
                   selectedScreen={selectedScreen}
@@ -134,7 +130,7 @@ export function MainContent() {
                   tileSize={48}
                 />
               )}
-              {selectedTab === 'map' && viewMode === 'grid' && (
+              {selectedTab === 'world' && viewMode === 'grid' && chapterData && (
                 <ScreenGrid
                   screens={chapterData.screens}
                   selectedScreen={selectedScreen}
@@ -142,56 +138,33 @@ export function MainContent() {
                   gridWidth={16}
                 />
               )}
-              {selectedTab === 'flow' && planChapter && planChapter.sections.length > 0 && (
+
+              {/* Randomize: plan flow graph + validation report */}
+              {selectedTab === 'randomize' && planChapter && planChapter.sections.length > 0 && (
                 <MapView chapter={planChapter} />
               )}
-              {selectedTab === 'flow' && (!planChapter || planChapter.sections.length === 0) && (
+              {selectedTab === 'randomize' && (!planChapter || planChapter.sections.length === 0) && (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center p-8">
-                    <div className="text-4xl mb-4 opacity-50">&#128269;</div>
+                    <div className="text-4xl mb-4 opacity-50">{'\u{1F50D}'}</div>
                     <h3 className="text-lg font-medium text-slate-300 mb-2">No Plan Generated</h3>
                     <p className="text-sm text-slate-500 max-w-sm">
                       Click the Randomize button to generate a randomization plan.
-                      This view will show how sections are organized and connected.
                     </p>
                   </div>
                 </div>
               )}
-              {selectedTab === 'tiles' && (
-                <TileGridView
-                  chapter={chapterData}
-                  selectedScreen={selectedScreen}
-                  onScreenSelect={setSelectedScreen}
-                />
-              )}
-              {selectedTab === 'tilebank' && (
-                <TileBankView />
-              )}
-              {selectedTab === 'items' && planChapter && (
-                <ItemsView chapter={planChapter} />
-              )}
-              {selectedTab === 'stats' && (
-                <PlayerStatsView />
-              )}
-              {selectedTab === 'enemies' && (
-                <EnemiesView />
-              )}
-              {selectedTab === 'allies' && planChapter && (
-                <AlliesView chapter={planChapter} />
-              )}
-              {selectedTab === 'advanced' && (
-                <AdvancedView />
-              )}
-              {selectedTab === 'validation' && planChapter && (
-                <ValidationView chapter={planChapter} />
-              )}
-              {selectedTab === 'debug' && (
-                <JsonDebugPanel />
-              )}
+
+              {selectedTab === 'items' && planChapter && <ItemsView chapter={planChapter} />}
+              {selectedTab === 'hero' && <PlayerStatsView />}
+              {selectedTab === 'enemies' && <EnemiesView />}
+              {selectedTab === 'allies' && planChapter && <AlliesView chapter={planChapter} />}
+              {selectedTab === 'graphics' && <TileBankView />}
+              {selectedTab === 'expert' && <ExpertView />}
             </div>
 
-            {/* Screen Detail Panel - only show on Screens tab */}
-            {selectedTab === 'map' && selectedScreenData && chapterData && (
+            {/* Screen Detail Panel - only show on the World tab */}
+            {selectedTab === 'world' && selectedScreenData && chapterData && (
               <div className="w-80 flex-shrink-0 border-l border-slate-700 overflow-y-auto">
                 <ScreenDetailPanel
                   screen={selectedScreenData}

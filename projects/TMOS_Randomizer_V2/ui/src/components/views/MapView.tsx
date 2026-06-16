@@ -324,7 +324,7 @@ export function MapView({ chapter }: MapViewProps) {
   const handleGoToScreens = () => {
     if (contextMenu.node) {
       setSelectedSection(contextMenu.node.id);
-      setSelectedTab('map');
+      setSelectedTab('world');
     }
     setContextMenu(prev => ({ ...prev, visible: false }));
   };
@@ -447,7 +447,7 @@ export function MapView({ chapter }: MapViewProps) {
                   <button
                     onClick={() => {
                       setSelectedScreen(screens[0].index);
-                      setSelectedTab('map');
+                      setSelectedTab('world');
                       setContextMenu(prev => ({ ...prev, visible: false }));
                     }}
                     className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2"
