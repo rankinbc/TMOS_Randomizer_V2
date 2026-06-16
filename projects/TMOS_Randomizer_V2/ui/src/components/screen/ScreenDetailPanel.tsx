@@ -113,7 +113,17 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
   };
 
   const handleFieldChange = async (
-    field: 'objectset' | 'content' | 'event' | 'worldscreen_color' | 'sprites_color',
+    field:
+      | 'objectset'
+      | 'content'
+      | 'event'
+      | 'worldscreen_color'
+      | 'sprites_color'
+      | 'parent_world'
+      | 'ambient_sound'
+      | 'datapointer'
+      | 'exit_position'
+      | 'unknown',
     value: number,
   ) => {
     try {
