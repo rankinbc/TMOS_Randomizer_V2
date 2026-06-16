@@ -1,11 +1,8 @@
 import { useRandomizerStore } from '../../store';
 import type { TabType, ViewMode } from '../../store';
 import { RomUpload } from '../RomUpload';
-import { NavigationMapView } from '../screen/NavigationMapView';
-import { ScreenGrid } from '../screen/ScreenGrid';
-import { ScreenDetailPanel } from '../screen/ScreenDetailPanel';
 import { TileBankView } from '../tilebank';
-import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, MapView, ExpertView } from '../views';
+import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, MapView, ExpertView, WorldView } from '../views';
 
 const TABS: { id: TabType; label: string }[] = [
   { id: 'world', label: 'World' },
@@ -34,15 +31,11 @@ export function MainContent() {
     romLoaded,
     chapterData,
     chapterLoading,
-    selectedScreen,
-    setSelectedScreen,
     viewMode,
     setViewMode,
     plan,
     selectedChapter,
   } = useRandomizerStore();
-
-  const selectedScreenData = chapterData?.screens.find((s) => s.index === selectedScreen);
 
   // Get plan chapter data for items/allies/validation views
   // Falls back to minimal data from chapterData if no plan exists
@@ -117,28 +110,13 @@ export function MainContent() {
           <div className="flex items-center justify-center h-full text-slate-500">
             Select a chapter to view screens.
           </div>
+        ) : selectedTab === 'world' ? (
+          /* World tab: WorldView owns the map + detail panel + context menu + editor modal. */
+          <WorldView />
         ) : (
           <div className="flex h-full">
             {/* Main View Area */}
             <div className="flex-1 overflow-hidden">
-              {/* World: screen map/grid (Phase 2 will merge tiles + side-panel editing) */}
-              {selectedTab === 'world' && viewMode === 'navigation' && chapterData && (
-                <NavigationMapView
-                  chapter={chapterData}
-                  selectedScreen={selectedScreen}
-                  onScreenSelect={setSelectedScreen}
-                  tileSize={48}
-                />
-              )}
-              {selectedTab === 'world' && viewMode === 'grid' && chapterData && (
-                <ScreenGrid
-                  screens={chapterData.screens}
-                  selectedScreen={selectedScreen}
-                  onScreenSelect={setSelectedScreen}
-                  gridWidth={16}
-                />
-              )}
-
               {/* Randomize: plan flow graph + validation report */}
               {selectedTab === 'randomize' && planChapter && planChapter.sections.length > 0 && (
                 <MapView chapter={planChapter} />
@@ -162,19 +140,6 @@ export function MainContent() {
               {selectedTab === 'graphics' && <TileBankView />}
               {selectedTab === 'expert' && <ExpertView />}
             </div>
-
-            {/* Screen Detail Panel - only show on the World tab */}
-            {selectedTab === 'world' && selectedScreenData && chapterData && (
-              <div className="w-80 flex-shrink-0 border-l border-slate-700 overflow-y-auto">
-                <ScreenDetailPanel
-                  screen={selectedScreenData}
-                  chapterNum={chapterData.chapter_num}
-                  screens={chapterData.screens}
-                  onScreenSelect={setSelectedScreen}
-                  onClose={() => setSelectedScreen(null)}
-                />
-              </div>
-            )}
           </div>
         )}
       </div>
