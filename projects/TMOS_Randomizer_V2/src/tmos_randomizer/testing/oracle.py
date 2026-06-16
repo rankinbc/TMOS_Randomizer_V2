@@ -29,10 +29,17 @@ from ..io.rom_reader import load_rom
 from ..phases.phase6_validation import analyze_reachability
 from ..validation.runner import ValidationRunner
 from ..validation.config import ValidationConfig
+from ..validation.coherence import same_biome_adjacency_ratio
 from .success_criteria import SuccessCriteria, DEFAULT_CRITERIA
 
 # Float tolerance when comparing reachability percentages.
 _REACH_EPS = 0.05
+
+# Allowed clustering degradation vs vanilla before it counts as a coherence
+# regression. Provisional (Coherence L2 Slice 2) -- a shuffler legitimately
+# perturbs blobs a little; collapsing them into confetti is the failure. Exact
+# value is a deliberately open tuning knob (see brainstorming session doc).
+_CLUSTER_EPS = 0.10
 
 
 @dataclass
@@ -41,12 +48,14 @@ class Baseline:
 
     chapters: List[int] = field(default_factory=list)
     reachability: Dict[int, float] = field(default_factory=dict)
+    clustering: Dict[int, float] = field(default_factory=dict)
     error_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "chapters": self.chapters,
             "reachability": self.reachability,
+            "clustering": self.clustering,
             "error_count": self.error_count,
         }
 
@@ -60,6 +69,7 @@ class WorldVerdict:
     error_count: int = 0
     warning_count: int = 0
     reachability: Dict[int, float] = field(default_factory=dict)
+    clustering: Dict[int, float] = field(default_factory=dict)
     reasons: List[str] = field(default_factory=list)
     validators_run: List[str] = field(default_factory=list)
 
@@ -70,6 +80,7 @@ class WorldVerdict:
             "error_count": self.error_count,
             "warning_count": self.warning_count,
             "reachability": self.reachability,
+            "clustering": self.clustering,
             "reasons": self.reasons,
             "validators_run": self.validators_run,
         }
@@ -89,6 +100,14 @@ def _chapter_reachability(chapters: Dict[int, Any]) -> Dict[int, float]:
     return reach
 
 
+def _chapter_clustering(chapters: Dict[int, Any]) -> Dict[int, float]:
+    """Same-biome adjacency ratio per chapter (Coherence L2 clustering channel)."""
+    return {
+        num: round(same_biome_adjacency_ratio(chapter), 4)
+        for num, chapter in chapters.items()
+    }
+
+
 def baseline_from_rom(rom_path: Union[str, Path]) -> Baseline:
     """Compute the vanilla reference baseline from an unmodified ROM."""
     rom_path = Path(rom_path)
@@ -99,6 +118,7 @@ def baseline_from_rom(rom_path: Union[str, Path]) -> Baseline:
     return Baseline(
         chapters=sorted(chapters.keys()),
         reachability=_chapter_reachability(chapters),
+        clustering=_chapter_clustering(chapters),
         error_count=result.error_count,
     )
 
@@ -142,6 +162,7 @@ def evaluate_world(
         reasons.append("fail-closed: no validators ran")
 
     reachability = _chapter_reachability(chapters)
+    clustering = _chapter_clustering(chapters)
 
     # --- Differential comparison against the vanilla baseline.
     if baseline is not None:
@@ -154,6 +175,13 @@ def evaluate_world(
             if base_pct is not None and pct < base_pct - _REACH_EPS:
                 reasons.append(
                     f"Ch{num} reachability {pct:.1f}% < vanilla {base_pct:.1f}%"
+                )
+        for num, ratio in clustering.items():
+            base_ratio = baseline.clustering.get(num)
+            if base_ratio is not None and ratio < base_ratio - _CLUSTER_EPS:
+                reasons.append(
+                    f"Ch{num} clustering {ratio:.2f} < vanilla {base_ratio:.2f} "
+                    f"(biome blobs fragmenting into salad)"
                 )
         if result.error_count > baseline.error_count:
             reasons.append(
@@ -174,6 +202,7 @@ def evaluate_world(
         error_count=result.error_count,
         warning_count=result.warning_count,
         reachability=reachability,
+        clustering=clustering,
         reasons=reasons,
         validators_run=list(result.validators_run),
     )
