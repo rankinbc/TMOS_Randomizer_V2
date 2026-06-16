@@ -829,19 +829,31 @@ async def update_screen_fields(
 
 @app.get("/api/rom/screen/{chapter_num}/{screen_index}/vanilla")
 async def get_screen_vanilla(chapter_num: int, screen_index: int):
-    """Return a screen's ORIGINAL (as-uploaded) 16 bytes, for change comparison."""
+    """Return a screen's original (as-uploaded) field values, for change comparison.
+
+    Returns the screen's original field values (the same ~18 keys as the live
+    screen endpoint, including ``index`` and ``global_index``), parsed from the
+    pristine ROM rather than the (possibly mutated) live world.
+    """
     if _rom_vanilla is None:
         raise HTTPException(status_code=400, detail="No ROM loaded")
 
     # Parse the pristine snapshot independently of the (mutated) live world.
-    # ROMReader/load_rom read from a file path, so mirror the upload flow:
-    # write the immutable vanilla bytes to a temp file and load a throwaway world.
-    temp_dir = Path(tempfile.gettempdir()) / "tmos_randomizer"
-    temp_dir.mkdir(exist_ok=True)
-    vanilla_path = temp_dir / "_vanilla_snapshot.nes"
-    with open(vanilla_path, "wb") as f:
-        f.write(_rom_vanilla)
-    vanilla_world = load_rom(vanilla_path)
+    # Edits only ever touch the in-memory _game_world/_rom_data; the file at
+    # _rom_path is the as-uploaded ROM and is never mutated, so re-parsing it
+    # yields pristine data (same established pattern as _baseline_reachability).
+    if _rom_path is not None and Path(_rom_path).exists():
+        vanilla_world = load_rom(_rom_path)
+    else:
+        # Fallback: _rom_path is gone; load from the immutable bytes snapshot
+        # via a unique temp file that is always cleaned up.
+        tmp = tempfile.NamedTemporaryFile(suffix=".nes", delete=False)
+        try:
+            tmp.write(_rom_vanilla)
+            tmp.close()
+            vanilla_world = load_rom(tmp.name)
+        finally:
+            os.unlink(tmp.name)
 
     chapter = vanilla_world.chapters.get(chapter_num)
     if chapter is None:

@@ -16,7 +16,8 @@ def test_vanilla_endpoint_returns_original_after_edit():
     assert after["content"] == before["content"], "vanilla must not reflect edits"
 
 
-def test_vanilla_requires_rom():
-    # fresh app state may already have a ROM from other tests; just assert shape if 200
+def test_vanilla_requires_rom(monkeypatch):
+    import tmos_randomizer.api.server as srv
+    monkeypatch.setattr(srv, "_rom_vanilla", None)
     r = client.get("/api/rom/screen/1/0/vanilla")
-    assert r.status_code in (200, 400)
+    assert r.status_code == 400
