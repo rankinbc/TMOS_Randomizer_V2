@@ -60,7 +60,7 @@ Each editable field carries a safety tier sourced from the field-metadata file (
 
 - **● Safe (green):** edit freely, live preview, no friction. (navigation, tile sections, palette, enemy HP/EXP/Rupia, player curves, MP table)
 - **▲ Caution (amber):** editable inline, but validated; dropdowns/inputs pre-filtered to valid values; inline warnings. (content/NPC byte — chapter-specific, stairway pairing, one-way exits, ParentWorld)
-- **⛔ Danger (red):** never shown on entity tabs. Only in the **Expert** tab, behind an explicit "I understand this can crash the game" unlock. (raw Event byte, objectset pointer, CHR bank/DataPointer, exit position)
+- **⛔ Danger (red):** for most entities, gated in the **Expert** tab behind an explicit "I understand this can crash the game" unlock. **WorldScreen exception (decided in Phase 2 brainstorming):** no WorldScreen byte is routed to Expert — all 16 are editable from the World tab's screen-editor modal, with danger tiers shown as inline **warnings/guardrails** (caution = validated/pre-filtered; danger = flagged with a warning but still editable). The Expert tab is reserved for non-screen expert panels (TB formulas, weapon/encounter tables, raw boss bytes, debug).
 
 **Hard rule:** known hard-crash enemy IDs `0x0B` and `0x0C` are never selectable in any control anywhere (excluded from all enemy dropdowns/lineups). Unknown-status IDs `{0x0F, 0x17, 0x25}` are treated conservatively as Danger.
 
@@ -102,7 +102,7 @@ A **shared rule engine** defines "valid" once, consumed by both live (UI) and ba
 Each phase becomes its own implementation plan (spec → plan → execute):
 
 1. **Foundation** — new IA shell (tab restructure), safety-tier infrastructure, field-metadata pipeline + endpoint, guided-field component.
-2. **World tab** — flagship screen editor: map + persistent side panel + right-click context menu; navigation/tiles/content/palette/enemies-here; Expert byte controls routed to Expert tab.
+2. **World tab** — flagship screen editor: map (left-click select + drag-nav) + persistent side panel + **right-click context menu → screen-editor modal**. The modal edits every WorldScreen byte **except the 4 navigation pointers** (those stay on the map via drag), as illustrated descriptive controls (color swatches for palettes/parent-world, enemy thumbnails for the spawn set, named/described values) with safety badges, warnings, and a vanilla "changed" indicator. No WorldScreen byte routed to Expert.
 3. **Enemies tab + Expert tab** — consolidate roster/lineups/groups/overworld/bosses; stand up the gated Expert tab and migrate Danger controls.
 4. **Remaining entity tabs** — Items & Economy, Hero, Allies (new editing), Graphics.
 5. **Validation system + Settings** — shared rule engine, four validation features, Settings toggles, honest export gate.
