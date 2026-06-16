@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { ScreenData } from '../../api/client';
 import { ScreenRenderer } from './ScreenRenderer';
 import { Tooltip } from '../shared/Tooltip';
@@ -103,9 +103,18 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
 
   const updateScreenTiles = useRandomizerStore((s) => s.updateScreenTiles);
   const updateScreenFields = useRandomizerStore((s) => s.updateScreenFields);
+  const fieldMetadata = useRandomizerStore((s) => s.fieldMetadata);
+  const screenVanilla = useRandomizerStore((s) => s.screenVanilla);
+  const loadScreenVanilla = useRandomizerStore((s) => s.loadScreenVanilla);
   const [tileNote, setTileNote] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [activeHalf, setActiveHalf] = useState<'top' | 'bottom'>('top');
+
+  // Load vanilla bytes for the screen being edited (for the "changed" indicator),
+  // mirroring WorldView so the panel-launched modal shows the same guided fields.
+  useEffect(() => {
+    if (editorOpen) loadScreenVanilla(chapterNum, screen.index);
+  }, [editorOpen, chapterNum, screen.index, loadScreenVanilla]);
 
   const openEditor = (half: 'top' | 'bottom') => {
     setActiveHalf(half);
@@ -381,6 +390,8 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
           onHalfChange={setActiveHalf}
           onClose={() => setEditorOpen(false)}
           onScreenSelect={onScreenSelect}
+          fieldMetadata={fieldMetadata?.entities.worldscreen ?? null}
+          vanilla={screenVanilla && screenVanilla.index === screen.index ? screenVanilla : null}
           onFieldChange={handleFieldChange}
           onTilePick={handlePickTile}
         />
