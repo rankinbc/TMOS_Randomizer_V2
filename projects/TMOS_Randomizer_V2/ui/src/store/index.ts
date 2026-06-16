@@ -24,6 +24,7 @@ import {
   type EncounterGroupPatch,
   type EnemyStatPatch,
   type ScreenFieldsUpdate,
+  type ScreenVanilla,
 } from '../api/client';
 
 // Entity-centric IA: 7 entity tabs + 1 gated Expert tab.
@@ -97,6 +98,9 @@ interface RandomizerState {
   // Field metadata (safety tiers, descriptions, enums) — loaded once on startup.
   fieldMetadata: FieldMetadataResponse | null;
 
+  // Vanilla (as-uploaded) bytes for the screen being edited, for change comparison.
+  screenVanilla: ScreenVanilla | null;
+
   // Drag-drop state
   draggingScreen: number | null;
 
@@ -165,6 +169,7 @@ interface RandomizerState {
   loadAssetManifest: () => Promise<void>;
   loadSectionMap: () => Promise<void>;
   loadFieldMetadata: () => Promise<void>;
+  loadScreenVanilla: (chapterNum: number, screenIndex: number) => Promise<void>;
 
   // Drag-drop actions
   setDraggingScreen: (screen: number | null) => void;
@@ -301,6 +306,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   apiError: null,
   assets: null,
   fieldMetadata: null,
+  screenVanilla: null,
   draggingScreen: null,
 
   // Tile Bank state
@@ -412,6 +418,16 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       set({ fieldMetadata: meta });
     } catch (e) {
       console.error('Failed to load field metadata', e);
+    }
+  },
+
+  loadScreenVanilla: async (chapterNum, screenIndex) => {
+    try {
+      const v = await api.getScreenVanilla(chapterNum, screenIndex);
+      set({ screenVanilla: v });
+    } catch (e) {
+      console.error('Failed to load vanilla screen', e);
+      set({ screenVanilla: null });
     }
   },
 

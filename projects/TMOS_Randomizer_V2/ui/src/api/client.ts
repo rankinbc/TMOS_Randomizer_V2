@@ -96,6 +96,7 @@ export interface ScreenData {
   bottom_tiles: number;
   objectset: number;
   parent_world: number;
+  ambient_sound: number;
   event: number;
   content: number;
   nav_right: number;
@@ -105,6 +106,7 @@ export interface ScreenData {
   worldscreen_color: number;
   sprites_color: number;
   exit_position: number;
+  unknown: number;
 }
 
 export interface ChapterData {
@@ -152,6 +154,19 @@ export interface ScreenFieldsUpdate {
   event?: number;
   worldscreen_color?: number;
   sprites_color?: number;
+  parent_world?: number;
+  ambient_sound?: number;
+  datapointer?: number;
+  exit_position?: number;
+  unknown?: number;
+}
+
+export interface ScreenVanilla {
+  index: number; global_index: number;
+  parent_world: number; ambient_sound: number; content: number; objectset: number;
+  datapointer: number; exit_position: number; top_tiles: number; bottom_tiles: number;
+  worldscreen_color: number; sprites_color: number; unknown: number; event: number;
+  nav_right: number; nav_left: number; nav_down: number; nav_up: number;
 }
 
 export interface ObjectSetEnemy {
@@ -748,6 +763,10 @@ class ApiClient {
     has_building_entrance: boolean;
   }> {
     return this.fetch(`/api/rom/screen/${chapterNum}/${screenIndex}`);
+  }
+
+  async getScreenVanilla(chapterNum: number, screenIndex: number): Promise<ScreenVanilla> {
+    return this.fetch<ScreenVanilla>(`/api/rom/screen/${chapterNum}/${screenIndex}/vanilla`);
   }
 
   async getNavigationGraph(chapterNum: number): Promise<NavigationGraph> {
