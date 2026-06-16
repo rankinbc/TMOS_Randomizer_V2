@@ -17,12 +17,19 @@ interface Props {
 export function ContextMenu({ x, y, items, onClose }: Props) {
   useEffect(() => {
     const close = () => onClose();
-    window.addEventListener('click', close);
-    window.addEventListener('contextmenu', close);
-    window.addEventListener('scroll', close, true);
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // Defer the dismiss listeners past the interaction that opened the menu:
+    // the opening right-click also selects the screen, which mounts/scrolls the
+    // detail panel and would otherwise trip the capture-phase scroll listener and
+    // close the menu immediately. Esc can attach right away.
     window.addEventListener('keydown', onEsc);
+    const raf = requestAnimationFrame(() => {
+      window.addEventListener('click', close);
+      window.addEventListener('contextmenu', close);
+      window.addEventListener('scroll', close, true);
+    });
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('click', close);
       window.removeEventListener('contextmenu', close);
       window.removeEventListener('scroll', close, true);
