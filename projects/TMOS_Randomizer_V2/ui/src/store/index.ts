@@ -19,6 +19,7 @@ import {
   type PlayerStatsPreset,
   type PlayerStatsTransform,
   type BattleEnemy,
+  type SelectableEnemy,
   type ChapterLineups,
   type ChapterGroups,
   type EncounterGroupPatch,
@@ -143,6 +144,12 @@ interface RandomizerState {
   enemiesLoading: boolean;
   enemiesError: string | null;
 
+  // Canonical safe-to-select enemy list (for dropdowns); loaded on API connect.
+  selectableEnemies: SelectableEnemy[];
+
+  // Session-scoped Expert tab unlock flag (no persistence).
+  expertUnlocked: boolean;
+
   // Edit log (cross-feature)
   editLog: EditLogEntry[];
 
@@ -221,12 +228,16 @@ interface RandomizerState {
 
   // Enemies actions
   loadEnemies: () => Promise<void>;
+  loadSelectableEnemies: () => Promise<void>;
   loadEncounterLineups: () => Promise<void>;
   loadEncounterGroups: () => Promise<void>;
   updateLineupSlot: (chapter: number, lineupIdx: number, slot: number, enemyId: number) => Promise<void>;
   updateLineupStartByte: (chapter: number, lineupIdx: number, value: number) => Promise<void>;
   updateEncounterGroup: (chapter: number, entryIndex: number, patch: EncounterGroupPatch) => Promise<void>;
   updateEnemyStat: (enemyId: number, patch: EnemyStatPatch) => Promise<void>;
+
+  // Expert tab unlock (session-scoped)
+  unlockExpert: () => void;
 
   // Edit log
   pushEditLog: (entry: EditLogEntry) => void;
@@ -346,6 +357,10 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   encounterGroupsVanilla: null,
   enemiesLoading: false,
   enemiesError: null,
+  selectableEnemies: [],
+
+  // Expert tab unlock (session-scoped)
+  expertUnlocked: false,
 
   // Edit log
   editLog: [],
@@ -406,6 +421,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       // Static field metadata needs no ROM — load it once the API is reachable.
       if (connected) {
         get().loadFieldMetadata();
+        get().loadSelectableEnemies();
       }
     } catch (error) {
       set({ apiConnected: false, apiError: error instanceof Error ? error.message : 'Connection failed' });
@@ -1102,6 +1118,10 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   // ---------------- Enemies ----------------
 
   loadEnemies: async () => {
+    // Guard against concurrent fetches: EnemiesView and BattleRosterEditor both
+    // prime the roster on mount, which would otherwise fire two GETs before the
+    // first resolves and sets battleEnemies.
+    if (get().enemiesLoading) return;
     set({ enemiesLoading: true, enemiesError: null });
     try {
       const r = await api.getEnemies();
@@ -1112,6 +1132,15 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       });
     } catch (error) {
       set({ enemiesLoading: false, enemiesError: _maybeResetRomLoaded(set, error) });
+    }
+  },
+
+  loadSelectableEnemies: async () => {
+    try {
+      const r = await api.getSelectableEnemies();
+      set({ selectableEnemies: r.enemies });
+    } catch (error) {
+      console.warn('Failed to load selectable enemies:', error);
     }
   },
 
@@ -1299,6 +1328,8 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       throw error;
     }
   },
+
+  unlockExpert: () => set({ expertUnlocked: true }),
 
   pushEditLog: (entry) => {
     set((state) => ({ editLog: [...state.editLog, entry].slice(-200) }));

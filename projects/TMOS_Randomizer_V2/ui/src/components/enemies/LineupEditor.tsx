@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { BattleEnemy, Lineup } from '../../api/client';
 import { EnemyPicker } from './EnemyPicker';
 import { HelpChip } from '../stats/HelpChip';
+import { useRandomizerStore } from '../../store';
+import { toEnemyOptions, DANGER_ENEMY_IDS } from '../../utils/enemySelection';
 
 interface LineupEditorProps {
   lineup: Lineup;
@@ -24,6 +26,23 @@ export function LineupEditor({
   const [pickingSlot, setPickingSlot] = useState<number | null>(null);
   const enemyById = new Map(enemies.map((e) => [e.enemy_id, e]));
   const slotRefs = useRef<Record<number, HTMLButtonElement | null>>({});
+
+  // Crash-safe choosable list: derive the set of selectable enemy IDs from the
+  // shared, server-filtered source (excludes crash IDs 0x0B/0x0C and danger IDs
+  // 0x0F/0x17/0x25), then offer the picker only the full BattleEnemy records
+  // whose IDs are in that set. Slot tiles still render the current value from the
+  // full `enemies` map below, so a pre-existing danger value stays visible — it
+  // just can't be re-selected once changed.
+  const selectableEnemies = useRandomizerStore((s) => s.selectableEnemies);
+  const pickableEnemies = useMemo(() => {
+    const allowed = new Set(toEnemyOptions(selectableEnemies).map((o) => o.value));
+    // If selectableEnemies hasn't loaded yet, fall back to the full roster MINUS
+    // the known crash/danger IDs — the picker is never empty, but the hard rule
+    // (crash IDs 0x0B/0x0C never selectable) still holds before the server list
+    // arrives. Once loaded, the authoritative server-filtered set takes over.
+    if (allowed.size === 0) return enemies.filter((e) => !DANGER_ENEMY_IDS.has(e.enemy_id));
+    return enemies.filter((e) => allowed.has(e.enemy_id));
+  }, [enemies, selectableEnemies]);
 
   const startByteDiff = lineup.start_byte !== vanillaLineup.start_byte;
 
@@ -112,7 +131,7 @@ export function LineupEditor({
 
       {pickingSlot !== null && (
         <EnemyPicker
-          enemies={enemies}
+          enemies={pickableEnemies}
           currentEnemyId={lineup.slots[pickingSlot - 1].enemy_id}
           onPick={(id) => onSlotChange(pickingSlot, id)}
           onClose={() => setPickingSlot(null)}

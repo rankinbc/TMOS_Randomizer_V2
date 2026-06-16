@@ -143,6 +143,38 @@ def _worldscreen_fields() -> Dict[str, Dict[str, Any]]:
     }
 
 
+def _enemy_fields() -> Dict[str, Dict[str, Any]]:
+    """Return field metadata for the 10-byte turn-based enemy record (ROM 0xC351).
+
+    SAFETY NOTE: Enemy IDs 0x0B and 0x0C hard-crash the game and are never
+    selectable in the UI (see core/enums.py CRASH_ENEMY_IDS). These stat fields
+    are safe to edit on valid enemy IDs.
+    """
+    _crash_warning = (
+        "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable."
+    )
+    return {
+        "ep": {
+            "label": "Experience Points (EP reward)", "byte": 0, "tier": "safe",
+            "control": "number", "valid_range": [0, 255],
+            "description": "Experience awarded when defeated.",
+            "warning": _crash_warning, "used_by": ["levelling"],
+        },
+        "rupia": {
+            "label": "Rupia (currency drop)", "byte": 1, "tier": "safe",
+            "control": "number", "valid_range": [0, 255],
+            "description": "Currency dropped when defeated.",
+            "warning": _crash_warning, "used_by": ["economy"],
+        },
+        "hp": {
+            "label": "HP (hit points)", "byte": 7, "tier": "safe",
+            "control": "number", "valid_range": [0, 255],
+            "description": "Hit points in turn-based battle.",
+            "warning": _crash_warning, "used_by": ["combat"],
+        },
+    }
+
+
 def build_field_metadata() -> Dict[str, Any]:
     """Return the full field-metadata document consumed by the UI."""
     return {
@@ -152,6 +184,10 @@ def build_field_metadata() -> Dict[str, Any]:
             "worldscreen": {
                 "label": "World Screen",
                 "fields": _worldscreen_fields(),
+            },
+            "enemy": {
+                "label": "Battle Enemy",
+                "fields": _enemy_fields(),
             },
         },
     }

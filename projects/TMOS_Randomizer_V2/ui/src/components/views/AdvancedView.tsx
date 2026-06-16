@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { PlayerStatsView } from './PlayerStatsView';
-import { EnemiesView } from './EnemiesView';
 import { BossesPanel } from '../advanced/BossesPanel';
 import { EconomyPanel } from '../advanced/EconomyPanel';
-import { OverworldPanel } from '../advanced/OverworldPanel';
 import { TbFormulasPanel } from '../advanced/TbFormulasPanel';
 import { EncounterRatesPanel } from '../advanced/EncounterRatesPanel';
 import { WeaponDamagePanel } from '../advanced/WeaponDamagePanel';
@@ -23,9 +21,7 @@ import { PalettePanel } from '../advanced/PalettePanel';
 type SubTabId =
   | 'progression'
   | 'magic'
-  | 'enemies'
   | 'bosses'
-  | 'overworld'
   | 'encounters'
   | 'tbformulas'
   | 'weapons'
@@ -36,9 +32,7 @@ type SubTabId =
 const SUB_TABS: { id: SubTabId; label: string; expert?: boolean }[] = [
   { id: 'progression', label: 'Progression & Combat' },
   { id: 'magic', label: 'Magic & Spells' },
-  { id: 'enemies', label: 'Enemies & Encounters' },
-  { id: 'bosses', label: 'Bosses' },
-  { id: 'overworld', label: 'Overworld Enemies', expert: true },
+  { id: 'bosses', label: 'Boss Bytes (Advanced)', expert: true },
   { id: 'encounters', label: 'Encounter Rates', expert: true },
   { id: 'tbformulas', label: 'TB Combat Formulas', expert: true },
   { id: 'weapons', label: 'Weapon Damage', expert: true },
@@ -80,9 +74,16 @@ export function AdvancedView() {
       <div className="flex-1 overflow-auto">
         {sub === 'progression' && <PlayerStatsView />}
         {sub === 'magic' && <MpTablePanel />}
-        {sub === 'enemies' && <EnemiesView />}
-        {sub === 'bosses' && <BossesPanel />}
-        {sub === 'overworld' && <OverworldPanel />}
+        {sub === 'bosses' && (
+          <BossesPanel
+            // Safe boss fields live in the Enemies tab; Expert shows only non-safe
+            // tiers so no editable field appears in two tabs.
+            tierFilter={(tier) => tier !== 'safe'}
+            title="Boss Bytes (Advanced)"
+            romNote="Advanced boss bytes — expert/display tiers only · safe HP & damage live in the Enemies tab"
+            headerTier="expert"
+          />
+        )}
         {sub === 'encounters' && <EncounterRatesPanel />}
         {sub === 'tbformulas' && <TbFormulasPanel />}
         {sub === 'weapons' && <WeaponDamagePanel />}

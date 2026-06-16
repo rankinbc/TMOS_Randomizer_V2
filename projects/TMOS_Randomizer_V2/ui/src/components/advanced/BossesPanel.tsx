@@ -41,7 +41,26 @@ function BossPortraits({ bossId }: { bossId: string }) {
   );
 }
 
-export function BossesPanel() {
+export function BossesPanel({
+  tierFilter,
+  title = 'Bosses',
+  romNote = 'Per-boss HP, projectile damage & timing · ROM_VERIFIED single bytes ($17248–$1875D)',
+  headerTier = 'safe',
+}: {
+  /**
+   * When provided, restricts which boss fields are rendered/editable by tier.
+   * Used by the Expert tab to exclude 'safe' fields (now owned by the Enemies tab)
+   * so nothing overlaps. Default (no prop) renders every field as before.
+   */
+  tierFilter?: (tier: string) => boolean;
+  title?: string;
+  romNote?: string;
+  /**
+   * Tier shown on the panel header badge. Defaults to 'safe'; the Expert tab
+   * passes 'expert' since it renders only the advanced (non-safe) boss bytes.
+   */
+  headerTier?: Tier;
+} = {}) {
   const { data, setData, loading, error, reload } = useRomResource(() => api.getBossStats());
 
   const commit = async (bossId: string, field: string, next: number) => {
@@ -69,9 +88,9 @@ export function BossesPanel() {
 
   return (
     <PanelFrame
-      title="Bosses"
-      tier="safe"
-      romNote="Per-boss HP, projectile damage & timing · ROM_VERIFIED single bytes ($17248–$1875D)"
+      title={title}
+      tier={headerTier}
+      romNote={romNote}
       help={
         <div className="text-xs space-y-1">
           <p>Tune each boss fight directly. Every value here is a single ROM-verified byte (0–255).</p>
@@ -92,7 +111,9 @@ export function BossesPanel() {
                 <span className="text-sm font-semibold text-slate-200">{boss.boss_label}</span>
               </div>
               <ul className="divide-y divide-slate-800">
-                {boss.fields.map((f) => (
+                {boss.fields
+                  .filter((f) => (tierFilter ? tierFilter(f.tier) : true))
+                  .map((f) => (
                   <li key={f.field} className="px-4 py-2 flex items-center gap-2">
                     <TierBadge tier={f.tier as Tier} />
                     <span className="flex-1 text-sm text-slate-200 flex items-center gap-1.5">

@@ -45,3 +45,15 @@ def test_version_and_source_present():
     meta = build_field_metadata()
     assert meta["version"]
     assert "enums" in meta["generated_from"]
+
+
+def test_metadata_includes_enemy_entity():
+    meta = build_field_metadata()
+    enemy = meta["entities"]["enemy"]
+    assert enemy["label"]
+    for key in ("hp", "ep", "rupia"):
+        f = enemy["fields"][key]
+        assert f["tier"] == "safe"
+        assert f["control"] == "number"
+        assert len(f["valid_range"]) == 2
+        assert f["description"]

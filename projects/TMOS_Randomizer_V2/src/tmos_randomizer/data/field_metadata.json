@@ -512,6 +512,56 @@
           ]
         }
       }
+    },
+    "enemy": {
+      "label": "Battle Enemy",
+      "fields": {
+        "ep": {
+          "label": "Experience Points (EP reward)",
+          "byte": 0,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Experience awarded when defeated.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
+          "used_by": [
+            "levelling"
+          ]
+        },
+        "rupia": {
+          "label": "Rupia (currency drop)",
+          "byte": 1,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Currency dropped when defeated.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
+          "used_by": [
+            "economy"
+          ]
+        },
+        "hp": {
+          "label": "HP (hit points)",
+          "byte": 7,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Hit points in turn-based battle.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
+          "used_by": [
+            "combat"
+          ]
+        }
+      }
     }
   }
 }

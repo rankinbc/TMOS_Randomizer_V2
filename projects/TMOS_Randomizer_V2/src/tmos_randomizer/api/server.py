@@ -59,6 +59,7 @@ from ..core import inventory_caps as _inv_caps
 from ..core import exp_table as _exp_table
 from ..core import player_stats as _player_stats
 from ..core import enemies as _enemies
+from ..core import enemy_selection as _enemy_selection
 from ..core import enemy_stats as _enemy_stats
 from ..core import encounter_lineups as _encounter_lineups
 from ..core import encounter_groups as _encounter_groups
@@ -2947,6 +2948,18 @@ async def get_enemies():
         "vanilla": vanilla_stats,
         "_note": "HP/EP/Rupia are live ROM reads from $8341 (Bank 3).",
     }
+
+
+@app.get("/api/rom/enemies/selectable")
+async def get_selectable_enemies():
+    """Canonical list of turn-based enemy IDs safe to offer in UI dropdowns.
+
+    Returns every enemy from the static roster that is NOT in
+    CONSERVATIVE_DANGER_ENEMY_IDS (excludes crash IDs 0x0B, 0x0C and
+    dangerous/unknown variants 0x0F, 0x17, 0x25).  Does not require a loaded
+    ROM — derived from the static enemy roster only.
+    """
+    return {"enemies": _enemy_selection.selectable_enemy_ids()}
 
 
 @app.get("/api/rom/enemy-stats")

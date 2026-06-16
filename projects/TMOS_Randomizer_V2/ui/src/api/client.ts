@@ -361,6 +361,9 @@ export interface PlayerStatsTransform {
   range_end?: number;
 }
 
+// Canonical list of enemy IDs safe to offer in dropdowns (crash/danger IDs excluded server-side).
+export interface SelectableEnemy { enemy_id: number; enemy_id_hex: string; name: string; }
+
 // Enemies / Encounter Lineups / Encounter Groups
 export interface BattleEnemy {
   enemy_id: number;
@@ -968,6 +971,11 @@ class ApiClient {
   // Enemies / Encounter Lineups / Encounter Groups
   async getEnemies(): Promise<{ enemies: BattleEnemy[]; vanilla: Record<string, EnemyStat> }> {
     return this.fetch('/api/rom/enemies');
+  }
+
+  // Canonical safe-to-select enemy list for dropdowns (crash/danger IDs excluded server-side).
+  async getSelectableEnemies(): Promise<{ enemies: SelectableEnemy[] }> {
+    return this.fetch('/api/rom/enemies/selectable');
   }
 
   async patchEnemyStat(

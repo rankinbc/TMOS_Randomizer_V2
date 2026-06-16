@@ -1,25 +1,27 @@
-import { useState } from 'react';
+import { useRandomizerStore } from '../../store';
 import { AdvancedView } from './AdvancedView';
 import { JsonDebugPanel } from '../debug/JsonDebugPanel';
 
 export function ExpertView() {
-  const [unlocked, setUnlocked] = useState(false);
+  const expertUnlocked = useRandomizerStore((s) => s.expertUnlocked);
+  const unlockExpert = useRandomizerStore((s) => s.unlockExpert);
 
-  if (!unlocked) {
+  if (!expertUnlocked) {
     return (
-      <div className="flex items-center justify-center h-full p-8">
+      <div className="flex items-center justify-center h-full p-8 bg-slate-900">
         <div className="max-w-md text-center">
-          <div className="text-4xl mb-3">{'⚠'}</div>
-          <h2 className="text-xl font-semibold text-red-400 mb-2">Danger Zone</h2>
-          <p className="text-slate-400 mb-6">
-            These controls edit raw ROM bytes and can crash or corrupt the game if
-            set incorrectly. Only proceed if you understand the risk.
+          <div className="text-5xl mb-4">{'⚠'}</div>
+          <h2 className="text-2xl font-bold text-red-400 mb-3">Expert Controls — Danger Zone</h2>
+          <p className="text-slate-400 mb-6 leading-relaxed">
+            These controls edit raw ROM bytes and combat formulas directly. Setting
+            them incorrectly can crash the game or corrupt your saves. Only proceed if
+            you understand and accept this risk.
           </p>
           <button
-            onClick={() => setUnlocked(true)}
-            className="px-4 py-2 bg-red-700 hover:bg-red-600 text-white rounded font-medium"
+            onClick={unlockExpert}
+            className="px-5 py-2.5 bg-red-700 hover:bg-red-600 text-white rounded font-medium"
           >
-            I understand — unlock Expert controls
+            I understand this can crash the game
           </button>
         </div>
       </div>
