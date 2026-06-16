@@ -827,6 +827,41 @@ async def update_screen_fields(
     }
 
 
+@app.get("/api/rom/screen/{chapter_num}/{screen_index}/vanilla")
+async def get_screen_vanilla(chapter_num: int, screen_index: int):
+    """Return a screen's ORIGINAL (as-uploaded) 16 bytes, for change comparison."""
+    if _rom_vanilla is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    # Parse the pristine snapshot independently of the (mutated) live world.
+    # ROMReader/load_rom read from a file path, so mirror the upload flow:
+    # write the immutable vanilla bytes to a temp file and load a throwaway world.
+    temp_dir = Path(tempfile.gettempdir()) / "tmos_randomizer"
+    temp_dir.mkdir(exist_ok=True)
+    vanilla_path = temp_dir / "_vanilla_snapshot.nes"
+    with open(vanilla_path, "wb") as f:
+        f.write(_rom_vanilla)
+    vanilla_world = load_rom(vanilla_path)
+
+    chapter = vanilla_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+    s = chapter.get_screen(screen_index)
+    if s is None:
+        raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
+    return {
+        "index": s.relative_index, "global_index": s.global_index,
+        "parent_world": s.parent_world, "ambient_sound": s.ambient_sound,
+        "content": s.content, "objectset": s.objectset,
+        "datapointer": s.datapointer, "exit_position": s.exit_position,
+        "top_tiles": s.top_tiles, "bottom_tiles": s.bottom_tiles,
+        "worldscreen_color": s.worldscreen_color, "sprites_color": s.sprites_color,
+        "unknown": s.unknown, "event": s.event,
+        "nav_right": s.screen_index_right, "nav_left": s.screen_index_left,
+        "nav_down": s.screen_index_down, "nav_up": s.screen_index_up,
+    }
+
+
 # =============================================================================
 # API Endpoints - Screen Rendering
 # =============================================================================
