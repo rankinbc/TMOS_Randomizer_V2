@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRandomizerStore } from '../../store';
 import { NavigationMapView } from '../screen/NavigationMapView';
 import { ScreenGrid } from '../screen/ScreenGrid';
@@ -29,8 +29,8 @@ export function WorldView() {
   const [editor, setEditor] = useState<{ index: number; half: 'top' | 'bottom' } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
 
-  const screens = chapterData?.screens ?? [];
-  const byIndex = new Map(screens.map((s) => [s.index, s]));
+  const screens = useMemo(() => chapterData?.screens ?? [], [chapterData]);
+  const byIndex = useMemo(() => new Map(screens.map((s) => [s.index, s])), [screens]);
   const selectedScreenData = selectedScreen != null ? byIndex.get(selectedScreen) : undefined;
   const editorScreen = editor ? byIndex.get(editor.index) : undefined;
 
@@ -39,9 +39,9 @@ export function WorldView() {
     if (editor && chapterData) loadScreenVanilla(chapterData.chapter_num, editor.index);
   }, [editor, chapterData, loadScreenVanilla]);
 
-  const openEditor = useCallback((index: number) => {
+  const openEditor = useCallback((index: number, half: 'top' | 'bottom' = 'top') => {
     setSelectedScreen(index);
-    setEditor({ index, half: 'top' });
+    setEditor({ index, half });
   }, [setSelectedScreen]);
 
   const onScreenContextMenu = useCallback((index: number, x: number, y: number) => {
@@ -90,6 +90,7 @@ export function WorldView() {
             chapterNum={chapterData.chapter_num}
             screens={screens}
             onScreenSelect={setSelectedScreen}
+            onEdit={(half) => openEditor(selectedScreen!, half)}
             onClose={() => setSelectedScreen(null)}
           />
         </div>
@@ -110,7 +111,7 @@ export function WorldView() {
           onScreenSelect={(i) => setEditor((e) => (e ? { ...e, index: i } : e))}
           fieldMetadata={fieldMetadata?.entities.worldscreen ?? null}
           vanilla={
-            editor && screenVanilla && screenVanilla.index === editor.index ? screenVanilla : null
+            screenVanilla && screenVanilla.index === editor.index ? screenVanilla : null
           }
           onFieldChange={(field, value) => {
             updateScreenFields(editor.index, { [field]: value }).catch(() => {
