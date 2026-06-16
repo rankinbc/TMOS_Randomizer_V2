@@ -54,6 +54,7 @@ interface NavigationMapViewProps {
   chapter: ChapterData;
   selectedScreen: number | null;
   onScreenSelect: (index: number) => void;
+  onScreenContextMenu?: (index: number, x: number, y: number) => void;
   tileSize?: number;
 }
 
@@ -338,6 +339,7 @@ export function NavigationMapView({
   chapter,
   selectedScreen,
   onScreenSelect,
+  onScreenContextMenu,
   tileSize = 64,
 }: NavigationMapViewProps) {
   // Store actions and data
@@ -1304,6 +1306,12 @@ export function NavigationMapView({
                       width: tileWidth,
                       height: tileHeight,
                     }}
+                    onContextMenu={(e) => {
+                      if (onScreenContextMenu) {
+                        e.preventDefault();
+                        onScreenContextMenu(screen.index, e.clientX, e.clientY);
+                      }
+                    }}
                   >
                     <div
                       className="relative w-full h-full"
@@ -1469,6 +1477,12 @@ export function NavigationMapView({
                   draggable
                   onDragStart={(e) => handleDragStart(e, screen.index)}
                   onDragEnd={handleDragEnd}
+                  onContextMenu={(e) => {
+                    if (onScreenContextMenu) {
+                      e.preventDefault();
+                      onScreenContextMenu(screen.index, e.clientX, e.clientY);
+                    }
+                  }}
                 >
                   <ScreenMini
                     screen={screen}
@@ -1653,6 +1667,12 @@ export function NavigationMapView({
                   draggable
                   onDragStart={(e) => handleDragStart(e, screen.index)}
                   onDragEnd={handleDragEnd}
+                  onContextMenu={(e) => {
+                    if (onScreenContextMenu) {
+                      e.preventDefault();
+                      onScreenContextMenu(screen.index, e.clientX, e.clientY);
+                    }
+                  }}
                 >
                   <ScreenMini
                     screen={screen}

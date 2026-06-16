@@ -163,16 +163,21 @@ class TileSectionUpdate(BaseModel):
 
 
 class ScreenFieldsUpdate(BaseModel):
-    """Allowlisted low-risk WorldScreen fields for the editor modal.
+    """Allowlisted editable WorldScreen fields for the editor modal.
 
-    Deliberately EXCLUDES parent_world, ambient_sound, navigation, exit_position,
-    and datapointer/chr — those are managed elsewhere and are not safe to set here.
+    Covers every WorldScreen byte EXCEPT the 4 navigation pointers
+    (screen_index_right/left/down/up), which are edited via map drag.
     """
     objectset: Optional[int] = None
     content: Optional[int] = None
     event: Optional[int] = None
     worldscreen_color: Optional[int] = None
     sprites_color: Optional[int] = None
+    parent_world: Optional[int] = None
+    ambient_sound: Optional[int] = None
+    datapointer: Optional[int] = None
+    exit_position: Optional[int] = None
+    unknown: Optional[int] = None
 
 
 class TileBankUpdate(BaseModel):
@@ -405,6 +410,7 @@ async def get_chapter_data(chapter_num: int):
             "bottom_tiles": screen.bottom_tiles,
             "objectset": screen.objectset,
             "parent_world": screen.parent_world,
+            "ambient_sound": screen.ambient_sound,
             "event": screen.event,
             "content": screen.content,
             "nav_right": screen.screen_index_right,
@@ -414,6 +420,7 @@ async def get_chapter_data(chapter_num: int):
             "worldscreen_color": screen.worldscreen_color,
             "sprites_color": screen.sprites_color,
             "exit_position": screen.exit_position,
+            "unknown": screen.unknown,
         })
 
     return {
@@ -447,8 +454,12 @@ async def get_screen_data(chapter_num: int, screen_index: int):
         "bottom_tiles": screen.bottom_tiles,
         "objectset": screen.objectset,
         "parent_world": screen.parent_world,
+        "ambient_sound": screen.ambient_sound,
         "event": screen.event,
         "content": screen.content,
+        "unknown": screen.unknown,
+        "worldscreen_color": screen.worldscreen_color,
+        "sprites_color": screen.sprites_color,
         "navigation": {
             "right": screen.screen_index_right,
             "left": screen.screen_index_left,
@@ -741,9 +752,11 @@ async def update_screen_fields(
     screen_index: int,
     update: ScreenFieldsUpdate,
 ):
-    """Update a screen's low-risk fields (live, in-memory).
+    """Update a screen's editable fields (live, in-memory).
 
-    Strict allowlist: objectset, content, event, worldscreen_color, sprites_color.
+    Allowlist: every WorldScreen byte except the 4 navigation pointers —
+    objectset, content, event, worldscreen_color, sprites_color, parent_world,
+    ambient_sound, datapointer, exit_position, unknown.
     Each provided value must be 0-255. Mirrors the tiles PATCH guard order.
     """
     from ..core.constants import get_chr_index
@@ -757,19 +770,28 @@ async def update_screen_fields(
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
 
-    # Allowlist: explicit so excluded fields can never be set here.
+    # Allowlist: explicit so excluded fields (nav pointers) can never be set here.
     fields = {
         "objectset": update.objectset,
         "content": update.content,
         "event": update.event,
         "worldscreen_color": update.worldscreen_color,
         "sprites_color": update.sprites_color,
+        "parent_world": update.parent_world,
+        "ambient_sound": update.ambient_sound,
+        "datapointer": update.datapointer,
+        "exit_position": update.exit_position,
+        "unknown": update.unknown,
     }
     provided = {k: v for k, v in fields.items() if v is not None}
     if not provided:
         raise HTTPException(
             status_code=400,
-            detail="Provide at least one of: objectset, content, event, worldscreen_color, sprites_color",
+            detail=(
+                "Provide at least one of: objectset, content, event, "
+                "worldscreen_color, sprites_color, parent_world, ambient_sound, "
+                "datapointer, exit_position, unknown"
+            ),
         )
     for label, val in provided.items():
         if val < 0 or val > 255:
@@ -790,6 +812,7 @@ async def update_screen_fields(
             "bottom_tiles": screen.bottom_tiles,
             "objectset": screen.objectset,
             "parent_world": screen.parent_world,
+            "ambient_sound": screen.ambient_sound,
             "event": screen.event,
             "content": screen.content,
             "nav_right": screen.screen_index_right,
@@ -799,7 +822,55 @@ async def update_screen_fields(
             "worldscreen_color": screen.worldscreen_color,
             "sprites_color": screen.sprites_color,
             "exit_position": screen.exit_position,
+            "unknown": screen.unknown,
         },
+    }
+
+
+@app.get("/api/rom/screen/{chapter_num}/{screen_index}/vanilla")
+async def get_screen_vanilla(chapter_num: int, screen_index: int):
+    """Return a screen's original (as-uploaded) field values, for change comparison.
+
+    Returns the screen's original field values (the same ~18 keys as the live
+    screen endpoint, including ``index`` and ``global_index``), parsed from the
+    pristine ROM rather than the (possibly mutated) live world.
+    """
+    if _rom_vanilla is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    # Parse the pristine snapshot independently of the (mutated) live world.
+    # Edits only ever touch the in-memory _game_world/_rom_data; the file at
+    # _rom_path is the as-uploaded ROM and is never mutated, so re-parsing it
+    # yields pristine data (same established pattern as _baseline_reachability).
+    if _rom_path is not None and Path(_rom_path).exists():
+        vanilla_world = load_rom(_rom_path)
+    else:
+        # Fallback: _rom_path is gone; load from the immutable bytes snapshot
+        # via a unique temp file that is always cleaned up.
+        tmp = tempfile.NamedTemporaryFile(suffix=".nes", delete=False)
+        try:
+            tmp.write(_rom_vanilla)
+            tmp.close()
+            vanilla_world = load_rom(tmp.name)
+        finally:
+            os.unlink(tmp.name)
+
+    chapter = vanilla_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+    s = chapter.get_screen(screen_index)
+    if s is None:
+        raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
+    return {
+        "index": s.relative_index, "global_index": s.global_index,
+        "parent_world": s.parent_world, "ambient_sound": s.ambient_sound,
+        "content": s.content, "objectset": s.objectset,
+        "datapointer": s.datapointer, "exit_position": s.exit_position,
+        "top_tiles": s.top_tiles, "bottom_tiles": s.bottom_tiles,
+        "worldscreen_color": s.worldscreen_color, "sprites_color": s.sprites_color,
+        "unknown": s.unknown, "event": s.event,
+        "nav_right": s.screen_index_right, "nav_left": s.screen_index_left,
+        "nav_down": s.screen_index_down, "nav_up": s.screen_index_up,
     }
 
 

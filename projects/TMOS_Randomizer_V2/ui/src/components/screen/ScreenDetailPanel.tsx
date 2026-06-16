@@ -1,10 +1,7 @@
-import { useState } from 'react';
 import type { ScreenData } from '../../api/client';
 import { ScreenRenderer } from './ScreenRenderer';
 import { Tooltip } from '../shared/Tooltip';
 import { formatScreenId } from '../../utils/formatters';
-import { useRandomizerStore } from '../../store';
-import { ScreenEditorModal } from './ScreenEditorModal';
 import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './screenEnums';
 
 interface ScreenDetailPanelProps {
@@ -12,6 +9,7 @@ interface ScreenDetailPanelProps {
   chapterNum: number;
   screens?: ScreenData[];  // All screens for lookup
   onScreenSelect?: (index: number) => void;  // Navigate to screen
+  onEdit?: (half: 'top' | 'bottom') => void;  // Request the WorldView-owned editor
   onClose?: () => void;
 }
 
@@ -81,7 +79,7 @@ function isScreenInPast(screenIndex: number, chapterNum: number): boolean {
   return PAST_SCREEN_INDICES[chapterNum]?.has(screenIndex) ?? false;
 }
 
-export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect, onClose }: ScreenDetailPanelProps) {
+export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect, onEdit, onClose }: ScreenDetailPanelProps) {
   const contentInfo = getContentInfo(screen.content, chapterNum);
   const eventInfo = getEventInfo(screen.event);
   const parentInfo = getParentWorldInfo(screen.parent_world);
@@ -101,47 +99,7 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
   const topTileBank = (screen.datapointer & 0x80) ? 1 : 0;
   const bottomTileBank = (screen.datapointer & 0x40) ? 1 : 0;
 
-  const updateScreenTiles = useRandomizerStore((s) => s.updateScreenTiles);
-  const updateScreenFields = useRandomizerStore((s) => s.updateScreenFields);
-  const [tileNote, setTileNote] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [activeHalf, setActiveHalf] = useState<'top' | 'bottom'>('top');
-
-  const openEditor = (half: 'top' | 'bottom') => {
-    setActiveHalf(half);
-    setEditorOpen(true);
-  };
-
-  const handleFieldChange = async (
-    field: 'objectset' | 'content' | 'event' | 'worldscreen_color' | 'sprites_color',
-    value: number,
-  ) => {
-    try {
-      await updateScreenFields(screen.index, { [field]: value });
-    } catch {
-      // store already surfaced the error via apiError
-    }
-  };
-
-  const handlePickTile = async (which: 'top' | 'bottom', globalIndex: number) => {
-    setTileNote(null);
-    try {
-      const result = await updateScreenTiles(
-        screen.index,
-        which === 'top' ? { top_tiles: globalIndex } : { bottom_tiles: globalIndex }
-      );
-      if (result.datapointer_changed) {
-        setTileNote(
-          result.chr_changed
-            ? 'Bank change also adjusted the DataPointer and CHR bank.'
-            : 'Bank change also adjusted the DataPointer.'
-        );
-      }
-    } catch {
-      // The store already surfaced the failure via apiError; swallow here so the
-      // click handler doesn't produce an unhandled promise rejection.
-    }
-  };
+  const openEditor = (half: 'top' | 'bottom') => onEdit?.(half);
 
   return (
     <div className="bg-slate-800 h-full overflow-y-auto">
@@ -316,9 +274,6 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
                 0x{screen.bottom_tiles.toString(16).toUpperCase()} ({screen.bottom_tiles})
               </button>
             </div>
-            {tileNote && (
-              <div className="text-xs text-amber-400 pt-1">{tileNote}</div>
-            )}
           </div>
         </DataSection>
 
@@ -327,7 +282,7 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
           <div className="flex justify-between text-sm items-center">
             <span className="text-slate-500">ObjectSet</span>
             <button
-              onClick={() => openEditor(activeHalf)}
+              onClick={() => openEditor('top')}
               className="text-slate-200 font-mono px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 hover:ring-1 hover:ring-blue-400 transition-all"
               title="Open the screen editor to change ObjectSet"
             >
@@ -362,19 +317,6 @@ export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect,
         </DataSection>
       </div>
 
-      {editorOpen && (
-        <ScreenEditorModal
-          screen={screen}
-          screens={screens}
-          chapterNum={chapterNum}
-          activeHalf={activeHalf}
-          onHalfChange={setActiveHalf}
-          onClose={() => setEditorOpen(false)}
-          onScreenSelect={onScreenSelect}
-          onFieldChange={handleFieldChange}
-          onTilePick={handlePickTile}
-        />
-      )}
     </div>
   );
 }

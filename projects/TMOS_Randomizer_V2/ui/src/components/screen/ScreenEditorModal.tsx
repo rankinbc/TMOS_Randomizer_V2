@@ -1,31 +1,21 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { api, ApiClient } from '../../api/client';
-import type { ScreenData } from '../../api/client';
+import type { ScreenData, ScreenVanilla } from '../../api/client';
+import type { EntityMetadata } from '../../types/metadata';
 import { ScreenNeighborhood } from './ScreenNeighborhood';
-import { EnumSelectField, type EnumOption } from './EnumSelectField';
+import type { EnumOption } from './EnumSelectField';
 import { ObjectSetField } from './ObjectSetField';
+import { GuidedField } from '../shared/GuidedField';
+import { GuidedSelectField } from './GuidedSelectField';
+import { GuidedNumberField } from './GuidedNumberField';
+import {
+  PARENT_WORLD_OPTIONS,
+  WS_COLOR_SWATCHES,
+  SPRITE_COLOR_SWATCHES,
+} from './worldScreenFieldOptions';
 import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './screenEnums';
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
-
-// WorldScreen color options — labels from the renderer's getGroundColor cases.
-const WS_COLOR_OPTIONS: EnumOption[] = [
-  { value: 0x21, label: '0x21 Past (green)' },
-  { value: 0x30, label: '0x30 Water (blue)' },
-  { value: 0x25, label: '0x25 Desert (sand)' },
-  { value: 0x1a, label: '0x1A Dark palace' },
-  { value: 0x3c, label: '0x3C Red' },
-  { value: 0x23, label: '0x23 Winter (gray)' },
-  { value: 0x27, label: '0x27 Black' },
-  { value: 0x1c, label: '0x1C Lava' },
-];
-
-// Sprite color — no rich documented map; offer a couple of known anchors and rely
-// on the raw input for the rest.
-const SPRITE_COLOR_OPTIONS: EnumOption[] = [
-  { value: 0x0f, label: '0x0F Default' },
-  { value: 0x30, label: '0x30 Town' },
-];
 
 function buildContentOptions(chapterNum: number): EnumOption[] {
   const opts: EnumOption[] = Object.entries(CONTENT_TYPES).map(([k, v]) => ({
@@ -67,8 +57,23 @@ interface ScreenEditorModalProps {
   onHalfChange: (half: 'top' | 'bottom') => void;
   onClose: () => void;
   onScreenSelect?: (index: number) => void;
-  onFieldChange: (field: 'objectset' | 'content' | 'event' | 'worldscreen_color' | 'sprites_color', value: number) => void;
+  onFieldChange: (
+    field:
+      | 'objectset'
+      | 'content'
+      | 'event'
+      | 'worldscreen_color'
+      | 'sprites_color'
+      | 'parent_world'
+      | 'ambient_sound'
+      | 'datapointer'
+      | 'exit_position'
+      | 'unknown',
+    value: number,
+  ) => void;
   onTilePick: (which: 'top' | 'bottom', globalIndex: number) => void;
+  fieldMetadata?: EntityMetadata | null;
+  vanilla?: ScreenVanilla | null;
 }
 
 export function ScreenEditorModal({
@@ -81,6 +86,8 @@ export function ScreenEditorModal({
   onScreenSelect,
   onFieldChange,
   onTilePick,
+  fieldMetadata,
+  vanilla,
 }: ScreenEditorModalProps) {
   const indices = useMemo(() => Array.from({ length: TOTAL }, (_, i) => i), []);
   const byIndex = useMemo(
@@ -88,6 +95,9 @@ export function ScreenEditorModal({
     [screens],
   );
   const showNeighborhood = byIndex.size > 0;
+
+  const fm = fieldMetadata?.fields;
+  const meta = (k: string) => fm?.[k];
 
   const chr = screen.datapointer & 0x3f;
   const banks = getBanks(screen.datapointer);
@@ -119,38 +129,98 @@ export function ScreenEditorModal({
           />
         )}
 
-        {/* Fields block */}
+        {/* Fields block — every editable byte except the 4 nav pointers, each
+            rendered through a guided wrapper (safety badge + ⓘ + vanilla-changed)
+            driven by the worldscreen field metadata. */}
         <div className="p-3 border-b border-slate-700 space-y-1.5 bg-slate-900/40">
-          <ObjectSetField
-            value={screen.objectset}
-            chapterNum={chapterNum}
-            chr={chr}
-            onChange={(v) => onFieldChange('objectset', v)}
-          />
-          <EnumSelectField
-            label="Content"
-            value={screen.content}
-            options={buildContentOptions(chapterNum)}
-            onChange={(v) => onFieldChange('content', v)}
-          />
-          <EnumSelectField
-            label="Event"
-            value={screen.event}
-            options={EVENT_OPTIONS}
-            onChange={(v) => onFieldChange('event', v)}
-          />
-          <EnumSelectField
-            label="WS Color"
-            value={screen.worldscreen_color}
-            options={WS_COLOR_OPTIONS}
-            onChange={(v) => onFieldChange('worldscreen_color', v)}
-          />
-          <EnumSelectField
-            label="Sprite Color"
-            value={screen.sprites_color}
-            options={SPRITE_COLOR_OPTIONS}
-            onChange={(v) => onFieldChange('sprites_color', v)}
-          />
+          {meta('parent_world') && (
+            <GuidedSelectField
+              meta={meta('parent_world')!}
+              value={screen.parent_world}
+              vanilla={vanilla?.parent_world}
+              options={PARENT_WORLD_OPTIONS}
+              onChange={(v) => onFieldChange('parent_world', v)}
+            />
+          )}
+          {meta('ambient_sound') && (
+            <GuidedNumberField
+              meta={meta('ambient_sound')!}
+              value={screen.ambient_sound}
+              vanilla={vanilla?.ambient_sound}
+              onChange={(v) => onFieldChange('ambient_sound', v)}
+            />
+          )}
+          {meta('content') && (
+            <GuidedSelectField
+              meta={meta('content')!}
+              value={screen.content}
+              vanilla={vanilla?.content}
+              options={buildContentOptions(chapterNum)}
+              onChange={(v) => onFieldChange('content', v)}
+            />
+          )}
+          {/* objectset keeps the enemy-thumbnail control, wrapped for safety/guidance */}
+          {meta('objectset') && (
+            <GuidedField meta={meta('objectset')!} value={screen.objectset} vanilla={vanilla?.objectset}>
+              <ObjectSetField
+                value={screen.objectset}
+                chapterNum={chapterNum}
+                chr={chr}
+                onChange={(v) => onFieldChange('objectset', v)}
+              />
+            </GuidedField>
+          )}
+          {meta('event') && (
+            <GuidedSelectField
+              meta={meta('event')!}
+              value={screen.event}
+              vanilla={vanilla?.event}
+              options={EVENT_OPTIONS}
+              onChange={(v) => onFieldChange('event', v)}
+            />
+          )}
+          {meta('worldscreen_color') && (
+            <GuidedSelectField
+              meta={meta('worldscreen_color')!}
+              value={screen.worldscreen_color}
+              vanilla={vanilla?.worldscreen_color}
+              options={WS_COLOR_SWATCHES}
+              onChange={(v) => onFieldChange('worldscreen_color', v)}
+            />
+          )}
+          {meta('sprites_color') && (
+            <GuidedSelectField
+              meta={meta('sprites_color')!}
+              value={screen.sprites_color}
+              vanilla={vanilla?.sprites_color}
+              options={SPRITE_COLOR_SWATCHES}
+              onChange={(v) => onFieldChange('sprites_color', v)}
+            />
+          )}
+          {meta('datapointer') && (
+            <GuidedNumberField
+              meta={meta('datapointer')!}
+              value={screen.datapointer}
+              vanilla={vanilla?.datapointer}
+              onChange={(v) => onFieldChange('datapointer', v)}
+            />
+          )}
+          {meta('exit_position') && (
+            <GuidedNumberField
+              meta={meta('exit_position')!}
+              value={screen.exit_position}
+              vanilla={vanilla?.exit_position}
+              onChange={(v) => onFieldChange('exit_position', v)}
+            />
+          )}
+          {meta('unknown') && (
+            <GuidedNumberField
+              meta={meta('unknown')!}
+              value={screen.unknown}
+              vanilla={vanilla?.unknown}
+              onChange={(v) => onFieldChange('unknown', v)}
+            />
+          )}
         </div>
 
         {/* Section grid — a grid item's own aspect-ratio does NOT size its auto-row
