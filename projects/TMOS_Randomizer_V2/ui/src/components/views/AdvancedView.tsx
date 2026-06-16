@@ -81,6 +81,7 @@ export function AdvancedView() {
             tierFilter={(tier) => tier !== 'safe'}
             title="Boss Bytes (Advanced)"
             romNote="Advanced boss bytes — expert/display tiers only · safe HP & damage live in the Enemies tab"
+            headerTier="expert"
           />
         )}
         {sub === 'encounters' && <EncounterRatesPanel />}

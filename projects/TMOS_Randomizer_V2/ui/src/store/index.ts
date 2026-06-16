@@ -1118,6 +1118,10 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   // ---------------- Enemies ----------------
 
   loadEnemies: async () => {
+    // Guard against concurrent fetches: EnemiesView and BattleRosterEditor both
+    // prime the roster on mount, which would otherwise fire two GETs before the
+    // first resolves and sets battleEnemies.
+    if (get().enemiesLoading) return;
     set({ enemiesLoading: true, enemiesError: null });
     try {
       const r = await api.getEnemies();

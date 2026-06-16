@@ -45,6 +45,7 @@ export function BossesPanel({
   tierFilter,
   title = 'Bosses',
   romNote = 'Per-boss HP, projectile damage & timing · ROM_VERIFIED single bytes ($17248–$1875D)',
+  headerTier = 'safe',
 }: {
   /**
    * When provided, restricts which boss fields are rendered/editable by tier.
@@ -54,6 +55,11 @@ export function BossesPanel({
   tierFilter?: (tier: string) => boolean;
   title?: string;
   romNote?: string;
+  /**
+   * Tier shown on the panel header badge. Defaults to 'safe'; the Expert tab
+   * passes 'expert' since it renders only the advanced (non-safe) boss bytes.
+   */
+  headerTier?: Tier;
 } = {}) {
   const { data, setData, loading, error, reload } = useRomResource(() => api.getBossStats());
 
@@ -83,7 +89,7 @@ export function BossesPanel({
   return (
     <PanelFrame
       title={title}
-      tier="safe"
+      tier={headerTier}
       romNote={romNote}
       help={
         <div className="text-xs space-y-1">
