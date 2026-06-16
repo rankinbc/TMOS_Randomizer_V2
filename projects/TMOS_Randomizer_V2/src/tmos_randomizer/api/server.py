@@ -163,16 +163,21 @@ class TileSectionUpdate(BaseModel):
 
 
 class ScreenFieldsUpdate(BaseModel):
-    """Allowlisted low-risk WorldScreen fields for the editor modal.
+    """Allowlisted editable WorldScreen fields for the editor modal.
 
-    Deliberately EXCLUDES parent_world, ambient_sound, navigation, exit_position,
-    and datapointer/chr — those are managed elsewhere and are not safe to set here.
+    Covers every WorldScreen byte EXCEPT the 4 navigation pointers
+    (screen_index_right/left/down/up), which are edited via map drag.
     """
     objectset: Optional[int] = None
     content: Optional[int] = None
     event: Optional[int] = None
     worldscreen_color: Optional[int] = None
     sprites_color: Optional[int] = None
+    parent_world: Optional[int] = None
+    ambient_sound: Optional[int] = None
+    datapointer: Optional[int] = None
+    exit_position: Optional[int] = None
+    unknown: Optional[int] = None
 
 
 class TileBankUpdate(BaseModel):
@@ -405,6 +410,7 @@ async def get_chapter_data(chapter_num: int):
             "bottom_tiles": screen.bottom_tiles,
             "objectset": screen.objectset,
             "parent_world": screen.parent_world,
+            "ambient_sound": screen.ambient_sound,
             "event": screen.event,
             "content": screen.content,
             "nav_right": screen.screen_index_right,
@@ -414,6 +420,7 @@ async def get_chapter_data(chapter_num: int):
             "worldscreen_color": screen.worldscreen_color,
             "sprites_color": screen.sprites_color,
             "exit_position": screen.exit_position,
+            "unknown": screen.unknown,
         })
 
     return {
@@ -447,8 +454,12 @@ async def get_screen_data(chapter_num: int, screen_index: int):
         "bottom_tiles": screen.bottom_tiles,
         "objectset": screen.objectset,
         "parent_world": screen.parent_world,
+        "ambient_sound": screen.ambient_sound,
         "event": screen.event,
         "content": screen.content,
+        "unknown": screen.unknown,
+        "worldscreen_color": screen.worldscreen_color,
+        "sprites_color": screen.sprites_color,
         "navigation": {
             "right": screen.screen_index_right,
             "left": screen.screen_index_left,
@@ -741,9 +752,11 @@ async def update_screen_fields(
     screen_index: int,
     update: ScreenFieldsUpdate,
 ):
-    """Update a screen's low-risk fields (live, in-memory).
+    """Update a screen's editable fields (live, in-memory).
 
-    Strict allowlist: objectset, content, event, worldscreen_color, sprites_color.
+    Allowlist: every WorldScreen byte except the 4 navigation pointers —
+    objectset, content, event, worldscreen_color, sprites_color, parent_world,
+    ambient_sound, datapointer, exit_position, unknown.
     Each provided value must be 0-255. Mirrors the tiles PATCH guard order.
     """
     from ..core.constants import get_chr_index
@@ -757,19 +770,28 @@ async def update_screen_fields(
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
 
-    # Allowlist: explicit so excluded fields can never be set here.
+    # Allowlist: explicit so excluded fields (nav pointers) can never be set here.
     fields = {
         "objectset": update.objectset,
         "content": update.content,
         "event": update.event,
         "worldscreen_color": update.worldscreen_color,
         "sprites_color": update.sprites_color,
+        "parent_world": update.parent_world,
+        "ambient_sound": update.ambient_sound,
+        "datapointer": update.datapointer,
+        "exit_position": update.exit_position,
+        "unknown": update.unknown,
     }
     provided = {k: v for k, v in fields.items() if v is not None}
     if not provided:
         raise HTTPException(
             status_code=400,
-            detail="Provide at least one of: objectset, content, event, worldscreen_color, sprites_color",
+            detail=(
+                "Provide at least one of: objectset, content, event, "
+                "worldscreen_color, sprites_color, parent_world, ambient_sound, "
+                "datapointer, exit_position, unknown"
+            ),
         )
     for label, val in provided.items():
         if val < 0 or val > 255:
@@ -790,6 +812,7 @@ async def update_screen_fields(
             "bottom_tiles": screen.bottom_tiles,
             "objectset": screen.objectset,
             "parent_world": screen.parent_world,
+            "ambient_sound": screen.ambient_sound,
             "event": screen.event,
             "content": screen.content,
             "nav_right": screen.screen_index_right,
@@ -799,6 +822,7 @@ async def update_screen_fields(
             "worldscreen_color": screen.worldscreen_color,
             "sprites_color": screen.sprites_color,
             "exit_position": screen.exit_position,
+            "unknown": screen.unknown,
         },
     }
 
