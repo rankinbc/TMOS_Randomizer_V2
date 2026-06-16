@@ -105,6 +105,17 @@ screens are stranded with no edge-aligned free port (Ch2/3/4). **265 screens sti
 unrepaired, ~211 for lack of an aligned port.** → next lever = TS-swap-then-open (make an
 edge alignable), then warp-link for islanded components.
 
+## Repair pass — +TS-swap measured on grow seed 42 (2026-06-16)
+open-in-place + TS-swap (CHR-valid tiles from same-datapointer screens, guarded so a swap
+never breaks an existing link), 0xFE preserved 79→79. Reachable after: Ch1 125/131,
+Ch2 88/137, Ch3 151/153, Ch4 159/164, Ch5 121/154. **Total unrepaired 265 → 95.** TS-swap
+solved the "no aligned port" leftovers — Ch3/Ch4 now ~complete (and exceed vanilla, since
+repair connects progression-gated regions too). Remaining 95 concentrate in **Ch2 (49) +
+Ch5 (33) cross-era PAST regions**: PRESENT-unreachable, and same-era walk links can't bridge
+the era boundary, so a PAST island can only join via the single time door. → next lever =
+warp-link / time-door-landing repair for cross-era islands (+ a few portless screens).
+Committed: 532ca00 (TS-swap), 0fafa09 (wrapper), cf1ab04 (foundation).
+
 ## Status & next
 - Working on **grow** (lab_grow), not organic. Both currently fail the (proxy) gate.
 - Repair pass v1 foundation shipped (compute_reachable + open-in-place). NEXT increments:
