@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -25,6 +24,7 @@ from ..phases.phase1_planning import plan_randomization
 from ..phases.phase2_shaping import shape_world
 from ..phases.phase3_connection import connect_world
 from ..plan import RandomizationPlan, RandomizationResult
+from ..repair.reachability_repair import WorldRepairReport, repair_reachability
 from .base import RandomizationStrategy
 from .registry import register_strategy
 
@@ -34,13 +34,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_NAVIGABILITY_RETRIES = 4
-
 
 class LabAdapterStrategy(RandomizationStrategy):
     """Base adapter. Subclass and set ``lab_strategy_name`` to register."""
 
     lab_strategy_name: str = ""
+    # Layout-rewriting strategies (e.g. grow) produce under-reaching worlds that the
+    # generic reachability-repair pass connects to 100%. Nav-preserving strategies
+    # (identity, tileshuffle) must NOT repair: they'd "fix" vanilla's progression-gated
+    # reachability up to 100%, corrupting their pass-through/graph-preserving semantics.
+    repairs_reachability: bool = False
 
     def create_plan(self, seed: int) -> RandomizationPlan:
         world_plan = plan_randomization(self.config, seed=seed)
@@ -84,46 +87,29 @@ class LabAdapterStrategy(RandomizationStrategy):
             rom_md5=rom_md5,
         )
 
-        # TMOS reaches many screens only through stairways (nav value 0xFE),
-        # so pure directed-BFS reachability is strictly less than the real
-        # reachable world. Rather than encode stairway semantics here, take a
-        # baseline snapshot of the unmutated game_world and require the Lab
-        # strategy's output to be *no worse* than baseline per chapter.
-        baseline_reach = _reach_counts(game_world)
-        snapshot = _snapshot_game_world(game_world)
+        candidate = lab_strategy.generate(ctx, plan.seed)
+        _stamp_candidate_onto_world(candidate, game_world)
 
-        seed = plan.seed
-        attempts = 0
-        last_regressions: list[str] = []
-
-        while attempts <= _NAVIGABILITY_RETRIES:
-            attempts += 1
-            candidate = lab_strategy.generate(ctx, seed)
-            _stamp_candidate_onto_world(candidate, game_world)
-
-            regressions = _reach_regressions(game_world, baseline_reach)
-            if not regressions:
-                if attempts > 1:
-                    logger.info(
-                        "Lab adapter '%s' passed self-validation after %d attempts "
-                        "(reseeded).", self.lab_strategy_name, attempts,
-                    )
-                return
-
-            last_regressions = regressions
-            logger.warning(
-                "Lab adapter '%s' regressed reachability on attempt %d "
-                "(seed %d): %s — reseeding.",
-                self.lab_strategy_name, attempts, seed, "; ".join(regressions),
+        # Reachability guarantee. For layout-rewriting strategies (grow), run the generic
+        # reachability-repair pass: it drives every chapter to 100% reachable (warp-aware)
+        # by least-damage, 0xFE-preserving edits — an absolute floor that supersedes the
+        # old "no worse than vanilla" reseed gate (a differential one). Needs the ROM bytes
+        # for edge extraction; a ROM-less preview simply skips repair.
+        self._last_repair_report: Optional[WorldRepairReport] = None
+        if self.repairs_reachability and rom_data:
+            report = repair_reachability(game_world, rom_data)
+            self._last_repair_report = report
+            if report.total_unrepaired:
+                raise RuntimeError(
+                    f"Reachability repair could not fully connect "
+                    f"'{self.lab_strategy_name}' output: {report.total_unrepaired} "
+                    f"screen(s) remain unreachable across "
+                    f"{len(report.chapters)} chapter(s)."
+                )
+            logger.info(
+                "Lab adapter '%s': repair connected all chapters to 100%% "
+                "(%d repairs).", self.lab_strategy_name, report.total_records,
             )
-            _restore_game_world(game_world, snapshot)
-            seed = random.Random(seed).randint(1, 2**31 - 1)
-
-        raise RuntimeError(
-            f"Lab strategy '{self.lab_strategy_name}' regressed reachability "
-            f"vs. baseline after {attempts} attempts. "
-            f"Regressions: {'; '.join(last_regressions)}"
-        )
 
     def apply_plan(
         self,
@@ -158,6 +144,10 @@ class LabAdapterStrategy(RandomizationStrategy):
                 "strategy": self.name,
                 "lab_strategy": self.lab_strategy_name,
             }
+            report = getattr(self, "_last_repair_report", None)
+            if report is not None:
+                result.stats["repair_records"] = report.total_records
+                result.stats["repair_unrepaired"] = report.total_unrepaired
             result.success = True
         except Exception as e:
             result.errors.append(str(e))
@@ -214,35 +204,6 @@ def _stamp_candidate_onto_world(candidate, game_world: "GameWorld") -> None:
                 scr.mark_modified()
 
 
-def _snapshot_game_world(game_world: "GameWorld") -> dict:
-    """Capture ROM-byte fields + _modified so retries start from a clean slate."""
-    snap: dict = {}
-    for chapter in game_world:
-        snap[chapter.chapter_num] = [
-            (
-                screen.relative_index,
-                tuple(getattr(screen, f) for f in _ROM_FIELDS),
-                screen.is_modified,
-            )
-            for screen in chapter.screens
-        ]
-    return snap
-
-
-def _restore_game_world(game_world: "GameWorld", snapshot: dict) -> None:
-    for chapter in game_world:
-        entries = snapshot.get(chapter.chapter_num, [])
-        by_rel = {rel: (fields, mod) for rel, fields, mod in entries}
-        for screen in chapter.screens:
-            entry = by_rel.get(screen.relative_index)
-            if entry is None:
-                continue
-            fields, mod = entry
-            for name, val in zip(_ROM_FIELDS, fields):
-                setattr(screen, name, val)
-            screen._modified = mod
-
-
 def _reach_counts(game_world: "GameWorld") -> dict[int, int]:
     """Per-chapter count of screens reachable from screen 0.
 
@@ -266,22 +227,6 @@ def _reach_counts(game_world: "GameWorld") -> dict[int, int]:
         result = analyze_reachability(chapter, starting_screen=0)
         counts[chapter.chapter_num] = len(result.reachable_screens)
     return counts
-
-
-def _reach_regressions(
-    game_world: "GameWorld",
-    baseline: dict[int, int],
-) -> list[str]:
-    """Return human-readable regressions vs. baseline. Empty list == no regression."""
-    regressions: list[str] = []
-    current = _reach_counts(game_world)
-    for ch_num, baseline_count in baseline.items():
-        cur = current.get(ch_num, 0)
-        if cur < baseline_count:
-            regressions.append(
-                f"Ch{ch_num}: {cur} reachable (was {baseline_count})"
-            )
-    return regressions
 
 
 # =============================================================================
@@ -323,9 +268,11 @@ class GrowAdapter(LabAdapterStrategy):
     name = "lab_grow"
     description = (
         "Lab grow: zero-broken-edge section growth, written to navigation with "
-        "inter-section linking. Output is navigable by construction."
+        "inter-section linking, then the reachability-repair pass connects every "
+        "chapter to 100% reachable (0xFE-preserving)."
     )
     lab_strategy_name = "grow"
+    repairs_reachability = True
 
 
 __all__ = [
