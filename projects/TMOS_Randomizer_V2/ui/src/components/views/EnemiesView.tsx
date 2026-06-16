@@ -3,6 +3,8 @@ import { useRandomizerStore } from '../../store';
 import { BattleRosterEditor } from '../enemies/BattleRosterEditor';
 import { LineupEditor } from '../enemies/LineupEditor';
 import { EncounterGroupEditor } from '../enemies/EncounterGroupEditor';
+import { BossSafeSection } from '../enemies/BossSafeSection';
+import { OverworldSafeSection } from '../enemies/OverworldSafeSection';
 import { EditLog } from '../stats/EditLog';
 import { HelpChip } from '../stats/HelpChip';
 
@@ -218,19 +220,17 @@ export function EnemiesView() {
         </div>
       )}
 
-      {/* ---- BOSSES (placeholder) ---- */}
+      {/* ---- BOSSES (safe-tier) ---- */}
       {section === 'bosses' && (
-        <div className="flex-1 flex items-center justify-center text-sm text-slate-500">
-          {/* TODO Task 8: <BossSafeSection/> */}
-          <div>Boss editing — added in next step.</div>
+        <div className="flex-1 overflow-auto">
+          <BossSafeSection />
         </div>
       )}
 
-      {/* ---- OVERWORLD (placeholder) ---- */}
+      {/* ---- OVERWORLD (safe-tier) ---- */}
       {section === 'overworld' && (
-        <div className="flex-1 flex items-center justify-center text-sm text-slate-500">
-          {/* TODO Task 8: <OverworldSafeSection/> */}
-          <div>Overworld enemy editing — added in next step.</div>
+        <div className="flex-1 overflow-auto">
+          <OverworldSafeSection />
         </div>
       )}
     </div>
