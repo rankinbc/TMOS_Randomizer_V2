@@ -519,7 +519,7 @@ function TileGrid({
 }
 
 // Tooltip component for tile info
-function TileTooltip({ tileId, row, col, romAddress, category, visible, position, chrBank }: {
+function TileTooltip({ tileId, row, col, romAddress, category, visible, position }: {
   tileId: number; row: number; col: number; romAddress: number;
   category: 'walkable' | 'deadly' | 'collidable'; visible: boolean; position: { x: number; y: number }; chrBank?: number;
 }) {

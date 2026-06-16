@@ -7,7 +7,6 @@ import {
   api,
   type AssetManifest,
   type ChapterData,
-  type RomStatus,
   type NavigationUpdateRequest,
   type TileBankEntry,
   type InventoryCapsResponse,
@@ -1294,7 +1293,6 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
 // Helper to transform API response to our chapter format
 function transformApiChapters(apiPlan: Record<string, unknown>): RandomizationPlan['chapters'] {
   const worldPlan = apiPlan.world_plan as Record<string, unknown> | undefined;
-  const worldShape = apiPlan.world_shape as Record<string, unknown> | undefined;
   const worldConnections = apiPlan.world_connections as Record<string, unknown> | undefined;
 
   if (!worldPlan) return [];
@@ -1305,12 +1303,7 @@ function transformApiChapters(apiPlan: Record<string, unknown>): RandomizationPl
     const chapter = ch as Record<string, unknown>;
     const chapterNum = chapter.chapter_num as number;
 
-    // Get shape and connections for this chapter
-    const shapeChapters = (worldShape?.chapters as unknown[]) || [];
-    const chapterShape = shapeChapters.find(
-      (s: unknown) => (s as Record<string, unknown>).chapter_num === chapterNum
-    ) as Record<string, unknown> | undefined;
-
+    // Get connections for this chapter
     const connChapters = (worldConnections?.chapters as unknown[]) || [];
     const chapterConn = connChapters.find(
       (c: unknown) => (c as Record<string, unknown>).chapter_num === chapterNum

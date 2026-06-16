@@ -1,6 +1,6 @@
 // Sprite viewer component for displaying game character sprites
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRandomizerStore } from '../../store';
 import { api } from '../../api/client';
 

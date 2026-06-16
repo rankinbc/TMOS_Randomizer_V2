@@ -497,7 +497,6 @@ function NavCell({ direction, value, screens, chapterNum, onScreenSelect }: NavC
     : null;
   const destContentInfo = destScreen ? getContentInfo(destScreen.content, chapterNum ?? 1) : null;
   const destParentInfo = destScreen ? getParentWorldInfo(destScreen.parent_world) : null;
-  const destIsPast = destScreen && chapterNum ? isScreenInPast(destScreen.index, chapterNum) : false;
 
   let bgColor = 'bg-slate-700';
   let textColor = 'text-slate-300';

@@ -229,7 +229,7 @@ export function RandomizeModal() {
             <label className="block text-sm text-slate-400 mb-2">Preset</label>
             <select
               value={settings.preset}
-              onChange={(e) => setSettings({ preset: e.target.value as 'standard' | 'chaotic' | 'minimal' })}
+              onChange={(e) => setSettings({ preset: e.target.value as typeof settings.preset })}
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500"
             >
               <option value="standard">Standard</option>

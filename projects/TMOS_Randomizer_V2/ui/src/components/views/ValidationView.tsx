@@ -85,23 +85,6 @@ const PLACEMENT_RULES: ValidationRule[] = [
   },
 ];
 
-const CONTENT_RULES: ValidationRule[] = [
-  {
-    id: 'building_entrance',
-    name: 'Building Entrance Validity',
-    description: 'Screens with entrance (ScreenIndexUp=0xFE) must have valid Content',
-    severity: 'warning',
-    category: 'content',
-  },
-  {
-    id: 'no_encounter_building',
-    name: 'No Random Encounters at Buildings',
-    description: 'Building entrances cannot have Content=0xFF (random encounter)',
-    severity: 'warning',
-    category: 'content',
-  },
-];
-
 // Chapter-specific data
 const CHAPTER_DATA: Record<number, { name: string; excludedScreens: number; shuffleableScreens: number }> = {
   1: { name: 'Mooroon', excludedScreens: 20, shuffleableScreens: 25 },

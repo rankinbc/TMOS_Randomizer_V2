@@ -75,7 +75,7 @@ function TileCell({
   tile: TileBankEntry;
   isSelected: boolean;
   onSelect: () => void;
-  cellRef: React.RefObject<HTMLButtonElement> | null;
+  cellRef: React.RefObject<HTMLButtonElement | null> | null;
 }) {
   const [imgError, setImgError] = useState(false);
   const hex = tile.index.toString(16).toUpperCase().padStart(2, '0');
