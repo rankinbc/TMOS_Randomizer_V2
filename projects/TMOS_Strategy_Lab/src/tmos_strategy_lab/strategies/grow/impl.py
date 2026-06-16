@@ -21,6 +21,7 @@ from tmos_randomizer.validation.tiles.edges import (  # type: ignore[import-unty
 
 from ..._v2_compat.parsers import (
     DO_NOT_RANDOMIZE,
+    NAV_BUILDING_ENTRANCE,
     SectionType,
     relative_to_global,
 )
@@ -268,6 +269,37 @@ def _neighbor_constraints(
     return out
 
 
+def _entrance_blocks_adjacency(
+    cand_idx: int,
+    grid_pos: tuple[int, int],
+    section_grid: dict[tuple[int, int], int],
+    chapter,
+) -> bool:
+    """L2 (v0.4.0): would placing ``cand`` at ``grid_pos`` create a one-way edge?
+
+    navwrite preserves stock ``NAV_BUILDING_ENTRANCE`` (0xFE) bytes, so a grid
+    adjacency where EITHER cell's stock nav byte toward the other is a building
+    entrance becomes one-way (the entrance side can't step forward) — a directed
+    dead-end. Forbid forming such an adjacency at placement time. Building entrances
+    are thereby preserved untouched (safe-first: never overwrite a 0xFE).
+
+    Uses raw stock nav bytes (growth has not rewritten nav yet) and iterates
+    ``DIRECTION_DELTAS`` in its fixed order — no RNG, determinism preserved.
+    """
+    x, y = grid_pos
+    cand_scr = chapter.screens[cand_idx]
+    for direction, (dx, dy) in DIRECTION_DELTAS.items():
+        neighbor_idx = section_grid.get((x + dx, y + dy))
+        if neighbor_idx is None:
+            continue
+        if getattr(cand_scr, f"screen_index_{direction}") == NAV_BUILDING_ENTRANCE:
+            return True
+        neighbor_scr = chapter.screens[neighbor_idx]
+        if getattr(neighbor_scr, f"screen_index_{OPPOSITE_DIRECTIONS[direction]}") == NAV_BUILDING_ENTRANCE:
+            return True
+    return False
+
+
 # =============================================================================
 # Growth core
 # =============================================================================
@@ -398,6 +430,8 @@ def _grow_one_section(
             for cand_idx in pool:
                 if (cell, cand_idx) in dead_ends:
                     continue
+                if _entrance_blocks_adjacency(cand_idx, cell, result.grid, chapter):
+                    continue  # L2: never grow across a stock building entrance
                 if _candidate_fits(
                     edges_cache[cand_idx], cell, result.grid,
                     edges_cache, result.overrides, chapter, rom_data,
@@ -432,6 +466,8 @@ def _grow_one_section(
             for cand_idx in pool_shuffled:
                 if (cell, cand_idx) in dead_ends:
                     continue
+                if _entrance_blocks_adjacency(cand_idx, cell, result.grid, chapter):
+                    continue  # L2: never grow across a stock building entrance
                 cand_scr = chapter.screens[cand_idx]
                 swap = find_ts_swap(
                     datapointer=cand_scr.datapointer,
@@ -524,6 +560,8 @@ def _try_attach_orphan(
 
         # Native attempt
         for cell in frontier_list:
+            if _entrance_blocks_adjacency(orphan_idx, cell, section.grid, chapter):
+                continue  # L2: never grow across a stock building entrance
             if _candidate_fits(
                 edges_cache[orphan_idx], cell, section.grid,
                 edges_cache, section.overrides, chapter, rom_data,
@@ -533,6 +571,8 @@ def _try_attach_orphan(
 
         # TS-swap attempt
         for cell in frontier_list:
+            if _entrance_blocks_adjacency(orphan_idx, cell, section.grid, chapter):
+                continue  # L2: never grow across a stock building entrance
             constraints = _neighbor_constraints(
                 cell, section.grid, edges_cache, section.overrides, chapter, rom_data,
             )
@@ -873,7 +913,7 @@ class GrowStrategy:
         "seed screen, only placing candidates whose edges align with all "
         "already-placed grid neighbors. Broken edges by construction = 0."
     )
-    strategy_version = "0.3.0"
+    strategy_version = "0.4.0"
 
     def generate(self, ctx: LabContext, seed: int) -> Candidate:
         # Deepcopy protection — same pattern as tileshuffle. Never mutate shared ctx.

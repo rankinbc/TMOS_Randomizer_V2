@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import random
-from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -34,9 +33,6 @@ if TYPE_CHECKING:
     from ..core.worldscreen import WorldScreen
 
 logger = logging.getLogger(__name__)
-
-NAV_BLOCKED = 0xFF
-NAV_BUILDING_ENTRANCE = 0xFE
 
 _NAVIGABILITY_RETRIES = 4
 
@@ -248,35 +244,27 @@ def _restore_game_world(game_world: "GameWorld", snapshot: dict) -> None:
 
 
 def _reach_counts(game_world: "GameWorld") -> dict[int, int]:
-    """Per-chapter count of screens reachable from screen 0 via direct nav.
+    """Per-chapter count of screens reachable from screen 0.
 
-    Matches server._check_world_connectivity (excludes stairways at 0xFE and
-    the 0xFF blocked sentinel). Used as a baseline yardstick — we don't claim
-    this equals "playable world"; we only require post-mutation reachability
-    to be no smaller than before.
+    Single source of truth: delegates to the oracle's ``analyze_reachability`` so the
+    shippability GATE and the oracle VERDICT agree on what "reachable" means. That
+    function follows directed nav (excluding the 0xFE building-entrance and 0xFF
+    blocked sentinels) AND stairway warps (Event 0x40 -> Content destination), which
+    the real game uses. Previously this gate was a warp-blind directed BFS — strictly
+    stricter than the oracle it feeds — which rejected era-safe Lab output the oracle
+    would have accepted (see test_lab_adapter_reach). We still don't claim this equals
+    "playable world"; we only require post-mutation reachability to be no smaller than
+    before, judged by the same yardstick the oracle uses.
     """
+    from ..phases.phase6_validation import analyze_reachability
+
     counts: dict[int, int] = {}
     for chapter in game_world:
-        total = chapter.screen_count
-        if total == 0:
+        if chapter.screen_count == 0:
             counts[chapter.chapter_num] = 0
             continue
-        reached = {0}
-        q: deque[int] = deque([0])
-        while q:
-            idx = q.popleft()
-            scr = chapter.get_screen(idx)
-            if scr is None:
-                continue
-            for direction in ("right", "left", "down", "up"):
-                t = getattr(scr, f"screen_index_{direction}")
-                if t in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
-                    continue
-                if t < 0 or t >= total or t in reached:
-                    continue
-                reached.add(t)
-                q.append(t)
-        counts[chapter.chapter_num] = len(reached)
+        result = analyze_reachability(chapter, starting_screen=0)
+        counts[chapter.chapter_num] = len(result.reachable_screens)
     return counts
 
 

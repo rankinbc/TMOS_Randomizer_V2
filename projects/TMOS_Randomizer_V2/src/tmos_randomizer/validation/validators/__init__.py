@@ -9,6 +9,8 @@ This package contains all concrete validator implementations:
 - SectionFlowValidator: Validates planned section flow matches actual result
 - SpatialConsistencyValidator: Validates navigation grid has no spatial conflicts
 - TimePeriodIsolationValidator: Flags cross-time navigation without Time Doors
+- InteriorExteriorSegregationValidator: Coherence L2 -- overworld must not be
+  walkable-adjacent to dungeon-interior screens
 
 Import this module to register all validators with the registry.
 """
@@ -16,6 +18,7 @@ Import this module to register all validators with the registry.
 # Import validators to register them
 from .edge_alignment import EdgeAlignmentValidator
 from .edge_compatibility import EdgeCompatibilityValidator
+from .interior_exterior_segregation import InteriorExteriorSegregationValidator
 from .navigation_consistency import NavigationConsistencyValidator
 from .objectset import DataPointerObjectSetValidator
 from .section_flow import SectionFlowValidator
@@ -27,6 +30,7 @@ __all__ = [
     "DataPointerObjectSetValidator",
     "EdgeAlignmentValidator",
     "EdgeCompatibilityValidator",
+    "InteriorExteriorSegregationValidator",
     "NavigationConsistencyValidator",
     "ScreenTraversabilityValidator",
     "SectionFlowValidator",
