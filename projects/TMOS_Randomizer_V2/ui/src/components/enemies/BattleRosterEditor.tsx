@@ -4,15 +4,7 @@ import type { BattleEnemy } from '../../api/client';
 import { GuidedNumberField } from '../screen/GuidedNumberField';
 import { SafetyBadge } from '../shared/SafetyBadge';
 import type { FieldMetadata } from '../../types/metadata';
-
-/**
- * Enemy IDs that crash the game or are otherwise unsafe to edit.
- * Mirrors core/enums.py CONSERVATIVE_DANGER_ENEMY_IDS — there is no shared
- * FE constant for this, so a local set is acceptable here.
- *   0x0B, 0x0C → known crash IDs
- *   0x0F, 0x17, 0x25 → conservative danger (unstable / unverified)
- */
-const DANGER_ENEMY_IDS = new Set<number>([0x0b, 0x0c, 0x0f, 0x17, 0x25]);
+import { DANGER_ENEMY_IDS } from '../../utils/enemySelection';
 
 type StatKey = 'hp' | 'ep' | 'rupia';
 const STAT_KEYS: StatKey[] = ['hp', 'ep', 'rupia'];

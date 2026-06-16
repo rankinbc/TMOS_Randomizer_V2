@@ -3,7 +3,7 @@ import type { BattleEnemy, Lineup } from '../../api/client';
 import { EnemyPicker } from './EnemyPicker';
 import { HelpChip } from '../stats/HelpChip';
 import { useRandomizerStore } from '../../store';
-import { toEnemyOptions } from '../../utils/enemySelection';
+import { toEnemyOptions, DANGER_ENEMY_IDS } from '../../utils/enemySelection';
 
 interface LineupEditorProps {
   lineup: Lineup;
@@ -36,9 +36,11 @@ export function LineupEditor({
   const selectableEnemies = useRandomizerStore((s) => s.selectableEnemies);
   const pickableEnemies = useMemo(() => {
     const allowed = new Set(toEnemyOptions(selectableEnemies).map((o) => o.value));
-    // If selectableEnemies hasn't loaded yet, fall back to the full roster so the
-    // picker is never empty (the server list filters crash IDs once present).
-    if (allowed.size === 0) return enemies;
+    // If selectableEnemies hasn't loaded yet, fall back to the full roster MINUS
+    // the known crash/danger IDs — the picker is never empty, but the hard rule
+    // (crash IDs 0x0B/0x0C never selectable) still holds before the server list
+    // arrives. Once loaded, the authoritative server-filtered set takes over.
+    if (allowed.size === 0) return enemies.filter((e) => !DANGER_ENEMY_IDS.has(e.enemy_id));
     return enemies.filter((e) => allowed.has(e.enemy_id));
   }, [enemies, selectableEnemies]);
 

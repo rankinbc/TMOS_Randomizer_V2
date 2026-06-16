@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { toEnemyOptions } from './enemySelection';
+import { toEnemyOptions, DANGER_ENEMY_IDS } from './enemySelection';
+
+describe('DANGER_ENEMY_IDS', () => {
+  it('contains the known hard-crash IDs', () => {
+    expect(DANGER_ENEMY_IDS.has(0x0b)).toBe(true);
+    expect(DANGER_ENEMY_IDS.has(0x0c)).toBe(true);
+  });
+  it('contains the conservative-danger IDs', () => {
+    for (const id of [0x0f, 0x17, 0x25]) expect(DANGER_ENEMY_IDS.has(id)).toBe(true);
+  });
+  it('does not flag a normal enemy ID', () => {
+    expect(DANGER_ENEMY_IDS.has(0x0d)).toBe(false);
+  });
+});
 
 describe('toEnemyOptions', () => {
   it('maps selectable enemies to {value,label} options', () => {
