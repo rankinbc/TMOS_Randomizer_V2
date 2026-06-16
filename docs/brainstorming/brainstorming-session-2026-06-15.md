@@ -139,6 +139,19 @@ more than vanilla (flattens progression gating — intended for "all-items") and
 warp-links are teleports P3 coherence may flag. (3) Not yet wired into the generation→oracle
 pipeline.
 
+## ✅ Pipeline integration DONE (2026-06-16)
+Repair is now automatic, not a manual util. `LabAdapterStrategy.preview_plan` (commit
+38fea3e) runs `repair_reachability` right after grow generation → both the live UI preview
+and the written ROM are guaranteed 100% reachable (0xFE-preserved). This SUPERSEDES the old
+"no worse than vanilla" reseed-and-raise gate (an absolute floor dominates a differential
+one, and always succeeds instead of rejecting grow after 5 reseeds). Repair is opt-in per
+adapter (`repairs_reachability`, True only on grow) so nav-preserving identity/tileshuffle
+are untouched — repairing them would "fix" vanilla's intended progression-gating to 100%.
+Repair stats surface in `result.stats`. Removed the dead reseed/snapshot/regression helpers.
+TDD: 2 real-ROM integration tests (written ROM 100% reachable + 0xFE preserved + stats);
+21/21 strategy+repair tests pass, and faster (one gen+repair vs 5 reseeds). Caveat (3) from
+the milestone block (not wired into the pipeline) is now RESOLVED.
+
 ## ✅ Multi-seed robustness confirmed (2026-06-16)
 `util/verify-repair-multiseed.py` (commit fc60172) — generates raw grow output per seed,
 runs the repair pass, asserts 100% reachable + 0xFE preserved. **30 distinct seeds (1–10 +
