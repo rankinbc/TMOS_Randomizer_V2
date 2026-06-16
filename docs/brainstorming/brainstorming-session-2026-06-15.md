@@ -136,8 +136,16 @@ guaranteed navigable with zero content removed. Commits: 8a6896f (warp-link), 53
 CAVEATS (honest): (1) static warp-aware proxy — 100% = no walled-off screens assuming full
 movement, NOT item-gated playability (P4 emulator is the true check). (2) Repair connects
 more than vanilla (flattens progression gating — intended for "all-items") and some
-warp-links are teleports P3 coherence may flag. (3) Verified on seed 42 only — needs a
-multi-seed batch. (4) Not yet wired into the generation→oracle pipeline.
+warp-links are teleports P3 coherence may flag. (3) Not yet wired into the generation→oracle
+pipeline.
+
+## ✅ Multi-seed robustness confirmed (2026-06-16)
+`util/verify-repair-multiseed.py` (commit fc60172) — generates raw grow output per seed,
+runs the repair pass, asserts 100% reachable + 0xFE preserved. **30 distinct seeds (1–10 +
+20 scattered up to 424242) ALL PASS:** 131/137/153/164/154 every chapter, 0xFE 79→79 every
+time, 73–81 repairs each. The seed-42 milestone GENERALIZES — not a fluke. Caveat (3) from
+the milestone block (verified on seed 42 only) is now RESOLVED. Remaining: pipeline
+integration, coherence check of warp-links, P4 emulator.
 
 ## Status & next
 - Working on **grow** (lab_grow), not organic. Both currently fail the (proxy) gate.
