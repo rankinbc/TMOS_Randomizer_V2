@@ -35,15 +35,23 @@ class _FakeEdges:
 
 
 def _edges_provider(table: dict[int, dict[str, list[int]]]):
-    return lambda idx: _FakeEdges(table.get(idx, {}))
+    """Current-tile edges provider (ignores top/bot) for open-in-place tests."""
+    return lambda idx, top=0, bot=0: _FakeEdges(table.get(idx, {}))
+
+
+def _tiled_edges_provider(table: dict[tuple, dict[str, list[int]]]):
+    """Edges depend on (idx, top, bot) -- used to simulate a TileSection swap."""
+    return lambda idx, top, bot: _FakeEdges(table.get((idx, top, bot), {}))
 
 
 _ALL_PRESENT = lambda chapter_num, idx: False  # noqa: E731  (test era stub)
 
 
-def _scr(rel: int, content: int = 0, event: int = 0, **nav: int) -> WorldScreen:
+def _scr(rel: int, content: int = 0, event: int = 0, top: int = 0, bot: int = 0,
+         datapointer: int = 0, **nav: int) -> WorldScreen:
     return WorldScreen(
         global_index=rel, chapter=1, relative_index=rel, content=content, event=event,
+        top_tiles=top, bottom_tiles=bot, datapointer=datapointer,
         screen_index_right=nav.get("right", NAV_BLOCKED),
         screen_index_left=nav.get("left", NAV_BLOCKED),
         screen_index_down=nav.get("down", NAV_BLOCKED),
@@ -168,3 +176,51 @@ def test_world_wrapper_repairs_each_chapter():
     assert s0.screen_index_right == 1
     assert report.total_records == 1
     assert report.total_unrepaired == 0
+
+
+# --- Increment 4: TS-swap-then-open -----------------------------------------
+
+def test_ts_swap_makes_an_edge_alignable_then_opens():
+    """Screen 1 has no aligned port natively, but a CHR-valid tile swap makes its left
+    edge walkable -> repair swaps tiles then wires it (when open-in-place can't)."""
+    s0 = _scr(0)            # reachable start; right port free
+    s1 = _scr(1)            # unreachable; left edge not walkable at current tiles
+    chapter = _chapter(s0, s1)
+    tiled = _tiled_edges_provider({
+        (0, 0, 0): {"right": [WALK, WALK]},
+        (1, 0, 0): {"left": [BLOCK, BLOCK]},   # current tiles -> open-in-place fails
+        (1, 9, 9): {"left": [WALK, WALK]},     # swapped tiles -> aligns with s0.right
+    })
+    report = repair_chapter(
+        chapter, tiled,
+        candidate_tiles_of=lambda idx: [(9, 9)] if idx == 1 else [],
+        era_of=_ALL_PRESENT,
+    )
+
+    assert (s1.top_tiles, s1.bottom_tiles) == (9, 9)  # swap applied
+    assert s0.screen_index_right == 1 and s1.screen_index_left == 0
+    assert 1 in report.reachable_after
+    assert report.records[0].action == "ts_swap_then_open"
+
+
+def test_ts_swap_rejected_if_it_breaks_an_existing_link():
+    """A swap that would align a new edge but break screen 1's existing walk link to
+    screen 2 must be rejected (no fragmenting the screen's own component)."""
+    s0 = _scr(0)
+    s1 = _scr(1, right=2)   # existing walk link 1->2
+    s2 = _scr(2, left=1)
+    chapter = _chapter(s0, s1, s2)
+    tiled = _tiled_edges_provider({
+        (0, 0, 0): {"right": [WALK, WALK]},
+        (1, 0, 0): {"left": [BLOCK, BLOCK], "right": [WALK, WALK]},  # right aligns w/ s2
+        (1, 9, 9): {"left": [WALK, WALK], "right": [BLOCK, BLOCK]},  # left aligns but breaks s2
+        (2, 0, 0): {"left": [WALK, WALK]},
+    })
+    report = repair_chapter(
+        chapter, tiled,
+        candidate_tiles_of=lambda idx: [(9, 9)] if idx == 1 else [],
+        era_of=_ALL_PRESENT,
+    )
+
+    assert (s1.top_tiles, s1.bottom_tiles) == (0, 0)  # swap NOT applied
+    assert 1 in report.unrepaired

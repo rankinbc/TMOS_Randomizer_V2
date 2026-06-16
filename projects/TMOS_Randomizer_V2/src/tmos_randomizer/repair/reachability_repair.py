@@ -14,14 +14,18 @@ soft-lock-proof floor, not a differential against the (progression-gated) vanill
 map. Note this is still a STATIC proxy: it guarantees no walled-off screens given
 free movement, not item-gated playability (that confirmation is the P4 emulator).
 
-Increment 1 (this file, so far): the targeting metric `compute_reachable`.
+Repair levers, cheapest first:
+  1. open_in_place   -- wire an existing free, aligned, same-era port two-way.
+  2. ts_swap_then_open -- change the stranded screen's TileSection (to a CHR-valid pair
+     already used by same-datapointer screens) so an edge becomes alignable, then wire.
+Future: warp-link (islanded components), relocate (last resort).
 """
 
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Set
+from typing import Any, Callable, List, Optional, Set, Tuple
 
 from ..core.enums import (
     EventType, ContentType, NAV_BLOCKED, NAV_BUILDING_ENTRANCE,
@@ -37,7 +41,7 @@ _DIRECTIONS = ("right", "left", "down", "up")
 class RepairRecord:
     """A single first-class repair edit (visible, never silent)."""
 
-    action: str           # e.g. "open_in_place"
+    action: str           # "open_in_place" | "ts_swap_then_open"
     screens: tuple        # screen indices involved
     direction: str        # direction wired on the first screen
     reason: str
@@ -104,7 +108,6 @@ def compute_reachable(chapter: Any) -> Set[int]:
             continue
         reachable.add(idx)
 
-        # Walk edges.
         for direction in _DIRECTIONS:
             t = getattr(screen, f"screen_index_{direction}")
             if t in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
@@ -112,13 +115,11 @@ def compute_reachable(chapter: Any) -> Set[int]:
             if 0 <= t < total and t not in reachable:
                 queue.append(t)
 
-        # Stairway warp.
         if screen.event == EventType.STAIRWAY:
             dest = screen.content
             if 0 <= dest < total and dest not in reachable:
                 queue.append(dest)
 
-        # Time-door warp: reaching one door lets you step through to its partner(s).
         if screen.content == ContentType.TIME_DOOR:
             for td in time_doors:
                 if td != idx and td not in reachable:
@@ -133,21 +134,34 @@ def _is_free_port(screen: Any, direction: str) -> bool:
     return getattr(screen, f"screen_index_{direction}") == NAV_BLOCKED
 
 
+def _existing_walk_links(chapter: Any, screen: Any) -> List[Tuple[str, Any]]:
+    """(direction, neighbor_screen) for each real walk link out of ``screen``."""
+    out: List[Tuple[str, Any]] = []
+    for d in _DIRECTIONS:
+        t = getattr(screen, f"screen_index_{d}")
+        if t in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+            continue
+        n = chapter.get_screen(t)
+        if n is not None:
+            out.append((d, n))
+    return out
+
+
 def repair_chapter(
     chapter: Any,
-    edges_provider: Callable[[int], Any],
+    edges_of: Callable[[int, int, int], Any],
     *,
+    candidate_tiles_of: Optional[Callable[[int], List[Tuple[int, int]]]] = None,
     era_of: Callable[[int, int], bool] = is_past_screen_index,
 ) -> ChapterRepairReport:
     """Make every screen reachable from screen 0 by least-damage edits.
 
-    v1 lever: OPEN IN PLACE -- for each unreachable screen, find a reachable screen
-    with a free port whose edge aligns (walkable) with a free port on the unreachable
-    screen, same-era, and wire them two-way. Preserves all 0xFE; adds no broken edges;
-    never crosses eras by walk. Deterministic (sorted iteration). Screens it cannot
-    open are reported in ``unrepaired`` (no silent failure).
+    Levers tried per unreachable screen: open-in-place, then (if ``candidate_tiles_of``
+    is given) ts-swap-then-open. Preserves all 0xFE; adds no broken edges; never crosses
+    eras by walk; deterministic. Unreachable leftovers are reported (no silent failure).
 
-    ``edges_provider(idx)`` returns an object with ``get_edge(direction) -> list[int]``.
+    ``edges_of(idx, top, bot)`` returns an object with ``get_edge(direction) -> list[int]``
+    for the screen rendered with the given TileSection pair.
     """
     report = ChapterRepairReport(chapter_num=chapter.chapter_num)
     report.reachable_before = compute_reachable(chapter)
@@ -157,10 +171,13 @@ def repair_chapter(
     progress = True
     while progress:
         progress = False
-        unreachable = sorted(set(range(total)) - reachable)
-        for u in unreachable:
-            if _try_open_in_place(chapter, u, reachable, edges_provider, era_of, report):
-                # u (and anything it newly connects) just became reachable.
+        for u in sorted(set(range(total)) - reachable):
+            if _try_open_in_place(chapter, u, reachable, edges_of, era_of, report) or (
+                candidate_tiles_of is not None
+                and _try_ts_swap_then_open(
+                    chapter, u, reachable, edges_of, candidate_tiles_of, era_of, report
+                )
+            ):
                 reachable = compute_reachable(chapter)
                 progress = True
                 break
@@ -174,7 +191,7 @@ def _try_open_in_place(
     chapter: Any,
     u: int,
     reachable: Set[int],
-    edges_provider: Callable[[int], Any],
+    edges_of: Callable[[int, int, int], Any],
     era_of: Callable[[int, int], bool],
     report: ChapterRepairReport,
 ) -> bool:
@@ -186,20 +203,17 @@ def _try_open_in_place(
 
     for r in sorted(reachable):
         r_scr = chapter.get_screen(r)
-        if r_scr is None:
-            continue
-        if era_of(ch_num, r) != u_past:  # same-era walk links only
+        if r_scr is None or era_of(ch_num, r) != u_past:
             continue
         for direction in _DIRECTIONS:
             opp = OPPOSITE_DIRECTIONS[direction]
             if not _is_free_port(r_scr, direction) or not _is_free_port(u_scr, opp):
                 continue
             if not _edges_aligned(
-                edges_provider(r).get_edge(direction),
-                edges_provider(u).get_edge(opp),
+                edges_of(r, r_scr.top_tiles, r_scr.bottom_tiles).get_edge(direction),
+                edges_of(u, u_scr.top_tiles, u_scr.bottom_tiles).get_edge(opp),
             ):
                 continue
-            # Wire two-way.
             setattr(r_scr, f"screen_index_{direction}", u)
             setattr(u_scr, f"screen_index_{opp}", r)
             r_scr.mark_modified()
@@ -215,23 +229,91 @@ def _try_open_in_place(
     return False
 
 
-def _rom_edges_provider(chapter: Any, rom_data: bytes) -> Callable[[int], Any]:
-    """Real edges provider: extract_edges from ROM, cached per screen index.
+def _try_ts_swap_then_open(
+    chapter: Any,
+    u: int,
+    reachable: Set[int],
+    edges_of: Callable[[int, int, int], Any],
+    candidate_tiles_of: Callable[[int], List[Tuple[int, int]]],
+    era_of: Callable[[int, int], bool],
+    report: ChapterRepairReport,
+) -> bool:
+    u_scr = chapter.get_screen(u)
+    if u_scr is None:
+        return False
+    candidates = candidate_tiles_of(u)
+    if not candidates:
+        return False
+    ch_num = chapter.chapter_num
+    u_past = era_of(ch_num, u)
+    existing = _existing_walk_links(chapter, u_scr)
 
-    Cache is safe for the open-in-place lever (it never changes a screen's tiles).
-    A future TS-swap lever must invalidate the cache for any swapped screen.
-    """
+    for r in sorted(reachable):
+        r_scr = chapter.get_screen(r)
+        if r_scr is None or era_of(ch_num, r) != u_past:
+            continue
+        for direction in _DIRECTIONS:
+            opp = OPPOSITE_DIRECTIONS[direction]
+            if not _is_free_port(r_scr, direction) or not _is_free_port(u_scr, opp):
+                continue
+            r_edge = edges_of(r, r_scr.top_tiles, r_scr.bottom_tiles).get_edge(direction)
+            for (top, bot) in candidates:
+                cand = edges_of(u, top, bot)
+                if not _edges_aligned(r_edge, cand.get_edge(opp)):
+                    continue
+                # A swap changes ALL of u's edges -- it must not break an existing link.
+                if any(
+                    not _edges_aligned(
+                        cand.get_edge(d),
+                        edges_of(n.relative_index, n.top_tiles, n.bottom_tiles)
+                        .get_edge(OPPOSITE_DIRECTIONS[d]),
+                    )
+                    for d, n in existing
+                ):
+                    continue
+                u_scr.top_tiles, u_scr.bottom_tiles = top, bot
+                setattr(r_scr, f"screen_index_{direction}", u)
+                setattr(u_scr, f"screen_index_{opp}", r)
+                r_scr.mark_modified()
+                u_scr.mark_modified()
+                report.records.append(RepairRecord(
+                    action="ts_swap_then_open",
+                    screens=(r, u),
+                    direction=direction,
+                    reason=f"screen {u} had no alignable port; swapped its TileSection "
+                           f"to ({top},{bot}) to align with reachable screen {r} ({direction})",
+                ))
+                return True
+    return False
+
+
+def _rom_edges_provider(chapter: Any, rom_data: bytes) -> Callable[[int, int, int], Any]:
+    """Real edges provider: extract_edges from ROM, cached per (idx, top, bot)."""
     cache: dict = {}
 
-    def provider(idx: int) -> Any:
-        if idx not in cache:
+    def edges_of(idx: int, top: int, bot: int) -> Any:
+        key = (idx, top, bot)
+        if key not in cache:
             scr = chapter.get_screen(idx)
-            cache[idx] = extract_edges(
-                rom_data, idx, scr.top_tiles, scr.bottom_tiles, scr.datapointer
-            )
-        return cache[idx]
+            cache[key] = extract_edges(rom_data, idx, top, bot, scr.datapointer)
+        return cache[key]
 
-    return provider
+    return edges_of
+
+
+def _rom_candidate_tiles(chapter: Any) -> Callable[[int], List[Tuple[int, int]]]:
+    """CHR-valid TileSection candidates for a screen: the (top, bot) pairs already used
+    by same-datapointer screens in this chapter (guaranteed to render correctly)."""
+    by_dp: dict = {}
+    for s in chapter.screens:
+        by_dp.setdefault(s.datapointer, set()).add((s.top_tiles, s.bottom_tiles))
+
+    def candidates(idx: int) -> List[Tuple[int, int]]:
+        scr = chapter.get_screen(idx)
+        cur = (scr.top_tiles, scr.bottom_tiles)
+        return sorted(p for p in by_dp.get(scr.datapointer, set()) if p != cur)
+
+    return candidates
 
 
 def repair_reachability(
@@ -239,20 +321,25 @@ def repair_reachability(
     rom_data: bytes,
     *,
     era_of: Callable[[int, int], bool] = is_past_screen_index,
-    edges_provider_for: Optional[Callable[[Any], Callable[[int], Any]]] = None,
+    edges_provider_for: Optional[Callable[[Any], Callable[[int, int, int], Any]]] = None,
+    candidate_tiles_for: Optional[Callable[[Any], Callable[[int], List[Tuple[int, int]]]]] = None,
 ) -> WorldRepairReport:
     """Run reachability repair over every chapter of a finished GameWorld.
 
-    Strategy-agnostic: call after any generator, before the oracle. ``edges_provider_for``
-    is injectable for testing; production uses ROM-backed ``extract_edges``.
+    Strategy-agnostic: call after any generator, before the oracle. The provider hooks
+    are injectable for testing; production uses ROM-backed extract_edges + same-CHR tiles.
     """
     report = WorldRepairReport()
     for chapter in game_world:
-        provider = (
+        edges_of = (
             edges_provider_for(chapter) if edges_provider_for is not None
             else _rom_edges_provider(chapter, rom_data)
         )
+        cand = (
+            candidate_tiles_for(chapter) if candidate_tiles_for is not None
+            else _rom_candidate_tiles(chapter)
+        )
         report.chapters[chapter.chapter_num] = repair_chapter(
-            chapter, provider, era_of=era_of
+            chapter, edges_of, candidate_tiles_of=cand, era_of=era_of
         )
     return report
