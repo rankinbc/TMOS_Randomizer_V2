@@ -5,6 +5,7 @@ interface ScreenGridProps {
   screens: ScreenData[];
   selectedScreen: number | null;
   onScreenSelect: (index: number) => void;
+  onScreenContextMenu?: (index: number, x: number, y: number) => void;
   gridWidth?: number;
 }
 
@@ -22,7 +23,7 @@ function getScreenColor(parentWorld: number): string {
   return PARENT_WORLD_COLORS[parentWorld] || '#64748b';
 }
 
-export function ScreenGrid({ screens, selectedScreen, onScreenSelect, gridWidth = 16 }: ScreenGridProps) {
+export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenContextMenu, gridWidth = 16 }: ScreenGridProps) {
   // Organize screens into a grid based on navigation
   const gridData = useMemo(() => {
     // For now, just display in order - navigation-based layout would be more complex
@@ -66,6 +67,12 @@ export function ScreenGrid({ screens, selectedScreen, onScreenSelect, gridWidth 
                   backgroundColor: screen ? getScreenColor(screen.parent_world) : undefined,
                 }}
                 onClick={() => screen && onScreenSelect(screen.index)}
+                onContextMenu={(e) => {
+                  if (screen && onScreenContextMenu) {
+                    e.preventDefault();
+                    onScreenContextMenu(screen.index, e.clientX, e.clientY);
+                  }
+                }}
                 title={screen ? `Screen ${screen.index} (0x${screen.index.toString(16).toUpperCase()})` : undefined}
               >
                 {screen && (
