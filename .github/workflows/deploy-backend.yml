@@ -9,8 +9,12 @@ on:
       - 'projects/TMOS_Randomizer_V2/pyproject.toml'
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
-  AZURE_WEBAPP_NAME: tmos-randomizer-api  # ← set to your App Service resource name
+  AZURE_WEBAPP_NAME: tmos-randomizer-api
 
 jobs:
   deploy:
@@ -19,9 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: projects/TMOS_Randomizer_V2
