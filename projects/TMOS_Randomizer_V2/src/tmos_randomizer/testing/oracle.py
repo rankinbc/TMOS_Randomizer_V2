@@ -29,6 +29,11 @@ from ..io.rom_reader import load_rom
 from ..phases.phase6_validation import analyze_reachability
 from ..validation.runner import ValidationRunner
 from ..validation.config import ValidationConfig
+from ..validation.item_gating import (
+    ItemGatingBaseline,
+    build_baseline as build_item_gating_baseline,
+    check_world as check_item_gating,
+)
 from .success_criteria import SuccessCriteria, DEFAULT_CRITERIA
 
 # Float tolerance when comparing reachability percentages.
@@ -42,18 +47,29 @@ class Baseline:
     chapters: List[int] = field(default_factory=list)
     reachability: Dict[int, float] = field(default_factory=dict)
     error_count: int = 0
+    # Item-gating winnability baseline (what progression the vanilla ROM affords).
+    # Informational channel — never affects the physical PASS/FAIL verdict.
+    item_gating: Optional[ItemGatingBaseline] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "chapters": self.chapters,
             "reachability": self.reachability,
             "error_count": self.error_count,
+            "item_gating": self.item_gating.to_dict() if self.item_gating else None,
         }
 
 
 @dataclass
 class WorldVerdict:
-    """The oracle's verdict on a single world/artifact."""
+    """The oracle's verdict on a single world/artifact.
+
+    The ``passed`` field reflects ONLY physical reachability (the hard gate). The
+    item-gating fields are an *informational* channel: a static item-gated
+    winnability read that flags chapters for review and feeds a playable%. They
+    deliberately do NOT influence ``passed`` — item-gating is a detector, not a
+    gate, and must never fail-close generation.
+    """
 
     passed: bool
     chapters_validated: int
@@ -62,6 +78,11 @@ class WorldVerdict:
     reachability: Dict[int, float] = field(default_factory=dict)
     reasons: List[str] = field(default_factory=list)
     validators_run: List[str] = field(default_factory=list)
+
+    # --- Item-gating channel (informational only) ---
+    item_gating_all_winnable: Optional[bool] = None
+    item_gating_playable_pct: Optional[float] = None
+    item_gating: Optional[Dict[str, Any]] = None  # full WorldItemVerdict.to_dict()
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -72,6 +93,9 @@ class WorldVerdict:
             "reachability": self.reachability,
             "reasons": self.reasons,
             "validators_run": self.validators_run,
+            "item_gating_all_winnable": self.item_gating_all_winnable,
+            "item_gating_playable_pct": self.item_gating_playable_pct,
+            "item_gating": self.item_gating,
         }
 
 
@@ -100,6 +124,7 @@ def baseline_from_rom(rom_path: Union[str, Path]) -> Baseline:
         chapters=sorted(chapters.keys()),
         reachability=_chapter_reachability(chapters),
         error_count=result.error_count,
+        item_gating=build_item_gating_baseline(game_world),
     )
 
 
@@ -168,6 +193,20 @@ def evaluate_world(
         and len(reasons) == 0
     )
 
+    # --- Item-gating channel (informational; does NOT affect `passed`). ---
+    item_gating_all_winnable: Optional[bool] = None
+    item_gating_pct: Optional[float] = None
+    item_gating_dict: Optional[Dict[str, Any]] = None
+    try:
+        ig_baseline = baseline.item_gating if baseline is not None else None
+        ig_verdict = check_item_gating(game_world, ig_baseline)
+        item_gating_all_winnable = ig_verdict.all_winnable
+        item_gating_pct = ig_verdict.playable_pct
+        item_gating_dict = ig_verdict.to_dict()
+    except Exception:
+        # The detector must never break the oracle; swallow and leave fields None.
+        pass
+
     return WorldVerdict(
         passed=passed,
         chapters_validated=len(chapters),
@@ -176,6 +215,9 @@ def evaluate_world(
         reachability=reachability,
         reasons=reasons,
         validators_run=list(result.validators_run),
+        item_gating_all_winnable=item_gating_all_winnable,
+        item_gating_playable_pct=item_gating_pct,
+        item_gating=item_gating_dict,
     )
 
 

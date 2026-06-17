@@ -9,6 +9,7 @@ This package contains all concrete validator implementations:
 - SectionFlowValidator: Validates planned section flow matches actual result
 - SpatialConsistencyValidator: Validates navigation grid has no spatial conflicts
 - TimePeriodIsolationValidator: Flags cross-time navigation without Time Doors
+- ItemGatingValidator: Reports item-gated winnability per chapter (INFO only)
 
 Import this module to register all validators with the registry.
 """
@@ -23,10 +24,15 @@ from .spatial_consistency import SpatialConsistencyValidator
 from .time_period_isolation import TimePeriodIsolationValidator
 from .traversability import ScreenTraversabilityValidator
 
+# Item-gating winnability detector (INFO-only; never fail-closes). Lives in its
+# own package; imported here so it registers alongside the core validators.
+from ..item_gating.validator import ItemGatingValidator
+
 __all__ = [
     "DataPointerObjectSetValidator",
     "EdgeAlignmentValidator",
     "EdgeCompatibilityValidator",
+    "ItemGatingValidator",
     "NavigationConsistencyValidator",
     "ScreenTraversabilityValidator",
     "SectionFlowValidator",
