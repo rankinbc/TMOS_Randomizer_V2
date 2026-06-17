@@ -63,17 +63,27 @@ def test_update_field_all_five(client):
     )
 
 
-def test_update_field_rejects_parent_world(client):
-    # parent_world is NOT in the allowlist — sending it must not change the screen.
+def test_update_field_accepts_parent_world(client):
+    # The World-tab screen editor intentionally allows editing every WorldScreen
+    # byte except the 4 navigation pointers, so parent_world IS in the allowlist
+    # and a PATCH that sets it must succeed and persist.
     before = client.get("/api/rom/screen/1/0").json()
+    new_val = (before["parent_world"] + 1) & 0xFF
     resp = client.patch(
         "/api/rom/screen/1/0/fields",
-        json={"parent_world": (before["parent_world"] + 1) & 0xFF},
+        json={"parent_world": new_val},
     )
-    # No allowlisted field provided -> 400 (same guard as tiles PATCH).
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "updated"
+    assert body["screen"]["parent_world"] == new_val
     after = client.get("/api/rom/screen/1/0").json()
-    assert after["parent_world"] == before["parent_world"]
+    assert after["parent_world"] == new_val
+    # restore
+    client.patch(
+        "/api/rom/screen/1/0/fields",
+        json={"parent_world": before["parent_world"]},
+    )
 
 
 def test_update_field_out_of_range(client):
