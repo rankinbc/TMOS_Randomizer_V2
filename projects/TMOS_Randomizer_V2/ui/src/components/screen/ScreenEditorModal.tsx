@@ -108,7 +108,7 @@ export function ScreenEditorModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl w-[820px] max-h-[85vh] flex flex-col"
+        className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl w-[1180px] max-w-[96vw] max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-3 border-b border-slate-700">
@@ -129,10 +129,13 @@ export function ScreenEditorModal({
           />
         )}
 
+        {/* Two-pane body: byte fields (left) + tilesection picker (right). */}
+        <div className="flex flex-1 min-h-0">
         {/* Fields block — every editable byte except the 4 nav pointers, each
             rendered through a guided wrapper (safety badge + ⓘ + vanilla-changed)
-            driven by the worldscreen field metadata. */}
-        <div className="p-3 border-b border-slate-700 space-y-1.5 bg-slate-900/40">
+            driven by the worldscreen field metadata. Two-column grid; the enemy
+            ObjectSet control spans both columns. */}
+        <div className="w-[500px] shrink-0 overflow-y-auto p-3 border-r border-slate-700 bg-slate-900/40 grid grid-cols-2 gap-x-3 gap-y-2 content-start">
           {meta('parent_world') && (
             <GuidedSelectField
               meta={meta('parent_world')!}
@@ -161,14 +164,16 @@ export function ScreenEditorModal({
           )}
           {/* objectset keeps the enemy-thumbnail control, wrapped for safety/guidance */}
           {meta('objectset') && (
-            <GuidedField meta={meta('objectset')!} value={screen.objectset} vanilla={vanilla?.objectset}>
-              <ObjectSetField
-                value={screen.objectset}
-                chapterNum={chapterNum}
-                chr={chr}
-                onChange={(v) => onFieldChange('objectset', v)}
-              />
-            </GuidedField>
+            <div className="col-span-2">
+              <GuidedField meta={meta('objectset')!} value={screen.objectset} vanilla={vanilla?.objectset}>
+                <ObjectSetField
+                  value={screen.objectset}
+                  chapterNum={chapterNum}
+                  chr={chr}
+                  onChange={(v) => onFieldChange('objectset', v)}
+                />
+              </GuidedField>
+            </div>
           )}
           {meta('event') && (
             <GuidedSelectField
@@ -223,13 +228,12 @@ export function ScreenEditorModal({
           )}
         </div>
 
-        {/* Section grid — a grid item's own aspect-ratio does NOT size its auto-row
-            track, so set an explicit row height (~94px = half the ~189px column
-            width in the fixed 820px modal) to give every cell the section's true
-            8x4 (2:1) shape. */}
+        {/* Right pane — tilesection picker. Fixed 150×75 (2:1) cells via auto-fill
+            so the grid reflows to the pane width while keeping every section's true
+            8x4 (2:1) shape (a grid item's own aspect-ratio does NOT size its track). */}
         <div
-          className="overflow-y-auto p-3 grid grid-cols-4 gap-2"
-          style={{ gridAutoRows: '94px' }}
+          className="flex-1 overflow-y-auto p-3 grid gap-2 content-start"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, 150px)', gridAutoRows: '75px' }}
         >
           {indices.map((g) => (
             <SectionThumb
@@ -242,6 +246,7 @@ export function ScreenEditorModal({
               onClick={() => onTilePick(activeHalf, g)}
             />
           ))}
+        </div>
         </div>
         <div className="p-2 border-t border-slate-700 text-xs text-slate-500">
           Editing the {activeHalf} half. Sections ≥ 256 are in bank 1 — selecting one also changes the screen's DataPointer/CHR. Picking does not close the editor.
