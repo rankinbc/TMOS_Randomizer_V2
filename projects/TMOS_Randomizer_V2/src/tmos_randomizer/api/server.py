@@ -103,12 +103,12 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS for local development.
-# Note: allow_origins=["*"] + allow_credentials=True is silently invalid per
-# the CORS spec — the wildcard is dropped. Use a regex to match any localhost
-# port instead, which keeps credentials working for the dev workflow.
+# CORS: localhost for dev + any explicit origins in ALLOWED_ORIGINS env var (comma-separated).
+# In production set ALLOWED_ORIGINS=https://your-app.azurestaticapps.net in App Service config.
+_extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=_extra_origins,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
