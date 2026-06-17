@@ -43,6 +43,10 @@ _nav_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - 
 nav_logger.addHandler(_nav_file_handler)
 print(f"Navigation logs will be written to: {_nav_log_path}")
 
+# Module-level logger (defined early so endpoints declared above the later
+# `logger = ...` assignment can still log at runtime).
+logger = logging.getLogger(__name__)
+
 from ..randomizer import Randomizer, RandomizationPlan, RandomizationResult, preview_randomization
 from ..io.config_loader import RandomizerConfig, get_default_config
 from ..io.rom_reader import ROMReader, load_rom
@@ -904,7 +908,10 @@ async def render_screen(
         raise HTTPException(status_code=501, detail="Rendering not available. Install Pillow: pip install Pillow")
 
     if _screen_renderer is None:
-        raise HTTPException(status_code=500, detail="Screen renderer not initialized")
+        # Renderer is initialized at ROM-load time. If it's missing here the
+        # practical cause is the same as "no ROM loaded" — surface it as the
+        # same clean 400 the _game_world guard returns, not an opaque 500.
+        raise HTTPException(status_code=400, detail="No ROM loaded")
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -938,6 +945,12 @@ async def render_screen(
             }
         )
     except Exception as e:
+        # Log the full traceback BEFORE raising so the next live 500 shows the
+        # cause instead of being swallowed behind a one-line detail string.
+        logger.exception(
+            "render_screen failed (chapter=%s screen=%s scale=%s ws_color=%s)",
+            chapter_num, screen_index, scale, ws_color,
+        )
         raise HTTPException(status_code=500, detail=f"Rendering failed: {str(e)}")
 
 
@@ -1208,8 +1221,6 @@ async def get_plan():
         "plan": _current_plan.to_dict(),
     }
 
-
-logger = logging.getLogger(__name__)
 
 @app.post("/api/plan/apply-preview")
 async def apply_plan_preview():
@@ -1722,14 +1733,40 @@ async def debug_validate_rom():
     if _game_world is None:
         raise HTTPException(status_code=400, detail="No ROM loaded")
 
-    from ..testing.validators import (
-        validate_navigation_integrity,
-        validate_time_period_boundaries,
-        find_time_door_screens,
-        run_all_chapter_validators,
-        IssueSeverity,
-    )
-    from ..core.enums import get_time_period_for_screen, PAST_SCREEN_INDICES
+    # Sourced from the modern validation framework (validation/runner.py +
+    # validation/validators/*) instead of the retired testing.validators module.
+    # The ValidationRunner runs every registered validator per chapter; we map
+    # each ValidationIssue back onto the legacy per-requirement response shape
+    # the frontend (JsonDebugPanel ValidationView) consumes.
+    from ..validation.runner import ValidationRunner
+    from ..validation.config import ValidationConfig
+    from ..validation.base import ValidationPhase, Severity
+    from ..core.enums import PAST_SCREEN_INDICES
+
+    def _find_time_door_screens(chapter) -> set:
+        """Screens whose Content byte marks a time door (0xC0/0xC7/0xD7)."""
+        time_door_contents = {0xC0, 0xC7, 0xD7}
+        return {
+            screen.relative_index
+            for screen in chapter
+            if screen.content in time_door_contents
+        }
+
+    # Map modern validator IDs onto the legacy R-xxx requirement codes the
+    # frontend's error_breakdown keys on. Unknown IDs fall back to the raw id.
+    validator_requirement_map = {
+        "navigation_consistency": "R-001",
+        "time_period_isolation": "R-002",
+        "screen_traversability": "R-003",
+        "section_flow": "R-004",
+        "edge_compatibility": "R-010",
+        "edge_alignment": "R-011",
+        "spatial_consistency": "R-016",
+        "datapointer_objectset": "R-020",
+    }
+
+    runner = ValidationRunner(ValidationConfig())
+    validation_context = {"rom_data": _rom_data}
 
     results = {
         "status": "completed",
@@ -1758,62 +1795,47 @@ async def debug_validate_rom():
             "metrics": {},
         }
 
-        all_issues = []
+        # Run every registered validator for this chapter via the modern
+        # framework. This covers both pre- and post-randomization state — the
+        # validators read the live `chapter` (which reflects any applied plan)
+        # plus rom_data from the context.
+        chapter_validation = runner.run_for_chapter(
+            chapter,
+            phase=ValidationPhase.FINAL,
+            context=validation_context,
+        )
+        all_issues = chapter_validation.issues
 
-        # If plan is applied, run all validators
+        # If a plan is applied, surface the same section-count metrics as before.
         if _current_plan is not None:
             chapter_plan = _current_plan.world_plan.get_chapter(chapter_num)
-            chapter_shape = _current_plan.world_shape.get_chapter(chapter_num)
-            chapter_connections = _current_plan.world_connections.get_chapter(chapter_num)
             chapter_population = getattr(_current_plan, 'world_population', None)
-
-            if chapter_population:
-                chapter_pop = chapter_population.get_chapter(chapter_num)
-            else:
-                chapter_pop = None
-
+            chapter_pop = (
+                chapter_population.get_chapter(chapter_num)
+                if chapter_population else None
+            )
             if chapter_plan and chapter_pop:
-                # Get time doors for this chapter
-                time_door_screens = find_time_door_screens(chapter)
-
-                # Run all validators
-                all_issues = run_all_chapter_validators(
-                    chapter=chapter,
-                    chapter_plan=chapter_plan,
-                    chapter_population=chapter_pop,
-                    chapter_connections=chapter_connections,
-                    rom_data=_rom_data,
-                    time_door_screens=time_door_screens,
-                )
-
-                # Add metrics
                 chapter_result["metrics"]["section_count_planned"] = len(chapter_plan.sections)
                 chapter_result["metrics"]["section_count_assigned"] = len([
                     s for s in chapter_plan.sections
                     if len(chapter_pop.screen_assignments.get(s.section_id, [])) > 0
                 ])
-        else:
-            # No plan - just run basic validators
-            nav_issues = validate_navigation_integrity(chapter)
-            time_issues = validate_time_period_boundaries(chapter)
-            all_issues = nav_issues + time_issues
 
-        # Categorize issues
+        # Categorize issues into the legacy per-requirement response shape.
         for issue in all_issues:
-            issue_dict = issue.to_dict() if hasattr(issue, 'to_dict') else {
-                "severity": issue.severity.value,
-                "category": issue.category,
-                "message": issue.message,
-                "requirement": getattr(issue, 'requirement', None),
-            }
+            requirement = validator_requirement_map.get(
+                issue.validator_id, issue.validator_id
+            )
+            issue_dict = issue.to_dict()
+            # Backward-compat: the legacy shape carried a top-level `requirement`.
+            issue_dict["requirement"] = requirement
 
-            if issue.severity == IssueSeverity.ERROR:
+            if issue.severity == Severity.ERROR:
                 chapter_result["errors"].append(issue_dict)
                 # Track error breakdown by requirement
-                req = getattr(issue, 'requirement', 'unknown')
-                if req not in results["summary"]["error_breakdown"]:
-                    results["summary"]["error_breakdown"][req] = 0
-                results["summary"]["error_breakdown"][req] += 1
+                if requirement not in results["summary"]["error_breakdown"]:
+                    results["summary"]["error_breakdown"][requirement] = 0
+                results["summary"]["error_breakdown"][requirement] += 1
             else:
                 chapter_result["warnings"].append(issue_dict)
 
@@ -1841,7 +1863,7 @@ async def debug_validate_rom():
             })
 
         # Time period stats
-        time_doors = find_time_door_screens(chapter)
+        time_doors = _find_time_door_screens(chapter)
         past_screens = PAST_SCREEN_INDICES.get(chapter_num, set())
         chapter_result["time_period"] = {
             "past_count": len(past_screens),
