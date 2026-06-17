@@ -67,7 +67,7 @@ TMOS_AI/
 
 ```bash
 # Clone the repository
-git clone <repo-url>
+git clone https://github.com/rankinbc/TMOS_Randomizer_V2.git
 cd TMOS_AI
 
 # Create virtual environment
@@ -75,25 +75,26 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 
-# Install dependencies
-pip install -r requirements.txt
+# Install Python backend
+cd projects/TMOS_Randomizer_V2
+pip install -e .
 
-# Install UI dependencies (optional)
-cd projects/TMOS_Randomizer_V2/ui
+# Install UI dependencies
+cd ui
 npm install
 ```
 
 ### Usage
 
 ```bash
-# Preview randomization (no ROM modification)
-tmos-randomize preview --seed 12345
+# Start the API server (from projects/TMOS_Randomizer_V2/)
+uvicorn tmos_randomizer.api.server:app --reload --port 8000
 
-# Randomize a ROM
-tmos-randomize randomize input.nes output.nes --seed 12345
+# Start the UI (separate terminal, from projects/TMOS_Randomizer_V2/ui/)
+npm run dev
 
-# Start the web UI
-tmos-randomize serve
+# Run tests
+pytest tests/ --ignore=tests/test_rendering
 ```
 
 ---
