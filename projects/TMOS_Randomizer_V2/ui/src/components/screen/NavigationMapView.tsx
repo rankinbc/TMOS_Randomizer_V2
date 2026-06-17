@@ -1465,7 +1465,7 @@ export function NavigationMapView({
               return (
                 <div
                   key={screen.index}
-                  className={`absolute cursor-grab active:cursor-grabbing transition-opacity ${
+                  className={`absolute cursor-grab active:cursor-grabbing select-none transition-opacity ${
                     isBeingDragged ? 'opacity-50' : ''
                   }`}
                   style={{

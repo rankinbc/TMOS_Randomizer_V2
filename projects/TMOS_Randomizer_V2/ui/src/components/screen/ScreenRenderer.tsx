@@ -82,6 +82,7 @@ export function ScreenRenderer({
       <img
         src={renderUrl}
         alt={`Screen ${screen.index}`}
+        draggable={false}
         className="w-full h-full object-cover"
         style={{ imageRendering: 'pixelated' }}
         onError={(e) => {
@@ -180,6 +181,7 @@ export function ScreenMini({
         <img
           src={renderUrl}
           alt={`Screen ${screenId.short}`}
+          draggable={false}
           className="absolute inset-0 w-full h-full object-cover"
           // 'auto' lets the browser use smooth (bilinear/bicubic) downsampling
           // on our 4x source, which is much clearer than nearest-neighbor.
