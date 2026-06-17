@@ -31,19 +31,30 @@ class TestBankOffset:
         assert get_bank_offset(0x0F) == (0, 0)  # Common overworld value
         assert get_bank_offset(0x3F) == (0, 0)
 
-    def test_top_bank1_bottom_bank2_range_40_to_7f(self):
-        """DataPointer 0x40-0x7F (01xxxxxx): top Bank 1, bottom Bank 2."""
-        # Bit 7=0, Bit 6=1
+    def test_top_bank0_bottom_bank1_range_40_to_8e(self):
+        """DataPointer 0x40-0x8E: top Bank 0, bottom Bank 1 (+256).
+
+        Bank selection is range-based, not bit-based. The whole 0x40..0x8E
+        band (which extends past 0x7F up to 0x8E) maps to top Bank 0 /
+        bottom Bank 1.
+        """
         assert get_bank_offset(0x40) == (0, 256)
         assert get_bank_offset(0x4F) == (0, 256)
         assert get_bank_offset(0x7F) == (0, 256)
+        assert get_bank_offset(0x80) == (0, 256)  # still in the 0x40..0x8E band
+        assert get_bank_offset(0x8E) == (0, 256)  # top of the band
 
-    def test_top_bank2_bottom_bank1_range_80_to_bf(self):
-        """DataPointer 0x80-0xBF (10xxxxxx): top Bank 2, bottom Bank 1."""
-        # Bit 7=1, Bit 6=0
-        assert get_bank_offset(0x80) == (256, 0)
+    def test_top_bank1_bottom_bank0_range_8f_to_9f(self):
+        """DataPointer 0x8F-0x9F: top Bank 1 (+256), bottom Bank 0.
+
+        Range-based: only the narrow 0x8F..0x9F band flips the top bank
+        while keeping the bottom on Bank 0. 0xA0..0xBF falls through to the
+        default (0, 0).
+        """
+        assert get_bank_offset(0x8F) == (256, 0)
         assert get_bank_offset(0x91) == (256, 0)  # Town variant
-        assert get_bank_offset(0xBF) == (256, 0)
+        assert get_bank_offset(0x9F) == (256, 0)
+        assert get_bank_offset(0xBF) == (0, 0)  # past the band -> default Bank 0/0
 
     def test_both_bank2_range_c0_to_ff(self):
         """DataPointer 0xC0-0xFF (11xxxxxx): both banks are Bank 2."""
@@ -53,20 +64,27 @@ class TestBankOffset:
         assert get_bank_offset(0xD3) == (256, 256)  # Town interiors
         assert get_bank_offset(0xFF) == (256, 256)
 
-    def test_bit_extraction_accuracy(self):
-        """Verify bit extraction is correct for edge cases."""
-        # Test specific bit patterns
-        # 0b01000000 = 0x40: bit 7=0, bit 6=1
-        assert get_bank_offset(0b01000000) == (0, 256)
+    def test_range_boundaries(self):
+        """Verify range-based selection at the band edges.
 
-        # 0b10000000 = 0x80: bit 7=1, bit 6=0
-        assert get_bank_offset(0b10000000) == (256, 0)
+        Bank selection is by VALUE RANGE, not by bits 7/6. The boundaries are
+        0x40 (enters top0/bottom1), 0x8F (enters top1/bottom0), 0xA0 (back to
+        default 0/0), and 0xC0 (enters top1/bottom1).
+        """
+        # 0x3F: last value before the first band -> default Bank 0/0
+        assert get_bank_offset(0x3F) == (0, 0)
 
-        # 0b11000000 = 0xC0: bit 7=1, bit 6=1
-        assert get_bank_offset(0b11000000) == (256, 256)
+        # 0x40: first value of the 0x40..0x8E band -> top Bank 0, bottom Bank 1
+        assert get_bank_offset(0x40) == (0, 256)
 
-        # 0b00111111 = 0x3F: bit 7=0, bit 6=0 (bits 0-5 = 0x3F)
-        assert get_bank_offset(0b00111111) == (0, 0)
+        # 0x8F: first value of the 0x8F..0x9F band -> top Bank 1, bottom Bank 0
+        assert get_bank_offset(0x8F) == (256, 0)
+
+        # 0xA0: just past the 0x8F..0x9F band -> back to default Bank 0/0
+        assert get_bank_offset(0xA0) == (0, 0)
+
+        # 0xC0: first value of the >=0xC0 band -> both Bank 1
+        assert get_bank_offset(0xC0) == (256, 256)
 
 
 class TestTileSectionGrid:
@@ -113,10 +131,10 @@ class TestScreenGrid:
     def test_screen_grid_composition(self):
         """Screen grid should combine top (4 rows) + bottom (2 rows)."""
         # Create mock ROM data with recognizable patterns
-        # Use indices 0 and 100 to avoid TileSection overlap (each section is 32 bytes
-        # but stored with 8-byte offsets, so adjacent indices share 24 bytes)
+        # Sections are 32 bytes with a 32-byte (non-overlapping) stride, so any
+        # two distinct indices are independent. Use 0 and 100 for clarity.
         top_idx = 0
-        bottom_idx = 100  # Far enough apart to not overlap
+        bottom_idx = 100
 
         rom_size = TILESECTION_BASE + (bottom_idx + 5) * TILESECTION_OFFSET + 32
         rom_data = bytearray(rom_size)
@@ -193,19 +211,24 @@ class TestTileSectionAddressing:
         assert TILESECTION_BASE == 0x03C4C7
 
     def test_tilesection_offset(self):
-        """Verify TileSection offset is 8 bytes (overlapping storage)."""
-        assert TILESECTION_OFFSET == 8
+        """Verify TileSection stride is 32 bytes (non-overlapping storage).
+
+        ROM-verified in knowledge/structures/tilesection.md §6.1: each
+        TileSection is 32 bytes and sections are laid out contiguously
+        (stride 32), not overlapping at an 8-byte stride.
+        """
+        assert TILESECTION_OFFSET == 32
 
     def test_address_calculation(self):
-        """Verify address calculation for various indices."""
+        """Verify address calculation for various indices (32-byte stride)."""
         # Index 0 should be at base
         assert TILESECTION_BASE + (0 * TILESECTION_OFFSET) == 0x03C4C7
 
-        # Index 1 should be 8 bytes later
-        assert TILESECTION_BASE + (1 * TILESECTION_OFFSET) == 0x03C4C7 + 8
+        # Index 1 should be 32 bytes later (one full non-overlapping section)
+        assert TILESECTION_BASE + (1 * TILESECTION_OFFSET) == 0x03C4C7 + 32
 
-        # Index 256 (Bank 2 start) should be 2048 bytes later
-        assert TILESECTION_BASE + (256 * TILESECTION_OFFSET) == 0x03C4C7 + 2048
+        # Index 256 (Bank 1 start) should be 256*32 = 8192 bytes later
+        assert TILESECTION_BASE + (256 * TILESECTION_OFFSET) == 0x03C4C7 + 8192
 
 
 class TestCommonDataPointerValues:
