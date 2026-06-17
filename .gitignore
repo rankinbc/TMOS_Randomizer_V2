@@ -61,6 +61,7 @@ yarn-error.log*
 .claude-system/
 tmpclaude-*
 nul
+.playwright-mcp/
 
 # ===================
 # Logs and temp files
