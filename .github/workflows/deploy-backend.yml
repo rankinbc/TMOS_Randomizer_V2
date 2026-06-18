@@ -43,6 +43,8 @@ jobs:
 
       # Deploy via Azure CLI (zip deploy REST API) — avoids the SCM/Oryx interaction
       # that caused azure/webapps-deploy@v3 to hang when SCM build was disabled.
+      # --async true fires the deploy without waiting for container startup (which
+      # takes ~90s due to pip install and would cause a timeout in --async false mode).
       - name: Deploy zip to App Service
         run: |
           az webapp deploy \
@@ -50,7 +52,7 @@ jobs:
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --src-path /tmp/deploy.zip \
             --type zip \
-            --async false
+            --async true
 
       # Always re-assert startup command so a bad deploy can't leave it broken.
       - name: Set startup command
