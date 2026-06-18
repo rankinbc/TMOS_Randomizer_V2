@@ -30,15 +30,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Disable Oryx build-during-deploy so pip install doesn't time out at the SCM layer.
-      # The startup command handles all package installation instead.
-      - name: Disable SCM build during deployment
-        run: |
-          az webapp config appsettings set \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
-
       # Pack only what the backend needs — exclude ROM, UI, debug scripts, etc.
       - name: Build deployment zip
         run: |
@@ -48,14 +39,20 @@ jobs:
           cp    projects/TMOS_Randomizer_V2/pyproject.toml /tmp/deploy-pkg/
           cp    projects/TMOS_Randomizer_V2/requirements.txt /tmp/deploy-pkg/
           cd /tmp/deploy-pkg && zip -r /tmp/deploy.zip .
+          echo "Zip size: $(du -sh /tmp/deploy.zip)"
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          package: /tmp/deploy.zip
+      # Deploy via Azure CLI (zip deploy REST API) — avoids the SCM/Oryx interaction
+      # that caused azure/webapps-deploy@v3 to hang when SCM build was disabled.
+      - name: Deploy zip to App Service
+        run: |
+          az webapp deploy \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --src-path /tmp/deploy.zip \
+            --type zip \
+            --async false
 
-      # Always re-assert the startup command so a failed deploy can't leave it wrong.
+      # Always re-assert startup command so a bad deploy can't leave it broken.
       - name: Set startup command
         run: |
           az webapp config set \
