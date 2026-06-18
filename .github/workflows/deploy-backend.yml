@@ -15,6 +15,7 @@ permissions:
 
 env:
   AZURE_WEBAPP_NAME: tmos-randomizer-api
+  AZURE_RESOURCE_GROUP: tmos-randomizer-rg
 
 jobs:
   deploy:
@@ -29,8 +30,41 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Disable Oryx build-during-deploy so pip install doesn't time out at the SCM layer.
+      # The startup command handles all package installation instead.
+      - name: Disable SCM build during deployment
+        run: |
+          az webapp config appsettings set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false
+
+      # Pack only what the backend needs — exclude ROM, UI, debug scripts, etc.
+      - name: Build deployment zip
+        run: |
+          mkdir -p /tmp/deploy-pkg
+          cp -r projects/TMOS_Randomizer_V2/src      /tmp/deploy-pkg/
+          cp -r projects/TMOS_Randomizer_V2/config   /tmp/deploy-pkg/
+          cp    projects/TMOS_Randomizer_V2/pyproject.toml /tmp/deploy-pkg/
+          cp    projects/TMOS_Randomizer_V2/requirements.txt /tmp/deploy-pkg/
+          cd /tmp/deploy-pkg && zip -r /tmp/deploy.zip .
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          package: projects/TMOS_Randomizer_V2
+          package: /tmp/deploy.zip
+
+      # Always re-assert the startup command so a failed deploy can't leave it wrong.
+      - name: Set startup command
+        run: |
+          az webapp config set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --startup-file 'pip install -e ".[api]" && uvicorn tmos_randomizer.api.server:app --host 0.0.0.0 --port 8000'
+
+      - name: Restart app
+        run: |
+          az webapp restart \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
