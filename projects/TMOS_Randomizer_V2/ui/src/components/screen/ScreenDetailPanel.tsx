@@ -31,62 +31,15 @@ const PARENT_WORLD_TYPES: Record<number, { name: string; color: string }> = {
   0xE0: { name: 'Overworld', color: '#22c55e' },  // Ch2 overworld present
 };
 
-// Past screen indices by chapter - time period determined by SCREEN INDEX, not ParentWorld
-const PAST_SCREEN_INDICES: Record<number, Set<number>> = {
-  1: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
-              123, 124, 125, 126]),
-  2: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
-              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
-              136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
-              149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
-              162, 163, 164, 165, 166, 167, 168, 169, 170]),
-  3: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
-              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
-              136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
-              149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
-              162, 163, 164]),
-  4: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
-              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
-              136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148,
-              149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161,
-              162, 163, 164, 165]),
-  5: new Set([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
-              64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-              80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
-              96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
-              110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
-              123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134]),
-};
-
-// Determine if a screen is in the PAST based on its index
-function isScreenInPast(screenIndex: number, chapterNum: number): boolean {
-  return PAST_SCREEN_INDICES[chapterNum]?.has(screenIndex) ?? false;
-}
-
 export function ScreenDetailPanel({ screen, chapterNum, screens, onScreenSelect, onEdit, onClose }: ScreenDetailPanelProps) {
   const contentInfo = getContentInfo(screen.content, chapterNum);
   const eventInfo = getEventInfo(screen.event);
   const parentInfo = getParentWorldInfo(screen.parent_world);
   const screenId = formatScreenId(screen.index, screen.global_index, chapterNum);
 
-  // Determine time period (PRESENT or PAST) based on screen index
-  const isPast = isScreenInPast(screen.index, chapterNum);
+  // Time period is authoritative from the backend (core.enums.PAST_SCREEN_INDICES),
+  // served per-screen as `is_past`. Do NOT re-derive it in the UI.
+  const isPast = screen.is_past ?? false;
   const timePeriod = isPast ? 'PAST' : 'PRESENT';
 
   // Determine if this is a stairway
