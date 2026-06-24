@@ -33,13 +33,14 @@ jobs:
       # Pack only what the backend needs — exclude ROM, UI, debug scripts, etc.
       - name: Build deployment zip
         run: |
+          sudo apt-get install -y zip > /dev/null 2>&1 || true
           mkdir -p /tmp/deploy-pkg
           cp -r projects/TMOS_Randomizer_V2/src      /tmp/deploy-pkg/
           cp -r projects/TMOS_Randomizer_V2/config   /tmp/deploy-pkg/
           cp    projects/TMOS_Randomizer_V2/pyproject.toml /tmp/deploy-pkg/
           cp    projects/TMOS_Randomizer_V2/requirements.txt /tmp/deploy-pkg/
           cd /tmp/deploy-pkg
-          find . -name '__pycache__' -prune -o -name '*.pyc' -prune -o -type f -print | zip /tmp/deploy.zip -@
+          find . -not -path '*/__pycache__/*' -not -name '*.pyc' -type f | zip /tmp/deploy.zip -@
           echo "Zip size: $(du -sh /tmp/deploy.zip)"
 
       # Deploy via Kudu zip API with Bearer token — avoids az webapp deploy CLI
@@ -53,7 +54,7 @@ jobs:
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/zip" \
             --data-binary @/tmp/deploy.zip \
-            --max-time 60)
+            --max-time 120)
           echo "Kudu zipdeploy HTTP $HTTP"
           [ "$HTTP" = "202" ] || { echo "Deploy failed with HTTP $HTTP"; exit 1; }
 
