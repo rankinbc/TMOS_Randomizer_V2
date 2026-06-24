@@ -521,6 +521,24 @@ export interface LevelCapsResponse {
   tier: string; editable: boolean; _note: string;
 }
 
+export interface ChangeEntry { label: string; vanilla: unknown; current: unknown; }
+export interface ChangeGroup { system: string; count: number; entries: ChangeEntry[]; }
+export interface ChangesResponse { total_changes: number; groups: ChangeGroup[]; differing_bytes: number; }
+
+export interface ValidationIssue {
+  validator_id: string; severity: string; message: string;
+  chapter_num: number | null; screen_index: number | null; category: string | null;
+}
+export interface ChapterValidation {
+  chapter_num: number; total_screens: number; passed: boolean;
+  errors: ValidationIssue[]; warnings: ValidationIssue[];
+}
+export interface ValidateResponse {
+  status: string; rom_filename: string | null; has_plan: boolean;
+  chapters: ChapterValidation[];
+  summary: { total_errors: number; total_warnings: number; all_passed: boolean; error_breakdown: Record<string, number>; };
+}
+
 // API Client class
 class ApiClient {
   private baseUrl: string;
@@ -585,6 +603,15 @@ class ApiClient {
 
   async getPlan(): Promise<PlanResponse> {
     return this.fetch<PlanResponse>('/api/plan');
+  }
+
+  // Debug
+  async getChanges(): Promise<ChangesResponse> {
+    return this.fetch<ChangesResponse>('/api/debug/changes');
+  }
+
+  async validateRom(): Promise<ValidateResponse> {
+    return this.fetch<ValidateResponse>('/api/debug/validate');
   }
 
   async applyPlanPreview(): Promise<{
