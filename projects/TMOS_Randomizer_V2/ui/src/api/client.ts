@@ -698,19 +698,27 @@ class ApiClient {
   }
 
   getSpriteUrl(filename: string): string {
-    return `${this.baseUrl}/api/assets/sprites/${filename}`;
+    return `/assets/sprites/${filename}`;
   }
 
   getTileUrl(filename: string): string {
-    return `${this.baseUrl}/api/assets/tiles/${filename}`;
+    return `/assets/tiles/${filename}`;
   }
 
   getMapUrl(filename: string): string {
-    return `${this.baseUrl}/api/assets/maps/${filename}`;
+    return `/assets/maps/${filename}`;
   }
 
   getBossImageUrl(filename: string): string {
-    return `${this.baseUrl}/api/assets/bosses/${filename}`;
+    return `/assets/bosses/${filename}`;
+  }
+
+  getEnemyImageUrl(filename: string): string {
+    return `/assets/enemies/${filename}`;
+  }
+
+  getOverworldEnemyImageUrl(filename: string): string {
+    return `/assets/overworld-enemies/${filename}`;
   }
 
   // ROM Operations
@@ -832,9 +840,8 @@ class ApiClient {
     );
   }
 
-  // Vite-served overworld enemy sprite (public/sprites/...). Not under baseUrl.
   objectSetImageUrl(file: string): string {
-    return `/sprites/OverworldEnemyImages/${file}`;
+    return `/assets/overworld-enemies/${file}`;
   }
 
   // Tile Bank Operations
