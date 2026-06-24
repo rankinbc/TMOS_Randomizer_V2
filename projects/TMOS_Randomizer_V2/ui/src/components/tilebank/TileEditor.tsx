@@ -56,8 +56,8 @@ function getTileFileName(tileValue: number): string {
 
 function getTileImageUrl(tileId: number): string {
   const filename = getTileFileName(tileId);
-  // Use static tiles from ui/public/tiles (served by Vite dev server)
-  return `/tiles/${filename}`;
+  // Use static tiles from ui/public/assets/tiles (served by Vite dev server / SWA CDN)
+  return `/assets/tiles/${filename}`;
 }
 
 interface TileEditorProps {

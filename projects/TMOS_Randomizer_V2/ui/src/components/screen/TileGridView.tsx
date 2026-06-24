@@ -110,10 +110,10 @@ function getGroundColor(wsColorValue: number): string {
 
 
 
-// Get individual tile image URL - uses static tiles from ui/public/tiles
+// Get individual tile image URL - uses static tiles from ui/public/assets/tiles
 function getTileImageUrl(tileId: number): string {
   const filename = getTileFileName(tileId);
-  return `/tiles/${filename}`;
+  return `/assets/tiles/${filename}`;
 }
 
 // Deadly tiles (water, lava - kills instantly, treated as blocking for navigation)

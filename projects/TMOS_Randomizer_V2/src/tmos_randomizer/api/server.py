@@ -79,7 +79,7 @@ from ..core import mp_table as _mp_table
 from ..core import palette_colors as _palette_colors
 from ..core import level_caps as _level_caps
 from ..core.field_metadata import build_field_metadata
-from ..core.enums import NAV_BLOCKED, NAV_BUILDING_ENTRANCE
+from ..core.enums import NAV_BLOCKED, NAV_BUILDING_ENTRANCE, is_past_screen_index
 from ..logic.navigation import connect_screens, disconnect_screens, OPPOSITE_DIRECTIONS
 
 # Import rendering module (optional - gracefully handle if PIL not installed)
@@ -408,7 +408,9 @@ async def get_chapter_data(chapter_num: int):
     for screen in chapter:
         screens.append({
             "index": screen.relative_index,
+            "modified": screen.is_modified,
             "global_index": screen.global_index,
+            "is_past": is_past_screen_index(chapter_num, screen.relative_index),
             "datapointer": screen.datapointer,
             "chr_index": get_chr_index(screen.datapointer),
             "top_tiles": screen.top_tiles,
@@ -451,8 +453,10 @@ async def get_screen_data(chapter_num: int, screen_index: int):
 
     return {
         "index": screen.relative_index,
+        "modified": screen.is_modified,
         "global_index": screen.global_index,
         "chapter_num": chapter_num,
+        "is_past": is_past_screen_index(chapter_num, screen.relative_index),
         "datapointer": screen.datapointer,
         "chr_index": get_chr_index(screen.datapointer),
         "top_tiles": screen.top_tiles,
@@ -657,6 +661,7 @@ async def update_screen_navigation(
         if s:
             result.append({
                 "index": s.relative_index,
+                "modified": s.is_modified,
                 "global_index": s.global_index,
                 "datapointer": s.datapointer,
                 "chr_index": get_chr_index(s.datapointer),
@@ -731,7 +736,9 @@ async def update_screen_tiles(
         "chr_changed": resolved["chr_changed"],
         "screen": {
             "index": screen.relative_index,
+            "modified": screen.is_modified,
             "global_index": screen.global_index,
+            "is_past": is_past_screen_index(chapter_num, screen.relative_index),
             "datapointer": screen.datapointer,
             "chr_index": get_chr_index(screen.datapointer),
             "top_tiles": screen.top_tiles,
@@ -810,7 +817,9 @@ async def update_screen_fields(
         "status": "updated",
         "screen": {
             "index": screen.relative_index,
+            "modified": screen.is_modified,
             "global_index": screen.global_index,
+            "is_past": is_past_screen_index(chapter_num, screen.relative_index),
             "datapointer": screen.datapointer,
             "chr_index": get_chr_index(screen.datapointer),
             "top_tiles": screen.top_tiles,
@@ -868,6 +877,7 @@ async def get_screen_vanilla(chapter_num: int, screen_index: int):
         raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
     return {
         "index": s.relative_index, "global_index": s.global_index,
+        "modified": s.is_modified,
         "parent_world": s.parent_world, "ambient_sound": s.ambient_sound,
         "content": s.content, "objectset": s.objectset,
         "datapointer": s.datapointer, "exit_position": s.exit_position,
@@ -3376,13 +3386,22 @@ def configure_asset_paths(
     ASSET_PATHS["overworld_enemies"] = base / "images" / "OverworldEnemyImages"
     ASSET_PATHS["bosses"] = base / "images" / "DemonImages"
 
-    # Tiles come from the github clone at <repo-root>/temp/github-clones/...
-    # ``base`` already points at <repo-root>/extracted-data, so its parent IS
-    # the repo root. Going up another level would land outside TMOS_AI and
-    # the lookup silently fails (renderer falls back to tile-id coloured
-    # blocks — that's the "screens don't render properly" symptom).
-    temp_base = base.parent / "temp" / "github-clones" / "TMOS_Romhack1"
-    ASSET_PATHS["tiles"] = tiles_dir or (temp_base / "Images" / "TileImages")
+    # Tiles for the renderer ship INSIDE the package (src/tmos_randomizer/data/
+    # tile_images, 165 hex-named PNGs 00.png..FF.png) so they are present wherever
+    # the backend runs — the Azure App Service deploy zip ships src/ but NOT
+    # extracted-data. Resolve package-relative first; fall back to the repo's
+    # extracted-data copy for dev checkouts that haven't built the package data.
+    #
+    # (A missing tiles dir is not a hard error: the renderer fills every metatile
+    # with the WorldScreen ground color, producing blank solid-green screens —
+    # that was the "screens don't render" symptom both locally and on Azure.)
+    _packaged_tiles = Path(__file__).resolve().parent.parent / "data" / "tile_images"
+    if tiles_dir:
+        ASSET_PATHS["tiles"] = tiles_dir
+    elif _packaged_tiles.exists():
+        ASSET_PATHS["tiles"] = _packaged_tiles
+    else:
+        ASSET_PATHS["tiles"] = base / "images" / "TileImages"
 
 
 @app.get("/api/assets/manifest")
@@ -3529,7 +3548,15 @@ async def get_map(filename: str):
 # =============================================================================
 
 _rom_env = os.environ.get("TMOS_DEFAULT_ROM", "")
-DEFAULT_ROM_PATH = Path(_rom_env) if _rom_env else None
+if _rom_env:
+    DEFAULT_ROM_PATH = Path(_rom_env)
+else:
+    # No env override: fall back to the project-local ROM if it exists.
+    # Resolved relative to this file (portable) — restores zero-config local
+    # startup without the hardcoded Windows path removed in 60505e3.
+    # server.py -> .../<project>/src/tmos_randomizer/api/server.py (parents[3] = project root)
+    _local_rom = Path(__file__).resolve().parents[3] / "TMOS_ORIGINAL.nes"
+    DEFAULT_ROM_PATH = _local_rom if _local_rom.exists() else None
 
 
 def _autoload_default_rom() -> None:
@@ -3580,7 +3607,9 @@ async def startup():
     print(f"  Maps: {ASSET_PATHS.get('maps')}")
     if DEFAULT_ROM_PATH and DEFAULT_ROM_PATH.exists():
         print(f"  Default ROM available at: {DEFAULT_ROM_PATH}")
-        print("  (POST /api/rom/load-default to load it)")
+        # Auto-load so a freshly-started backend has a ROM immediately (the UI
+        # only calls /api/rom/status on mount, never /api/rom/load-default).
+        _autoload_default_rom()
 
 
 @app.post("/api/rom/load-default")

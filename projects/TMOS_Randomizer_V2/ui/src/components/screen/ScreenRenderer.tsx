@@ -182,13 +182,16 @@ export function ScreenMini({
     >
       {tileOpacity > 0 && (
         <img
-          src={staticUrl}
+          // Edited screens render live from the in-memory ROM (cache-busted via
+          // the t/b/d params in apiUrl); unedited screens use the fast static
+          // thumbnail. Falls through to the live API if a static file is missing.
+          src={screen.modified ? apiUrl : staticUrl}
           alt={`Screen ${screenId.short}`}
           draggable={false}
           className="absolute inset-0 w-full h-full object-cover"
           style={{ imageRendering: 'auto', opacity: tileOpacity }}
           onError={(e) => {
-            // Static thumbnail missing — try live API render
+            // Static thumbnail missing (or live render failed) — try live API render
             const img = e.currentTarget;
             if (img.src !== apiUrl) {
               img.src = apiUrl;

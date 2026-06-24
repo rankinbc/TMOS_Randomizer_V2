@@ -89,7 +89,13 @@ export interface RomStatus {
 
 export interface ScreenData {
   index: number;
+  /** True when this screen has been edited in-memory since ROM load (or by
+   *  randomization). Drives live re-render instead of the static thumbnail. */
+  modified?: boolean;
   global_index: number;
+  /** True when this screen is in the PAST time period (authoritative —
+   *  computed server-side from core.enums.PAST_SCREEN_INDICES). */
+  is_past?: boolean;
   datapointer: number;
   chr_index: number;
   top_tiles: number;
