@@ -38,23 +38,26 @@ jobs:
           cp -r projects/TMOS_Randomizer_V2/config   /tmp/deploy-pkg/
           cp    projects/TMOS_Randomizer_V2/pyproject.toml /tmp/deploy-pkg/
           cp    projects/TMOS_Randomizer_V2/requirements.txt /tmp/deploy-pkg/
-          cd /tmp/deploy-pkg && zip -r /tmp/deploy.zip .
+          cd /tmp/deploy-pkg
+          find . -name '__pycache__' -prune -o -name '*.pyc' -prune -o -type f -print | zip /tmp/deploy.zip -@
           echo "Zip size: $(du -sh /tmp/deploy.zip)"
 
-      # Deploy via Azure CLI (zip deploy REST API) — avoids the SCM/Oryx interaction
-      # that caused azure/webapps-deploy@v3 to hang when SCM build was disabled.
-      # --async true fires the deploy without waiting for container startup (which
-      # takes ~90s due to pip install and would cause a timeout in --async false mode).
-      - name: Deploy zip to App Service
+      # Deploy via Kudu zip API with Bearer token — avoids az webapp deploy CLI
+      # which hangs indefinitely regardless of --async setting.
+      - name: Deploy to App Service via Kudu API
         run: |
-          az webapp deploy \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --src-path /tmp/deploy.zip \
-            --type zip \
-            --async true
+          TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            "https://${{ env.AZURE_WEBAPP_NAME }}.scm.azurewebsites.net/api/zipdeploy?isAsync=true" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary @/tmp/deploy.zip \
+            --max-time 60)
+          echo "Kudu zipdeploy HTTP $HTTP"
+          [ "$HTTP" = "202" ] || { echo "Deploy failed with HTTP $HTTP"; exit 1; }
 
-      # Always re-assert startup command so a bad deploy can't leave it broken.
+      # Always re-assert startup command so a broken deploy can't leave it wrong.
       - name: Set startup command
         run: |
           az webapp config set \
