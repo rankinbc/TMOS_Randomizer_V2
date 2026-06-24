@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ScreenData } from '../../api/client';
 import { ScreenRenderer } from './ScreenRenderer';
 import { Tooltip } from '../shared/Tooltip';
@@ -29,6 +29,13 @@ export function ScreenDetailPanel({
 }: ScreenDetailPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  // Reset the selected byte/detail box when navigating to a different screen.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedKey(null);
+  }, [screen.index]);
+
   const fieldMetadata = useRandomizerStore((s) => s.fieldMetadata);
   const fields = fieldMetadata?.entities.worldscreen?.fields ?? {};
 
