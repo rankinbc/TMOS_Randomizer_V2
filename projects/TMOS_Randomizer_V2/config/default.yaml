@@ -328,3 +328,12 @@ output:
       special_notes: true
 
   validation_report: true
+
+# ==============================================================================
+# V1 STRATEGY OPTIONS
+# ==============================================================================
+
+# tmos_randomizer_v1 strategy options
+v1:
+  apply_tweaks: true   # apply V1's fixed boss/shop/cosmetic/intro patch layer
+  max_retries: 1000    # brute-force attempts before reporting failure
