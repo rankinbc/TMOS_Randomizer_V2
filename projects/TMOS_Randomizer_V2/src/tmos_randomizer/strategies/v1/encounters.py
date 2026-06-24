@@ -8,7 +8,6 @@ from __future__ import annotations
 import random
 
 from .predicates import fisher_yates
-from ..base import RandomizationStrategy  # noqa: F401  (keeps import graph obvious)
 from ...core.encounter_lineups import LINEUP_BASE, LINEUP_COUNT, LINEUP_SIZE
 from ...core.encounter_groups import GROUP_BASE
 
