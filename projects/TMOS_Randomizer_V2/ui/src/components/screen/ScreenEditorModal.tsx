@@ -14,8 +14,11 @@ import {
   SPRITE_COLOR_SWATCHES,
 } from './worldScreenFieldOptions';
 import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './screenEnums';
+import { useSectionCompatibility } from './useSectionCompatibility';
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
+
+type BankFilter = 'all' | 'bank0' | 'bank1';
 
 function buildContentOptions(chapterNum: number): EnumOption[] {
   const opts: EnumOption[] = Object.entries(CONTENT_TYPES).map(([k, v]) => ({

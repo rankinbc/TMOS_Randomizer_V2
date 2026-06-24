@@ -483,6 +483,39 @@ async def get_screen_data(chapter_num: int, screen_index: int):
     }
 
 
+@app.get("/api/rom/screen/{chapter_num}/{screen_index}/section-compatibility")
+async def get_section_compatibility(
+    chapter_num: int,
+    screen_index: int,
+    half: str = Query(..., pattern="^(top|bottom)$"),
+):
+    """Compatibility-aware tilesection candidates for one half of a screen.
+
+    Returns GLOBAL section indices (0..TILESECTION_COUNT-1; >=256 = bank 1):
+      - ``compatible``: candidates whose resulting screen still edge-aligns with
+        every present neighbor on the seams the edited half touches (top half ->
+        up/left/right; bottom -> down/left/right).
+      - ``suggested``: compatible ∩ the chapter biome pool for this screen, ranked
+        by frequency among other same-biome screens. ``suggested`` ⊆ ``compatible``.
+
+    Edge math, bank/CHR resolution, and biome keying are reused from the repair
+    pass + renderer so results match the preview thumbnails.
+    """
+    from ..logic.section_compatibility import compute_section_compatibility
+
+    if _game_world is None or _rom_data is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    chapter = _game_world.chapters.get(chapter_num)
+    if chapter is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
+    screen = chapter.get_screen(screen_index)
+    if screen is None:
+        raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
+
+    result = compute_section_compatibility(chapter, screen, _rom_data, half)
+    return result
+
+
 @app.get("/api/rom/navigation/{chapter_num}")
 async def get_chapter_navigation(chapter_num: int):
     """Get navigation graph for a chapter."""

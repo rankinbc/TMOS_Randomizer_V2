@@ -115,6 +115,13 @@ export interface ChapterData {
   screens: ScreenData[];
 }
 
+// Compatibility-aware tilesection candidates for the screen editor. Indices are
+// GLOBAL section indices (0..470; >=256 = bank 1) matching the picker grid.
+export interface SectionCompatibility {
+  compatible: number[];
+  suggested: number[];
+}
+
 export interface NavigationGraph {
   chapter_num: number;
   nodes: { id: number; parent_world: number; event: number }[];
@@ -770,6 +777,18 @@ class ApiClient {
 
   async getScreenVanilla(chapterNum: number, screenIndex: number): Promise<ScreenVanilla> {
     return this.fetch<ScreenVanilla>(`/api/rom/screen/${chapterNum}/${screenIndex}/vanilla`);
+  }
+
+  // Compatibility-aware tilesection candidates for one half of a screen.
+  // Returns GLOBAL section indices (0..470; >=256 = bank 1).
+  async getSectionCompatibility(
+    chapterNum: number,
+    screenIndex: number,
+    half: 'top' | 'bottom',
+  ): Promise<SectionCompatibility> {
+    return this.fetch<SectionCompatibility>(
+      `/api/rom/screen/${chapterNum}/${screenIndex}/section-compatibility?half=${half}`,
+    );
   }
 
   async getNavigationGraph(chapterNum: number): Promise<NavigationGraph> {
