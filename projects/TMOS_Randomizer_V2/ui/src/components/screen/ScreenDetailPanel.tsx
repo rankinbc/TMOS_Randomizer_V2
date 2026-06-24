@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ScreenData } from '../../api/client';
+import { api, type ScreenData, type ObjectSetEnemy } from '../../api/client';
 import { ScreenRenderer } from './ScreenRenderer';
 import { Tooltip } from '../shared/Tooltip';
 import { formatScreenId } from '../../utils/formatters';
@@ -169,6 +169,9 @@ export function ScreenDetailPanel({
               {selectedField?.used_by && selectedField.used_by.length > 0 && (
                 <p className="text-[10px] text-slate-500">Used by: {selectedField.used_by.join(', ')}</p>
               )}
+              {selectedKey === 'objectset' && (
+                <ObjectSetEnemyStrip chapterNum={chapterNum} objectset={selectedValue} />
+              )}
               {selectedLinks.length > 0 && (
                 <div className="space-y-1 pt-1">
                   {selectedLinks.map((link, i) => (
@@ -299,5 +302,45 @@ function NavCell({ direction, value, screens, chapterNum, onScreenSelect }: NavC
     <Tooltip content={tooltipContent} position="top" delay={150}>
       {cell}
     </Tooltip>
+  );
+}
+
+function ObjectSetEnemyStrip({ chapterNum, objectset }: { chapterNum: number; objectset: number }) {
+  const [enemies, setEnemies] = useState<ObjectSetEnemy[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEnemies(null);
+    setFailed(false);
+    api.getObjectSetEnemies(chapterNum, objectset)
+      .then((r) => { if (active) setEnemies(r.enemies); })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [chapterNum, objectset]);
+
+  if (failed) return <p className="text-[10px] text-slate-500">Enemy set unavailable.</p>;
+  if (!enemies) return <p className="text-[10px] text-slate-500">Loading enemies{'…'}</p>;
+  if (enemies.length === 0) return <p className="text-[10px] text-slate-500">No enemies in this set.</p>;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {enemies.map((enemy, i) => (
+        <div key={i} className="flex flex-col items-center w-12">
+          {enemy.image ? (
+            <img
+              src={api.objectSetImageUrl(enemy.image)}
+              alt={enemy.name}
+              className="w-8 h-8 object-contain"
+              style={{ imageRendering: 'pixelated' }}
+            />
+          ) : (
+            <div className="w-8 h-8 bg-slate-700 rounded" />
+          )}
+          <span className="text-[9px] text-slate-400 truncate w-full text-center">{enemy.name}</span>
+        </div>
+      ))}
+    </div>
   );
 }
