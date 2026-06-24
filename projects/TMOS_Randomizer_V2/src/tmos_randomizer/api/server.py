@@ -2301,6 +2301,58 @@ async def debug_spatial_analysis(chapter_num: int):
     }
 
 
+# =============================================================================
+# API Endpoints - Debug Changes (ROM-vs-vanilla structured diff)
+# =============================================================================
+
+def _screens_snapshot(buf: bytes) -> dict:
+    """Parse ROM bytes into {ch -> {screen_index -> {field: value}}} for diffing."""
+    import tempfile
+    import os
+    tmp = tempfile.NamedTemporaryFile(suffix=".nes", delete=False)
+    try:
+        tmp.write(buf)
+        tmp.close()
+        world = load_rom(tmp.name)
+    finally:
+        os.unlink(tmp.name)
+
+    out: dict = {}
+    for chapter_num in range(1, 6):
+        chapter = world.chapters.get(chapter_num)
+        if chapter is None:
+            continue
+        ch_map: dict = {}
+        for screen in chapter.screens:
+            ch_map[f"0x{screen.relative_index:02X}"] = {
+                "content": screen.content,
+                "objectset": screen.objectset,
+                "datapointer": screen.datapointer,
+                "top_tiles": screen.top_tiles,
+                "bottom_tiles": screen.bottom_tiles,
+                "nav_right": screen.screen_index_right,
+                "nav_left": screen.screen_index_left,
+                "nav_down": screen.screen_index_down,
+                "nav_up": screen.screen_index_up,
+            }
+        out[f"ch{chapter_num}"] = ch_map
+    return out
+
+
+@app.get("/api/debug/changes")
+async def debug_changes():
+    """Authoritative ROM-vs-vanilla diff for the Debug tab change log."""
+    from .debug_changes import build_changes
+    rom, vanilla = _require_rom_pair()
+    providers = [
+        ("Screens", _screens_snapshot),
+        ("Hero", _player_stats.read_player_stats),
+        ("Inventory Caps", _inv_caps.read_caps),
+        ("Experience Table", _exp_table.read_exp_table),
+    ]
+    return build_changes(rom, vanilla, providers)
+
+
 @app.post("/api/apply")
 async def apply_randomization(request: ApplyRequest):
     """Apply current plan to a ROM."""
