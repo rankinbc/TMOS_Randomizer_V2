@@ -7,8 +7,6 @@ that V1 evaluates against OriginalWorldScreens read from it.
 """
 from __future__ import annotations
 
-import random
-
 from . import tables as T
 from .predicates import (
     is_demon, is_wizard, is_enemy_door, has_time_door, has_content_entrance,

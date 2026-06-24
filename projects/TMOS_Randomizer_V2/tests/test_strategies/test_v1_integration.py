@@ -66,12 +66,21 @@ def test_end_to_end_produces_valid_changed_navigable_rom(tmp_path):
     # Output re-parses and every chapter satisfies V1's time-door gate.
     from tmos_randomizer.strategies.v1 import algorithm as A
     gw = load_rom(out)
+    vanilla_gw = load_rom(_ROM)
     for chapter in gw:
         wi = chapter.chapter_num - 1
         assert A.time_doors_ok(chapter.screens, wi), f"chapter {chapter.chapter_num}"
         assert A.required_content_present(chapter.screens, wi)
-        # Nav untouched -> reachability no worse than vanilla.
-        analyze_reachability(chapter, starting_screen=0)
+        # V1 never writes nav bytes (4-7), so reachability must be IDENTICAL to
+        # vanilla's for each chapter.
+        out_reachable = analyze_reachability(chapter, starting_screen=0).reachable_screens
+        vanilla_chapter = vanilla_gw[chapter.chapter_num]
+        vanilla_reachable = analyze_reachability(vanilla_chapter, starting_screen=0).reachable_screens
+        assert out_reachable == vanilla_reachable, (
+            f"chapter {chapter.chapter_num}: nav changed — "
+            f"output reachable={sorted(out_reachable)}, "
+            f"vanilla reachable={sorted(vanilla_reachable)}"
+        )
 
 
 def test_determinism_same_seed_same_rom(tmp_path):

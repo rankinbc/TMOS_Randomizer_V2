@@ -6,7 +6,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ..base import RandomizationStrategy
 from ..registry import register_strategy

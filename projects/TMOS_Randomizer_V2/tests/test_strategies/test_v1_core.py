@@ -56,7 +56,6 @@ def _fake_game_world():
 
     return SimpleNamespace(
         chapters=chapters,
-        __iter__=lambda self=None: iter(chapters[i] for i in range(1, 6)),
     )
 
 
