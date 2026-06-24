@@ -14,7 +14,7 @@ interface LineupEditorProps {
 }
 
 const enemyImageUrl = (enemy: BattleEnemy | undefined) =>
-  enemy?.image ? `http://localhost:8000/api/assets/enemies/${enemy.image}` : null;
+  enemy?.image ? `/assets/enemies/${enemy.image}` : null;
 
 export function LineupEditor({
   lineup,

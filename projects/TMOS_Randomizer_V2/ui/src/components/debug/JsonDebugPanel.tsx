@@ -69,7 +69,7 @@ export function JsonDebugPanel() {
     setValidationLoading(true);
     setValidationError(null);
     try {
-      const response = await fetch('http://localhost:8000/api/debug/validate');
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/debug/validate`);
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Validation failed');

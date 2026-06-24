@@ -161,7 +161,7 @@ interface EnemyPanelProps {
 
 function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatch }: EnemyPanelProps) {
   const imgUrl = enemy.image
-    ? `http://localhost:8000/api/assets/enemies/${enemy.image}`
+    ? `/assets/enemies/${enemy.image}`
     : null;
 
   const enemyFields = fieldMetadata?.entities?.enemy?.fields;

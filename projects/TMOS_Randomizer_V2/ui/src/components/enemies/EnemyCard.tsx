@@ -16,7 +16,7 @@ const SIZE: Record<'sm' | 'md' | 'lg', { wrap: string; img: string; label: strin
 export function EnemyCard({ enemy, size = 'md', selected, onClick }: EnemyCardProps) {
   const s = SIZE[size];
   const imgUrl = enemy.image
-    ? `http://localhost:8000/api/assets/enemies/${enemy.image}`
+    ? `/assets/enemies/${enemy.image}`
     : null;
 
   return (
