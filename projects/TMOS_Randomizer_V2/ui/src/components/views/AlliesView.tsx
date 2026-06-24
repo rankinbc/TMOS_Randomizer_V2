@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { SimplifiedChapterPlan } from '../../types/randomizer';
 import { useRandomizerStore } from '../../store';
 
@@ -292,6 +292,21 @@ export function AlliesView({ chapter }: AlliesViewProps) {
   const [selectedAlly, setSelectedAlly] = useState<AllyData | null>(null);
   const [showAllChapters, setShowAllChapters] = useState(false);
   const { chapterData, selectedChapter } = useRandomizerStore();
+  const focusTarget = useRandomizerStore((s) => s.focusTarget);
+  const consumeFocusTarget = useRandomizerStore((s) => s.consumeFocusTarget);
+
+  // Deep-link: a World-panel content link asks us to select a specific ally,
+  // identified by its content byte (focusTarget.id) within the current chapter.
+  useEffect(() => {
+    if (focusTarget?.tab === 'allies' && focusTarget.kind === 'ally' && focusTarget.id != null) {
+      const ally = KNOWN_ALLIES.find(
+        (a) => a.contentByte === focusTarget.id && a.chapter === selectedChapter,
+      );
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (ally) setSelectedAlly(ally);
+      consumeFocusTarget();
+    }
+  }, [focusTarget, consumeFocusTarget, selectedChapter]);
 
   // Find screen locations for allies based on content byte
   const allyScreenLocations = useMemo(() => {

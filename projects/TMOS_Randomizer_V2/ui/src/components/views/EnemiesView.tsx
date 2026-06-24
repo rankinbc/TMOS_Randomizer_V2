@@ -38,6 +38,19 @@ export function EnemiesView() {
   const [section, setSection] = useState<EnemiesSection>('roster');
   const [selectedChapter, setSelectedChapter] = useState(1);
 
+  const focusTarget = useRandomizerStore((s) => s.focusTarget);
+  const consumeFocusTarget = useRandomizerStore((s) => s.consumeFocusTarget);
+
+  // Deep-link: a World-panel link (objectset / boss content) asks us to open a
+  // specific section.
+  useEffect(() => {
+    if (focusTarget?.tab === 'enemies' && focusTarget.section) {
+      const target = focusTarget.section as EnemiesSection;
+      if (SECTIONS.some((s) => s.id === target)) setSection(target);
+      consumeFocusTarget();
+    }
+  }, [focusTarget, consumeFocusTarget]);
+
   useEffect(() => {
     if (!battleEnemies) loadEnemies();
     if (!lineups) loadEncounterLineups();

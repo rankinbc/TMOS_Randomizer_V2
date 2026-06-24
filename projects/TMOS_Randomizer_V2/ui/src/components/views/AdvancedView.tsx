@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRandomizerStore } from '../../store';
 import { PlayerStatsView } from './PlayerStatsView';
 import { BossesPanel } from '../advanced/BossesPanel';
 import { EconomyPanel } from '../advanced/EconomyPanel';
@@ -43,6 +44,19 @@ const SUB_TABS: { id: SubTabId; label: string; expert?: boolean }[] = [
 
 export function AdvancedView() {
   const [sub, setSub] = useState<SubTabId>('progression');
+  const focusTarget = useRandomizerStore((s) => s.focusTarget);
+  const consumeFocusTarget = useRandomizerStore((s) => s.consumeFocusTarget);
+
+  // Deep-link: a World-panel palette/shop link asks us to open a specific
+  // sub-tab. (focusTarget.tab is 'expert' since this view lives under ExpertView.)
+  useEffect(() => {
+    if (focusTarget?.tab === 'expert' && focusTarget.section) {
+      const target = focusTarget.section as SubTabId;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (SUB_TABS.some((t) => t.id === target)) setSub(target);
+      consumeFocusTarget();
+    }
+  }, [focusTarget, consumeFocusTarget]);
 
   return (
     <div className="h-full flex flex-col">

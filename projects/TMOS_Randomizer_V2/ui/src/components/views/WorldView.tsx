@@ -5,6 +5,7 @@ import { ScreenGrid } from '../screen/ScreenGrid';
 import { ScreenDetailPanel } from '../screen/ScreenDetailPanel';
 import { ScreenEditorModal } from '../screen/ScreenEditorModal';
 import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
+import type { ScreenLinkActions } from '../screen/screenLinks';
 
 /**
  * Owns the World tab: the map (NavigationMapView/ScreenGrid) + the persistent
@@ -24,6 +25,9 @@ export function WorldView() {
     fieldMetadata,
     screenVanilla,
     loadScreenVanilla,
+    setFocusTarget,
+    navigateToTile,
+    unlockExpert,
   } = useRandomizerStore();
 
   const [editor, setEditor] = useState<{ index: number; half: 'top' | 'bottom' } | null>(null);
@@ -33,6 +37,13 @@ export function WorldView() {
   const byIndex = useMemo(() => new Map(screens.map((s) => [s.index, s])), [screens]);
   const selectedScreenData = selectedScreen != null ? byIndex.get(selectedScreen) : undefined;
   const editorScreen = editor ? byIndex.get(editor.index) : undefined;
+
+  const linkActions: ScreenLinkActions = useMemo(() => ({
+    setFocusTarget,
+    navigateToTile,
+    unlockExpert,
+    selectScreen: setSelectedScreen,
+  }), [setFocusTarget, navigateToTile, unlockExpert, setSelectedScreen]);
 
   // Load vanilla bytes for the screen being edited (for the "changed" indicator).
   useEffect(() => {
@@ -62,8 +73,8 @@ export function WorldView() {
     : [];
 
   return (
-    <div className="flex h-full">
-      <div className="flex-1 overflow-hidden">
+    <div className="relative h-full">
+      <div className="absolute inset-0 overflow-hidden">
         {viewMode === 'navigation' ? (
           <NavigationMapView
             chapter={chapterData}
@@ -84,7 +95,7 @@ export function WorldView() {
       </div>
 
       {selectedScreenData && (
-        <div className="w-80 flex-shrink-0 border-l border-slate-700 overflow-y-auto">
+        <div className="absolute top-3 right-3 z-20">
           <ScreenDetailPanel
             screen={selectedScreenData}
             chapterNum={chapterData.chapter_num}
@@ -92,6 +103,7 @@ export function WorldView() {
             onScreenSelect={setSelectedScreen}
             onEdit={(half) => openEditor(selectedScreen!, half)}
             onClose={() => setSelectedScreen(null)}
+            linkActions={linkActions}
           />
         </div>
       )}
@@ -114,17 +126,13 @@ export function WorldView() {
             screenVanilla && screenVanilla.index === editor.index ? screenVanilla : null
           }
           onFieldChange={(field, value) => {
-            updateScreenFields(editor.index, { [field]: value }).catch(() => {
-              // store surfaces the failure via apiError
-            });
+            updateScreenFields(editor.index, { [field]: value }).catch(() => {});
           }}
           onTilePick={(which, globalIndex) => {
             updateScreenTiles(
               editor.index,
               which === 'top' ? { top_tiles: globalIndex } : { bottom_tiles: globalIndex },
-            ).catch(() => {
-              // store surfaces the failure via apiError
-            });
+            ).catch(() => {});
           }}
         />
       )}
