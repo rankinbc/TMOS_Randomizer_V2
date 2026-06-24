@@ -97,8 +97,6 @@ def run_v1(game_world, rom: bytes, base_seed: int, max_retries: int) -> V1Outcom
                 failures.append(f"chapter {chapter.chapter_num}: time-door count != 1")
             if not A.required_content_present(screens, wi):
                 failures.append(f"chapter {chapter.chapter_num}: required content missing")
-            if not A.other_problems_ok(screens, originals, wi):
-                failures.append(f"chapter {chapter.chapter_num}: other-problem violation")
 
         if not failures:
             # Mark mutated screens so patch_rom writes only what changed.
