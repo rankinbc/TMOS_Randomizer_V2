@@ -48,7 +48,7 @@ tmos-randomize = "tmos_randomizer.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-tmos_randomizer = ["data/*.json"]
+tmos_randomizer = ["data/*.json", "data/tile_images/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
