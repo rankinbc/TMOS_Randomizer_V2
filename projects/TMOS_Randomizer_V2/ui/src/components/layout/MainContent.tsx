@@ -3,6 +3,7 @@ import type { TabType, ViewMode } from '../../store';
 import { RomUpload } from '../RomUpload';
 import { TileBankView } from '../tilebank';
 import { ItemsView, PlayerStatsView, EnemiesView, AlliesView, MapView, ExpertView, WorldView } from '../views';
+import { DebugView } from '../debug/DebugView';
 
 const TABS: { id: TabType; label: string }[] = [
   { id: 'world', label: 'World' },
@@ -13,6 +14,7 @@ const TABS: { id: TabType; label: string }[] = [
   { id: 'graphics', label: 'Graphics' },
   { id: 'randomize', label: 'Randomize' },
   { id: 'expert', label: '⚠ Expert' },
+  { id: 'debug', label: 'Debug' },
 ];
 
 const VIEW_MODES: { id: ViewMode; label: string }[] = [
@@ -22,7 +24,7 @@ const VIEW_MODES: { id: ViewMode; label: string }[] = [
 
 // Tabs that edit ROM-global data and don't need a chapter selected first.
 // (The screen/tiles/flow tabs are chapter-scoped and still require chapterData.)
-const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'expert', 'randomize']);
+const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'expert', 'randomize', 'debug']);
 
 export function MainContent() {
   const {
@@ -139,6 +141,7 @@ export function MainContent() {
               {selectedTab === 'allies' && planChapter && <AlliesView chapter={planChapter} />}
               {selectedTab === 'graphics' && <TileBankView />}
               {selectedTab === 'expert' && <ExpertView />}
+              {selectedTab === 'debug' && <DebugView />}
             </div>
           </div>
         )}

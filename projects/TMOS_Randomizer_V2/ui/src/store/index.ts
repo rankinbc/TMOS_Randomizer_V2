@@ -29,7 +29,7 @@ import {
 } from '../api/client';
 
 // Entity-centric IA: 7 entity tabs + 1 gated Expert tab.
-export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'expert';
+export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'expert' | 'debug';
 
 export interface EditLogEntry {
   ts: number;                     // ms since epoch
