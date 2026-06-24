@@ -42,6 +42,15 @@ export interface EditLogEntry {
 export type ModalType = 'settings' | 'load' | 'export' | 'randomize' | null;
 export type ViewMode = 'grid' | 'navigation';
 
+// Generic cross-view focus: a link sets this to switch tab AND land on a
+// section/item. Destination views consume it once on mount/update.
+export interface FocusTarget {
+  tab: TabType;
+  section?: string;  // destination view's local section/sub-tab id
+  kind?: string;     // e.g. 'ally'
+  id?: number;       // e.g. a content byte to resolve to an ally
+}
+
 // Section map from backend (after apply-preview)
 export interface SectionMapData {
   applied: boolean;
@@ -88,6 +97,7 @@ interface RandomizerState {
   selectedTab: TabType;
   selectedSection: string | null;
   selectedScreen: number | null;
+  focusTarget: FocusTarget | null;
   modalOpen: ModalType;
   viewMode: ViewMode;
 
@@ -162,6 +172,8 @@ interface RandomizerState {
   setSelectedTab: (tab: TabType) => void;
   setSelectedSection: (section: string | null) => void;
   setSelectedScreen: (screen: number | null) => void;
+  setFocusTarget: (target: FocusTarget) => void;
+  consumeFocusTarget: () => FocusTarget | null;
   setModalOpen: (modal: ModalType) => void;
   setViewMode: (mode: ViewMode) => void;
   regeneratePlan: () => void;
@@ -311,6 +323,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   selectedTab: 'world',
   selectedSection: null,
   selectedScreen: null,
+  focusTarget: null,
   modalOpen: null,
   viewMode: 'navigation',
   apiConnected: false,
@@ -389,6 +402,14 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   setSelectedSection: (section) => set({ selectedSection: section, selectedScreen: null }),
 
   setSelectedScreen: (screen) => set({ selectedScreen: screen }),
+
+  setFocusTarget: (target) => set({ focusTarget: target, selectedTab: target.tab }),
+
+  consumeFocusTarget: () => {
+    const target = get().focusTarget;
+    if (target) set({ focusTarget: null });
+    return target;
+  },
 
   setModalOpen: (modal) => set({ modalOpen: modal }),
 
