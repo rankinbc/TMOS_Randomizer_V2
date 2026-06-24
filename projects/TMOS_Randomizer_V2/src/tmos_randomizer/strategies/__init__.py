@@ -12,6 +12,7 @@ from .lab_adapter import (
     TileShuffleAdapter,
 )
 from .organic import OrganicStrategy
+from .v1 import TmosRandomizerV1
 from .registry import get_strategy, list_strategies, register_strategy
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "OrganicStrategy",
     "RandomizationStrategy",
     "TileShuffleAdapter",
+    "TmosRandomizerV1",
     "get_strategy",
     "list_strategies",
     "register_strategy",
