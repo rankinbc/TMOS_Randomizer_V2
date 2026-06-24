@@ -54,6 +54,17 @@ Validation gates (per world, then global):
   on an underwater W1 screen; no content-entrance screen may end up `0xFF`;
   wizard screens must be preserved.
 
+> **CORRECTION (2026-06-24, found via the end-to-end ROM test):** Only the
+> first two checks actually gate a reseed. In the C#, `CheckForOtherProblems()`'s
+> return value is stored into a `bool[] error` array that is **never read** —
+> only `timeDoorProblem` and `CheckThatAllRequiredScreenContentsArePresent()`
+> drive the retry. So V1's *effective* gates are **time-door-count + required-content
+> only**. Treating "other problems" as a hard gate is wrong: it even fails on the
+> unmodified vanilla chapter 2, and it dropped the per-seed pass rate from ~0.93%
+> to ~0.007%. The implementation (`core.py run_v1`) gates on the two real checks;
+> `other_problems_ok` remains available but does not block. Wherever this document
+> says "V1 gates" below (incl. decision 3), read it as these two checks.
+
 On any rejection the GUI generates a fresh random seed and retries (timer-driven)
 — i.e. **brute-force seeds until one passes**. This retry loop is the source of
 the "high % playable" property.
