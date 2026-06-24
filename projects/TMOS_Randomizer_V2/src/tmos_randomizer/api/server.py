@@ -3528,12 +3528,8 @@ async def get_map(filename: str):
 # Startup
 # =============================================================================
 
-DEFAULT_ROM_PATH = Path(
-    os.environ.get(
-        "TMOS_DEFAULT_ROM",
-        r"C:\claude-workspace\TMOS_AI\rom-files\TMOS_ORIGINAL.nes",
-    )
-)
+_rom_env = os.environ.get("TMOS_DEFAULT_ROM", "")
+DEFAULT_ROM_PATH = Path(_rom_env) if _rom_env else None
 
 
 def _autoload_default_rom() -> None:
