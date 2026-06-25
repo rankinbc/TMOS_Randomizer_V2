@@ -149,9 +149,16 @@ export function suggestPairs(
   count: number,
   k = 40,
   limit = 12,
+  candidates?: number[],
 ): SuggestedPair[] {
-  const tops = rankSections(table, 'top', neighbors, count).slice(0, k);
-  const bottoms = rankSections(table, 'bottom', neighbors, count).slice(0, k);
+  const allow = candidates ? new Set(candidates) : null;
+  const pick = (half: Half): RankedSection[] => {
+    let ranked = rankSections(table, half, neighbors, count);
+    if (allow) ranked = ranked.filter((r) => allow.has(r.globalIndex));
+    return ranked.slice(0, k);
+  };
+  const tops = pick('top');
+  const bottoms = pick('bottom');
   const pairs: SuggestedPair[] = [];
   for (const t of tops) {
     const tSig = table[String(t.globalIndex)];

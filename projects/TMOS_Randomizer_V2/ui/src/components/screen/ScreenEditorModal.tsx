@@ -19,6 +19,7 @@ import {
   rankSections, sectionPair, suggestPairs,
   type NeighborSigs, type SectionPair,
 } from './tileFilter';
+import { offTheme, coherentPairCandidates, BIOME_OPTIONS, type TargetTheme } from './themeFilter';
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
 
@@ -43,6 +44,14 @@ const EVENT_OPTIONS: EnumOption[] = Object.entries(EVENT_TYPES)
     label: `0x${Number(k).toString(16).toUpperCase().padStart(2, '0')} ${v.name}`,
   }))
   .sort((a, b) => a.value - b.value);
+
+const BIOME_COLORS: Record<string, string> = {
+  overworld: '#22c55e',
+  town: '#3b82f6',
+  dungeon: '#a855f7',
+  maze: '#f97316',
+  special: '#eab308',
+};
 
 // Bank selection per half from the DataPointer (value-range model — matches the
 // backend renderer's get_bank_offset, NOT the bit model). Mirrors getBanks in
@@ -120,6 +129,26 @@ export function ScreenEditorModal({
     loadTileWalkability();
   }, [loadTileWalkability]);
 
+  const tileThemes = useRandomizerStore((s) => s.tileThemes);
+  const loadTileThemes = useRandomizerStore((s) => s.loadTileThemes);
+  const [themeSel, setThemeSel] = useState<TargetTheme>('all');
+
+  useEffect(() => {
+    loadTileThemes();
+  }, [loadTileThemes]);
+
+  // The screen's own biome = theme of its current top section (top half global index).
+  const screenTopGlobal = banks.top * 256 + screen.top_tiles;
+  const screenBiome = tileThemes?.[String(screenTopGlobal)];
+
+  // Default the dropdown to the screen's biome when themes load / the screen changes.
+  useEffect(() => {
+    if (tileThemes && screenBiome) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setThemeSel(screenBiome as TargetTheme);
+    }
+  }, [tileThemes, screen.index, screenBiome]);
+
   // Resolve the four neighbors' section signatures from the walkability table.
   const neighbors = useMemo<NeighborSigs>(() => {
     const table = tileWalkability;
@@ -140,10 +169,19 @@ export function ScreenEditorModal({
 
   // Ordered list of {globalIndex, mismatch}. Filter off → natural 0..470 order.
   const filterOn = collisionFilter && tileWalkability != null;
-  const ordered = useMemo(() => {
+  const base = useMemo(() => {
     if (filterOn) return rankSections(tileWalkability!, activeHalf, neighbors, TOTAL);
     return indices.map((g) => ({ globalIndex: g, mismatch: 0 }));
   }, [filterOn, tileWalkability, activeHalf, neighbors, indices]);
+
+  const ordered = useMemo(() => {
+    if (themeSel === 'all') return base;
+    return base.slice().sort((a, b) => {
+      const oa = offTheme(tileThemes?.[String(a.globalIndex)], themeSel);
+      const ob = offTheme(tileThemes?.[String(b.globalIndex)], themeSel);
+      return oa - ob || a.mismatch - b.mismatch || a.globalIndex - b.globalIndex;
+    });
+  }, [base, themeSel, tileThemes]);
 
   // Which neighbor directions the active half is ranked against, split present/skipped.
   const summary = useMemo(() => {
@@ -156,11 +194,16 @@ export function ScreenEditorModal({
     return { present, skipped };
   }, [activeHalf, neighbors]);
 
-  const [showPairs, setShowPairs] = useState(false);
+  const [pairMode, setPairMode] = useState<'off' | 'collision' | 'coherent'>('off');
   const pairs = useMemo(() => {
-    if (!showPairs || tileWalkability == null) return [];
+    if (pairMode === 'off' || tileWalkability == null) return [];
+    if (pairMode === 'coherent') {
+      if (tileThemes == null) return [];
+      const cands = coherentPairCandidates(tileThemes, themeSel, TOTAL);
+      return suggestPairs(tileWalkability, neighbors, TOTAL, 40, 12, cands);
+    }
     return suggestPairs(tileWalkability, neighbors, TOTAL);
-  }, [showPairs, tileWalkability, neighbors]);
+  }, [pairMode, tileWalkability, tileThemes, themeSel, neighbors]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -307,16 +350,40 @@ export function ScreenEditorModal({
                 {' '}({activeHalf} half)
               </span>
             )}
-            <button
-              type="button"
-              disabled={tileWalkability == null}
-              onClick={() => setShowPairs((v) => !v)}
-              className="ml-auto px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40"
-            >
-              {showPairs ? 'Hide pairs' : 'Suggest pairs'}
-            </button>
+            <label className="flex items-center gap-1.5 text-slate-300">
+              Theme:
+              <select
+                value={themeSel}
+                disabled={tileThemes == null}
+                onChange={(e) => setThemeSel(e.target.value as TargetTheme)}
+                className="bg-slate-700 text-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
+              >
+                {BIOME_OPTIONS.map((b) => (
+                  <option key={b} value={b}>{b === 'all' ? 'All' : b[0].toUpperCase() + b.slice(1)}</option>
+                ))}
+              </select>
+            </label>
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={tileWalkability == null}
+                onClick={() => setPairMode((m) => (m === 'collision' ? 'off' : 'collision'))}
+                className={`px-2 py-0.5 rounded text-slate-200 disabled:opacity-40 ${pairMode === 'collision' ? 'bg-emerald-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+              >
+                Suggest pairs
+              </button>
+              <button
+                type="button"
+                disabled={tileWalkability == null || tileThemes == null}
+                onClick={() => setPairMode((m) => (m === 'coherent' ? 'off' : 'coherent'))}
+                className={`px-2 py-0.5 rounded text-slate-200 disabled:opacity-40 ${pairMode === 'coherent' ? 'bg-emerald-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+                title={themeSel === 'all' ? 'Coherent pairs across all biomes' : `Coherent ${themeSel} pairs`}
+              >
+                Coherent swap
+              </button>
+            </div>
           </div>
-          {showPairs && (
+          {pairMode !== 'off' && (
             <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/40">
               {pairs.length === 0 ? (
                 <div className="text-xs text-slate-500">No suggestions available.</div>
@@ -345,20 +412,25 @@ export function ScreenEditorModal({
             className="flex-1 overflow-y-auto p-3 grid gap-2 content-start"
             style={{ gridTemplateColumns: 'repeat(auto-fill, 150px)', gridAutoRows: '75px' }}
           >
-            {ordered.map(({ globalIndex: g, mismatch }) => (
-              <SectionThumb
-                key={g}
-                globalIndex={g}
-                chr={chr}
-                selected={g === currentGlobal}
-                crossBank={g >= 256}
-                shadeBottomRows={activeHalf === 'bottom'}
-                dim={filterOn && mismatch > 0}
-                badge={filterOn && mismatch > 0 ? mismatch : undefined}
-                perfect={filterOn && mismatch === 0}
-                onClick={() => onTilePick(activeHalf, g)}
-              />
-            ))}
+            {ordered.map(({ globalIndex: g, mismatch }) => {
+              const theme = tileThemes?.[String(g)];
+              const off = themeSel !== 'all' && offTheme(theme, themeSel) === 1;
+              return (
+                <SectionThumb
+                  key={g}
+                  globalIndex={g}
+                  chr={chr}
+                  selected={g === currentGlobal}
+                  crossBank={g >= 256}
+                  shadeBottomRows={activeHalf === 'bottom'}
+                  dim={(filterOn && mismatch > 0) || off}
+                  badge={filterOn && mismatch > 0 ? mismatch : undefined}
+                  perfect={filterOn && mismatch === 0 && !off}
+                  theme={theme}
+                  onClick={() => onTilePick(activeHalf, g)}
+                />
+              );
+            })}
           </div>
         </div>
         </div>
@@ -371,7 +443,7 @@ export function ScreenEditorModal({
 }
 
 function SectionThumb({
-  globalIndex, chr, selected, crossBank, shadeBottomRows, dim, badge, perfect, onClick,
+  globalIndex, chr, selected, crossBank, shadeBottomRows, dim, badge, perfect, theme, onClick,
 }: {
   globalIndex: number;
   chr: number;
@@ -381,6 +453,7 @@ function SectionThumb({
   dim?: boolean;
   badge?: number;
   perfect?: boolean;
+  theme?: string;
   onClick: () => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -433,6 +506,13 @@ function SectionThumb({
         <span className="absolute top-0 right-0 bg-amber-600/90 text-white text-[8px] font-mono px-1">
           ⚠{badge}
         </span>
+      )}
+      {theme && (
+        <span
+          className="absolute bottom-0 left-0 w-2 h-2 rounded-full m-0.5"
+          style={{ backgroundColor: BIOME_COLORS[theme] ?? '#64748b' }}
+          title={theme}
+        />
       )}
     </button>
   );

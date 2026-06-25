@@ -191,6 +191,10 @@ export interface TileSectionWalkabilityResponse {
   sections: Record<string, string>;  // global index -> 32-char walkability signature
 }
 
+export interface TileSectionThemesResponse {
+  themes: Record<string, string>;  // global index -> biome
+}
+
 // Per-screen edge walkability flags. true = edge is fully non-walkable (collision wall).
 export interface ScreenEdgeBlocked {
   top: boolean;
@@ -880,6 +884,11 @@ class ApiClient {
   // Intrinsic walkability signatures for all 471 sections (read-only, cached server-side).
   async getTileSectionWalkability(): Promise<TileSectionWalkabilityResponse> {
     return this.fetch<TileSectionWalkabilityResponse>(`/api/rom/tilesection-walkability`);
+  }
+
+  // Per-section biome/theme table (read-only, cached server-side).
+  async getTileSectionThemes(): Promise<TileSectionThemesResponse> {
+    return this.fetch<TileSectionThemesResponse>(`/api/rom/tilesection-themes`);
   }
 
   objectSetImageUrl(file: string): string {
