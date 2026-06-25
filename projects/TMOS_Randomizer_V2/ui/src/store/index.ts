@@ -29,10 +29,17 @@ import {
 } from '../api/client';
 
 // Enemies-tab sub-sections (also used by the URL router).
-export type EnemiesSection = 'roster' | 'encounters' | 'bosses' | 'overworld';
+export type EnemiesSection =
+  | 'roster'
+  | 'encounters'
+  | 'bosses'
+  | 'overworld'
+  | 'bossbytes'
+  | 'encrates'
+  | 'tbformulas';
 
-// Entity-centric IA: 7 entity tabs + 1 gated Expert tab.
-export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'expert' | 'debug';
+// Entity-centric IA: 8 entity tabs (Expert tab retired).
+export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'debug';
 
 export interface EditLogEntry {
   ts: number;                     // ms since epoch
@@ -172,9 +179,6 @@ interface RandomizerState {
   // Canonical safe-to-select enemy list (for dropdowns); loaded on API connect.
   selectableEnemies: SelectableEnemy[];
 
-  // Session-scoped Expert tab unlock flag (no persistence).
-  expertUnlocked: boolean;
-
   // Edit log (cross-feature)
   editLog: EditLogEntry[];
 
@@ -267,9 +271,6 @@ interface RandomizerState {
   updateLineupStartByte: (chapter: number, lineupIdx: number, value: number) => Promise<void>;
   updateEncounterGroup: (chapter: number, entryIndex: number, patch: EncounterGroupPatch) => Promise<void>;
   updateEnemyStat: (enemyId: number, patch: EnemyStatPatch) => Promise<void>;
-
-  // Expert tab unlock (session-scoped)
-  unlockExpert: () => void;
 
   // Edit log
   pushEditLog: (entry: EditLogEntry) => void;
@@ -402,9 +403,6 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   enemiesLoading: false,
   enemiesError: null,
   selectableEnemies: [],
-
-  // Expert tab unlock (session-scoped)
-  expertUnlocked: false,
 
   // Edit log
   editLog: [],
@@ -1408,8 +1406,6 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       throw error;
     }
   },
-
-  unlockExpert: () => set({ expertUnlocked: true }),
 
   pushEditLog: (entry) => {
     set((state) => ({ editLog: [...state.editLog, entry].slice(-200) }));

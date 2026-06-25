@@ -17,7 +17,7 @@ function vanillaFieldValue(
 /**
  * Safe-tier surface for boss stats. Renders ONLY fields whose tier === 'safe'
  * as editable. If a boss also has expert-tier bytes (tier other than 'safe'
- * or 'display'), a single inline note points the user to the Expert tab.
+ * or 'display'), a single inline note points the user to the Boss Bytes sub-tab.
  * The full editor (all tiers) lives in advanced/BossesPanel.
  */
 export function BossSafeSection() {
@@ -58,7 +58,7 @@ export function BossSafeSection() {
             projectile damage is what its attacks deal to you; cooldown is the frame delay between
             attacks.
           </p>
-          <p>Riskier (expert-tier) boss bytes live in the Expert tab.</p>
+          <p>Riskier (expert-tier) boss bytes live in the Boss Bytes sub-tab.</p>
         </div>
       }
       loading={loading}
@@ -108,7 +108,7 @@ export function BossSafeSection() {
                 </ul>
                 {hasExpert && (
                   <div className="px-4 py-1.5 text-[11px] text-amber-300/80 bg-amber-950/20 border-t border-amber-700/30">
-                    Advanced boss bytes are in the Expert tab.
+                    Advanced boss bytes are in the Boss Bytes sub-tab.
                   </div>
                 )}
               </div>

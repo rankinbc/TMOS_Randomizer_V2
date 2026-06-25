@@ -1,10 +1,11 @@
 export { MapView } from './MapView';
 export { TilesView } from './TilesView';
 export { ItemsView } from './ItemsView';
+export { ItemsTabView } from './ItemsTabView';
 export { PlayerStatsView } from './PlayerStatsView';
+export { HeroView } from './HeroView';
 export { EnemiesView } from './EnemiesView';
 export { AlliesView } from './AlliesView';
-export { AdvancedView } from './AdvancedView';
 export { ValidationView } from './ValidationView';
-export { ExpertView } from './ExpertView';
 export { WorldView } from './WorldView';
+export { GraphicsView } from './GraphicsView';

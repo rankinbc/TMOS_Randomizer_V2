@@ -7,12 +7,19 @@ import { BossSafeSection } from '../enemies/BossSafeSection';
 import { OverworldSafeSection } from '../enemies/OverworldSafeSection';
 import { EditLog } from '../stats/EditLog';
 import { HelpChip } from '../stats/HelpChip';
+import { SubTabBar, type SubTab } from '../common/SubTabBar';
+import { BossesPanel } from '../advanced/BossesPanel';
+import { EncounterRatesPanel } from '../advanced/EncounterRatesPanel';
+import { TbFormulasPanel } from '../advanced/TbFormulasPanel';
 
-const SECTIONS: { id: EnemiesSection; label: string }[] = [
+const SECTIONS: SubTab<EnemiesSection>[] = [
   { id: 'roster', label: 'Roster' },
   { id: 'encounters', label: 'Encounters' },
   { id: 'bosses', label: 'Bosses' },
   { id: 'overworld', label: 'Overworld' },
+  { id: 'bossbytes', label: 'Boss Bytes', expert: true },
+  { id: 'encrates', label: 'Encounter Rates', expert: true },
+  { id: 'tbformulas', label: 'TB Formulas', expert: true },
 ];
 
 export function EnemiesView() {
@@ -91,25 +98,7 @@ export function EnemiesView() {
         </div>
       </div>
 
-      {/* Segmented control */}
-      <div className="flex-shrink-0 bg-slate-800/60 border-b border-slate-700 overflow-x-auto">
-        <div className="flex">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSection(s.id)}
-              className={`whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                section === s.id
-                  ? 'text-blue-400 border-blue-400 bg-slate-700/40'
-                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-700/20'
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <SubTabBar tabs={SECTIONS} active={section} onSelect={setSection} />
 
       {error && (
         <div className="flex-shrink-0 px-4 py-1 bg-red-500/10 border-b border-red-500/30 text-xs text-red-400">
@@ -244,6 +233,32 @@ export function EnemiesView() {
       {section === 'overworld' && (
         <div className="flex-1 overflow-auto">
           <OverworldSafeSection />
+        </div>
+      )}
+
+      {/* ---- BOSS BYTES (advanced, non-safe tiers only) ---- */}
+      {section === 'bossbytes' && (
+        <div className="flex-1 overflow-auto">
+          <BossesPanel
+            tierFilter={(tier) => tier !== 'safe'}
+            title="Boss Bytes (Advanced)"
+            romNote="Advanced boss bytes — expert/display tiers only · safe HP & damage live in the Bosses section"
+            headerTier="expert"
+          />
+        </div>
+      )}
+
+      {/* ---- ENCOUNTER RATES (advanced) ---- */}
+      {section === 'encrates' && (
+        <div className="flex-1 overflow-auto">
+          <EncounterRatesPanel />
+        </div>
+      )}
+
+      {/* ---- TB COMBAT FORMULAS (advanced) ---- */}
+      {section === 'tbformulas' && (
+        <div className="flex-1 overflow-auto">
+          <TbFormulasPanel />
         </div>
       )}
     </div>
