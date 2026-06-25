@@ -76,7 +76,7 @@ describe('hashForRoute', () => {
 });
 
 describe('round-trip', () => {
-  for (const h of ['#/world', '#/hero', '#/enemies/roster', '#/enemies/roster/1c', '#/enemies/encounters/3', '#/enemies/bosses']) {
+  for (const h of ['#/world', '#/hero', '#/enemies/roster', '#/enemies/roster/1c', '#/enemies/encounters/3', '#/enemies/bosses', '#/enemies/overworld']) {
     it(`${h} survives parse → format`, () => {
       expect(hashForRoute(parseHash(h))).toBe(h);
     });

@@ -21,7 +21,7 @@ export function hexToId(s: string): number | null {
   const cleaned = s.toLowerCase().replace(/^0x/, '');
   if (!/^[0-9a-f]+$/.test(cleaned)) return null;
   const n = parseInt(cleaned, 16);
-  if (Number.isNaN(n) || n < 0 || n > 0xff) return null;
+  if (Number.isNaN(n) || n > 0xff) return null; // negatives impossible after the [0-9a-f] regex + 0x strip
   return n;
 }
 

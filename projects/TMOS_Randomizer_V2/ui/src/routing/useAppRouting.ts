@@ -32,6 +32,7 @@ export function useAppRouting(): void {
       if (s.selectedTab !== r.tab) s.setSelectedTab(r.tab);
       if (r.tab === 'enemies' && r.sub) {
         if (s.enemiesSection !== r.sub) s.setEnemiesSection(r.sub);
+        // A roster URL with no id segment clears the selection — this only fires for history entries / pasted URLs that genuinely had none; a live sub-tab switch keeps the id in the store and re-emits it.
         if (r.sub === 'roster') {
           const id = r.id ?? null;
           if (s.enemiesSelectedId !== id) s.setEnemiesSelectedId(id);
