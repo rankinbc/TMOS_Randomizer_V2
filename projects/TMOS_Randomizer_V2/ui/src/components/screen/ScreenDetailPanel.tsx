@@ -53,7 +53,7 @@ export function ScreenDetailPanel({
     : [];
 
   return (
-    <div className="w-[340px] max-h-[calc(100vh-7rem)] flex flex-col rounded-lg border border-slate-700 bg-slate-800/95 shadow-2xl backdrop-blur">
+    <div className="w-[660px] max-h-[calc(100vh-7rem)] flex flex-col rounded-lg border border-slate-700 bg-slate-800/95 shadow-2xl backdrop-blur">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 p-2.5 border-b border-slate-700 flex-shrink-0">
         <div className="min-w-0">
@@ -88,15 +88,10 @@ export function ScreenDetailPanel({
       </div>
 
       {!collapsed && (
-        <div className="overflow-y-auto">
-          {/* Preview */}
-          <div className="p-3 flex justify-center bg-slate-900 border-b border-slate-700">
-            <ScreenRenderer screen={screen} chapterNum={chapterNum} scale={0.5} showInfo={false} />
-          </div>
-
-          {/* Spatial nav grid */}
-          <div className="p-3 border-b border-slate-700">
-            <div className="grid grid-cols-3 gap-1.5 text-center">
+        <div className="grid grid-cols-2 grid-rows-[auto_1fr] flex-1 min-h-0">
+          {/* Top-left: spatial nav grid */}
+          <div className="p-3 border-b border-r border-slate-700 flex items-center justify-center">
+            <div className="grid grid-cols-3 gap-1.5 text-center w-full max-w-[210px]">
               <div />
               <NavCell direction="Up" value={screen.nav_up} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
               <div />
@@ -111,84 +106,97 @@ export function ScreenDetailPanel({
             </div>
           </div>
 
-          {/* Raw Data table */}
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-slate-500 text-[10px] uppercase tracking-wide">
-                <th className="text-left font-medium px-3 py-1.5">Field</th>
-                <th className="text-right font-medium px-1 py-1.5">Hex</th>
-                <th className="text-left font-medium px-3 py-1.5">Label</th>
-              </tr>
-            </thead>
-            <tbody>
-              {BYTE_FIELD_KEYS.map((key) => {
-                const field = fields[key];
-                const value = screenValueFor(screen, key);
-                const { text, tier } = resolveByteLabel(key, value, chapterNum, field);
-                const isSel = selectedKey === key;
-                return (
-                  <tr
-                    key={key}
-                    onClick={() => setSelectedKey(isSel ? null : key)}
-                    className={`cursor-pointer border-t border-slate-700/50 ${
-                      isSel ? 'bg-blue-500/15' : 'hover:bg-slate-700/40'
-                    }`}
-                  >
-                    <td className="px-3 py-1.5 text-slate-300">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${tierStyle(tier).dot}`} />
-                        {field?.label ?? key}
-                      </span>
-                    </td>
-                    <td className="px-1 py-1.5 text-right font-mono text-slate-400">
-                      0x{value.toString(16).toUpperCase().padStart(2, '0')}
-                    </td>
-                    <td className="px-3 py-1.5 text-slate-200 truncate max-w-[140px]">{text}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {/* Top-right: preview (square, larger) */}
+          <div className="p-3 flex items-center justify-center bg-slate-900 border-b border-slate-700">
+            <ScreenRenderer screen={screen} chapterNum={chapterNum} scale={0.55} showInfo={false} />
+          </div>
 
-          {/* Detail / links box */}
-          {selectedKey && (
-            <div className="m-3 rounded-lg border border-slate-700 bg-slate-900 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-200">{selectedField?.label ?? selectedKey}</span>
-                <span className="font-mono text-xs text-slate-400">
-                  0x{selectedValue.toString(16).toUpperCase().padStart(2, '0')} ({selectedValue})
-                </span>
-              </div>
-              <div className="text-xs text-slate-300">{selectedLabel}</div>
-              {selectedField?.description && (
-                <p className="text-xs text-slate-400">{selectedField.description}</p>
-              )}
-              {selectedField?.warning && (
-                <p className="text-xs text-amber-400">{'⚠'} {selectedField.warning}</p>
-              )}
-              {selectedField?.used_by && selectedField.used_by.length > 0 && (
-                <p className="text-[10px] text-slate-500">Used by: {selectedField.used_by.join(', ')}</p>
-              )}
-              {selectedKey === 'objectset' && (
-                <ObjectSetEnemyStrip chapterNum={chapterNum} objectset={selectedValue} />
-              )}
-              {selectedLinks.length > 0 && (
-                <div className="space-y-1 pt-1">
-                  {selectedLinks.map((link, i) => (
-                    <div key={i}>
-                      <button
-                        onClick={link.onActivate}
-                        className="text-xs text-blue-400 hover:text-blue-300 underline"
-                      >
-                        {link.label} {'→'}
-                      </button>
-                      {link.note && <p className="text-[10px] text-slate-500">{link.note}</p>}
-                    </div>
-                  ))}
+          {/* Bottom-left: field table (scrolls within its cell) */}
+          <div className="overflow-y-auto min-h-0 border-r border-slate-700">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 text-[10px] uppercase tracking-wide">
+                  <th className="text-left font-medium px-3 py-1.5">Field</th>
+                  <th className="text-right font-medium px-1 py-1.5">Hex</th>
+                  <th className="text-left font-medium px-3 py-1.5">Label</th>
+                </tr>
+              </thead>
+              <tbody>
+                {BYTE_FIELD_KEYS.map((key) => {
+                  const field = fields[key];
+                  const value = screenValueFor(screen, key);
+                  const { text, tier } = resolveByteLabel(key, value, chapterNum, field);
+                  const isSel = selectedKey === key;
+                  return (
+                    <tr
+                      key={key}
+                      onClick={() => setSelectedKey(isSel ? null : key)}
+                      className={`cursor-pointer border-t border-slate-700/50 ${
+                        isSel ? 'bg-blue-500/15' : 'hover:bg-slate-700/40'
+                      }`}
+                    >
+                      <td className="px-3 py-1.5 text-slate-300">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${tierStyle(tier).dot}`} />
+                          {field?.label ?? key}
+                        </span>
+                      </td>
+                      <td className="px-1 py-1.5 text-right font-mono text-slate-400">
+                        0x{value.toString(16).toUpperCase().padStart(2, '0')}
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-200 truncate max-w-[140px]">{text}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bottom-right: detail / links box, or placeholder when nothing selected */}
+          <div className="overflow-y-auto min-h-0 p-3">
+            {selectedKey ? (
+              <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-200">{selectedField?.label ?? selectedKey}</span>
+                  <span className="font-mono text-xs text-slate-400">
+                    0x{selectedValue.toString(16).toUpperCase().padStart(2, '0')} ({selectedValue})
+                  </span>
                 </div>
-              )}
-            </div>
-          )}
+                <div className="text-xs text-slate-300">{selectedLabel}</div>
+                {selectedField?.description && (
+                  <p className="text-xs text-slate-400">{selectedField.description}</p>
+                )}
+                {selectedField?.warning && (
+                  <p className="text-xs text-amber-400">{'⚠'} {selectedField.warning}</p>
+                )}
+                {selectedField?.used_by && selectedField.used_by.length > 0 && (
+                  <p className="text-[10px] text-slate-500">Used by: {selectedField.used_by.join(', ')}</p>
+                )}
+                {selectedKey === 'objectset' && (
+                  <ObjectSetEnemyStrip chapterNum={chapterNum} objectset={selectedValue} />
+                )}
+                {selectedLinks.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    {selectedLinks.map((link, i) => (
+                      <div key={i}>
+                        <button
+                          onClick={link.onActivate}
+                          className="text-xs text-blue-400 hover:text-blue-300 underline"
+                        >
+                          {link.label} {'→'}
+                        </button>
+                        {link.note && <p className="text-[10px] text-slate-500">{link.note}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-center text-xs text-slate-500">
+                Select a field for details.
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
