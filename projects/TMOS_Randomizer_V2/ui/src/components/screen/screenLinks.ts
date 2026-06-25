@@ -7,7 +7,6 @@ export interface ScreenLinkActions {
   setFocusTarget: (target: FocusTarget) => void;
   navigateToTile: (index: number) => void;
   selectScreen: (index: number) => void;
-  unlockExpert: () => void;
 }
 
 export interface ScreenLink {
@@ -48,10 +47,7 @@ function contentLinks(
     return [{
       label: 'Open Economy & Shops',
       note: 'Per-screen shop inventory is not yet decoded (Bank 2 RE pending).',
-      onActivate: () => {
-        actions.unlockExpert();
-        actions.setFocusTarget({ tab: 'expert', section: 'economy' });
-      },
+      onActivate: () => actions.setFocusTarget({ tab: 'items', section: 'economy' }),
     }];
   }
   return [];
@@ -81,11 +77,8 @@ export function screenLinksFor(
     case 'worldscreen_color':
     case 'sprites_color':
       return [{
-        label: 'Edit palette in Advanced → Cosmetic',
-        onActivate: () => {
-          actions.unlockExpert();
-          actions.setFocusTarget({ tab: 'expert', section: 'cosmetic' });
-        },
+        label: 'Edit palette in Graphics → Cosmetic',
+        onActivate: () => actions.setFocusTarget({ tab: 'graphics', section: 'cosmetic' }),
       }];
 
     case 'screen_index_right':

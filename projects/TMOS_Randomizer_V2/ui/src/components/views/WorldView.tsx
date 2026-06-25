@@ -27,7 +27,6 @@ export function WorldView() {
     loadScreenVanilla,
     setFocusTarget,
     navigateToTile,
-    unlockExpert,
   } = useRandomizerStore();
 
   const [editor, setEditor] = useState<{ index: number; half: 'top' | 'bottom' } | null>(null);
@@ -41,9 +40,8 @@ export function WorldView() {
   const linkActions: ScreenLinkActions = useMemo(() => ({
     setFocusTarget,
     navigateToTile,
-    unlockExpert,
     selectScreen: setSelectedScreen,
-  }), [setFocusTarget, navigateToTile, unlockExpert, setSelectedScreen]);
+  }), [setFocusTarget, navigateToTile, setSelectedScreen]);
 
   // Load vanilla bytes for the screen being edited (for the "changed" indicator).
   useEffect(() => {

@@ -9,7 +9,6 @@ function spies(): ScreenLinkActions {
     setFocusTarget: vi.fn(),
     navigateToTile: vi.fn(),
     selectScreen: vi.fn(),
-    unlockExpert: vi.fn(),
   };
 }
 
@@ -39,13 +38,12 @@ describe('screenLinksFor', () => {
     expect(a.setFocusTarget).toHaveBeenCalledWith({ tab: 'allies', kind: 'ally', id: 0x81 });
   });
 
-  it('content shop 0x60 → unlock Expert + Economy, with note', () => {
+  it('content shop 0x60 → Items/Economy, with note', () => {
     const a = spies();
     const link = screenLinksFor('content', 0x60, screen, 1, a)[0];
     expect(link.note).toBeTruthy();
     link.onActivate();
-    expect(a.unlockExpert).toHaveBeenCalled();
-    expect(a.setFocusTarget).toHaveBeenCalledWith({ tab: 'expert', section: 'economy' });
+    expect(a.setFocusTarget).toHaveBeenCalledWith({ tab: 'items', section: 'economy' });
   });
 
   it('content boss stage 0x21 → Enemies/Bosses', () => {
@@ -60,11 +58,10 @@ describe('screenLinksFor', () => {
     expect(a.selectScreen).toHaveBeenCalledWith(0x33);
   });
 
-  it('palette byte → unlock Expert + Cosmetic', () => {
+  it('palette byte → Graphics/Cosmetic', () => {
     const a = spies();
     screenLinksFor('worldscreen_color', 0x01, screen, 1, a)[0].onActivate();
-    expect(a.unlockExpert).toHaveBeenCalled();
-    expect(a.setFocusTarget).toHaveBeenCalledWith({ tab: 'expert', section: 'cosmetic' });
+    expect(a.setFocusTarget).toHaveBeenCalledWith({ tab: 'graphics', section: 'cosmetic' });
   });
 
   it('byte with no link → empty array', () => {
