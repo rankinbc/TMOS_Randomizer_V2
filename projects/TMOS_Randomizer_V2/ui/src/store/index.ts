@@ -120,6 +120,10 @@ interface RandomizerState {
   tileBankLoading: boolean;
   selectedTileIndex: number | null;
 
+  // Tile section walkability signatures (lazy, session-cached)
+  tileWalkability: Record<string, string> | null;
+  tileWalkabilityLoading: boolean;
+
   // Inventory Caps state (formerly "Shop Table")
   inventoryCaps: InventoryCapsResponse | null;
   inventoryCapsLoading: boolean;
@@ -208,6 +212,7 @@ interface RandomizerState {
   // Tile Bank actions
   loadTileBankData: () => Promise<void>;
   setSelectedTileIndex: (index: number | null) => void;
+  loadTileWalkability: () => Promise<void>;
   updateTileBankTile: (
     index: number,
     minitiles: [number, number, number, number]
@@ -337,6 +342,10 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   tileBankData: null,
   tileBankLoading: false,
   selectedTileIndex: null,
+
+  // Tile section walkability
+  tileWalkability: null,
+  tileWalkabilityLoading: false,
 
   // Inventory caps / EXP state
   inventoryCaps: null,
@@ -776,6 +785,18 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   },
 
   setSelectedTileIndex: (index) => set({ selectedTileIndex: index }),
+
+  loadTileWalkability: async () => {
+    if (get().tileWalkability || get().tileWalkabilityLoading) return;
+    set({ tileWalkabilityLoading: true });
+    try {
+      const r = await api.getTileSectionWalkability();
+      set({ tileWalkability: r.sections, tileWalkabilityLoading: false });
+    } catch (e) {
+      console.error('Failed to load tilesection walkability', e);
+      set({ tileWalkabilityLoading: false });
+    }
+  },
 
   updateTileBankTile: async (index, minitiles) => {
     const state = get();
