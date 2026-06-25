@@ -1,17 +1,14 @@
 """Enemy stat table at file 0xC351 (Bank 3 $8341).
 
-29 entries × 10 bytes, IDs 0x0D..0x29. Verified against
-TMOS_AI/docs/human/items-economy-re-answers.md (Q9).
+29 entries x 10 bytes, IDs 0x0D..0x29. Byte semantics from the GameAnalysis2
+TMOS disassembly (authoritative):
+  byte 0 = ep (EXP reward)        byte 5 = lineup_min (probability class)
+  byte 1 = rupia (Rupia reward)   byte 6 = action_prob2 (action probability)
+  byte 2 = bribe (bribe price)    byte 7 = hp
+  byte 3 = escape_trigger (prob)  byte 8 = atk (special-action attack)
+  byte 4 = action_prob (prob)     byte 9 = unknown (vanilla constant 2)
 
-Per-record layout:
-  byte 0 = EP reward
-  byte 1 = Rupia reward
-  byte 2-6 = combat stats (5 bytes; attack/defense/speed-related, undocumented)
-  byte 7 = HP
-  byte 8-9 = unknown (2 bytes)
-
-Editable user-meaningful fields: hp, ep, rupia.
-The other 7 bytes are exposed read-only with `?byte[N]` labels.
+All 10 bytes are read and writable by semantic name via FIELD_OFFSETS.
 """
 
 from __future__ import annotations
@@ -31,14 +28,20 @@ class EnemyStatDTO(TypedDict):
     rom_offset: str
     ep: int
     rupia: int
+    bribe: int
+    escape_trigger: int
+    action_prob: int
+    lineup_min: int
+    action_prob2: int
     hp: int
-    raw_byte_2: int
-    raw_byte_3: int
-    raw_byte_4: int
-    raw_byte_5: int
-    raw_byte_6: int
-    raw_byte_8: int
-    raw_byte_9: int
+    atk: int
+    byte_9: int
+
+
+FIELD_OFFSETS: dict[str, int] = {
+    "ep": 0, "rupia": 1, "bribe": 2, "escape_trigger": 3, "action_prob": 4,
+    "lineup_min": 5, "action_prob2": 6, "hp": 7, "atk": 8, "byte_9": 9,
+}
 
 
 def _slot_offset(enemy_id: int) -> int:
@@ -56,21 +59,14 @@ def _check_id(enemy_id: int) -> None:
 def _read(rom: bytes, enemy_id: int) -> EnemyStatDTO:
     _check_id(enemy_id)
     off = _slot_offset(enemy_id)
-    return {
+    dto: dict = {
         "enemy_id": enemy_id,
         "enemy_id_hex": f"0x{enemy_id:02X}",
         "rom_offset": f"0x{off:05X}",
-        "ep": rom[off],
-        "rupia": rom[off + 1],
-        "hp": rom[off + 7],
-        "raw_byte_2": rom[off + 2],
-        "raw_byte_3": rom[off + 3],
-        "raw_byte_4": rom[off + 4],
-        "raw_byte_5": rom[off + 5],
-        "raw_byte_6": rom[off + 6],
-        "raw_byte_8": rom[off + 8],
-        "raw_byte_9": rom[off + 9],
     }
+    for key, delta in FIELD_OFFSETS.items():
+        dto[key] = rom[off + delta]
+    return dto  # type: ignore[return-value]
 
 
 def read_enemy_stat(rom: bytes, enemy_id: int) -> EnemyStatDTO:
@@ -82,26 +78,20 @@ def read_all_enemy_stats(rom: bytes) -> list[EnemyStatDTO]:
 
 
 def write_enemy_stat(
-    rom: bytearray,
-    enemy_id: int,
-    *,
-    hp: Optional[int] = None,
-    ep: Optional[int] = None,
-    rupia: Optional[int] = None,
+    rom: bytearray, enemy_id: int, **fields: Optional[int]
 ) -> EnemyStatDTO:
-    """Mutate one enemy's editable stats. Other bytes are not touched."""
+    """Mutate any of the 10 enemy record bytes by semantic name.
+
+    Only the provided (non-None) fields are written; the rest are untouched.
+    """
     _check_id(enemy_id)
     off = _slot_offset(enemy_id)
-    if hp is not None:
-        if not 0 <= hp <= 255:
-            raise ValueError(f"hp must be 0..255, got {hp}")
-        rom[off + 7] = hp
-    if ep is not None:
-        if not 0 <= ep <= 255:
-            raise ValueError(f"ep must be 0..255, got {ep}")
-        rom[off] = ep
-    if rupia is not None:
-        if not 0 <= rupia <= 255:
-            raise ValueError(f"rupia must be 0..255, got {rupia}")
-        rom[off + 1] = rupia
+    for key, value in fields.items():
+        if key not in FIELD_OFFSETS:
+            raise ValueError(f"unknown enemy stat field: {key!r}")
+        if value is None:
+            continue
+        if not 0 <= value <= 255:
+            raise ValueError(f"{key} must be 0..255, got {value}")
+        rom[off + FIELD_OFFSETS[key]] = value
     return _read(bytes(rom), enemy_id)

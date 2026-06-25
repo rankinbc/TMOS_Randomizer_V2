@@ -86,3 +86,35 @@ def test_value_bounds(vanilla_rom, field, bad):
     rom = bytearray(vanilla_rom)
     with pytest.raises(ValueError):
         es.write_enemy_stat(rom, 0x0D, **{field: bad})
+
+
+def test_write_new_bytes_round_trip(vanilla_rom):
+    rom = bytearray(vanilla_rom)
+    es.write_enemy_stat(rom, 0x0D, bribe=42, atk=21, byte_9=9)
+    s = es.read_enemy_stat(bytes(rom), 0x0D)
+    assert s["bribe"] == 42
+    assert s["atk"] == 21
+    assert s["byte_9"] == 9
+    # Unrelated bytes preserved.
+    assert s["ep"] == 7 and s["rupia"] == 5
+
+
+def test_dto_has_semantic_keys(vanilla_rom):
+    s = es.read_enemy_stat(vanilla_rom, 0x0D)
+    for k in ("ep", "rupia", "bribe", "escape_trigger", "action_prob",
+              "lineup_min", "action_prob2", "hp", "atk", "byte_9"):
+        assert k in s
+    assert "raw_byte_2" not in s
+
+
+@pytest.mark.parametrize("field,bad", [("bribe", 256), ("atk", -1), ("byte_9", 300)])
+def test_new_field_bounds(vanilla_rom, field, bad):
+    rom = bytearray(vanilla_rom)
+    with pytest.raises(ValueError):
+        es.write_enemy_stat(rom, 0x0D, **{field: bad})
+
+
+def test_unknown_field_rejected(vanilla_rom):
+    rom = bytearray(vanilla_rom)
+    with pytest.raises(ValueError, match="unknown enemy stat field"):
+        es.write_enemy_stat(rom, 0x0D, nonsense=1)

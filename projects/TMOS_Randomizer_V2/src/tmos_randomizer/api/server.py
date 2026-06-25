@@ -249,10 +249,17 @@ class EncounterGroupUpdate(BaseModel):
 
 
 class EnemyStatUpdate(BaseModel):
-    """Partial update to one enemy's editable stats. ROM-verified at $8341."""
-    hp: Optional[int] = None
+    """Partial update to one enemy's stats (any of the 10 record bytes)."""
     ep: Optional[int] = None
     rupia: Optional[int] = None
+    bribe: Optional[int] = None
+    escape_trigger: Optional[int] = None
+    action_prob: Optional[int] = None
+    lineup_min: Optional[int] = None
+    action_prob2: Optional[int] = None
+    hp: Optional[int] = None
+    atk: Optional[int] = None
+    byte_9: Optional[int] = None
 
 
 # --- Advanced page update models ---
@@ -3062,15 +3069,10 @@ async def get_enemies():
             "enemy_id": eid,
             "enemy_id_hex": s["enemy_id_hex"],
             "rom_offset": s["rom_offset"],
-            "hp": s["hp"],
-            "ep": s["ep"],
-            "rupia": s["rupia"],
-            "raw_bytes": {
-                "byte_2": s["raw_byte_2"], "byte_3": s["raw_byte_3"],
-                "byte_4": s["raw_byte_4"], "byte_5": s["raw_byte_5"],
-                "byte_6": s["raw_byte_6"], "byte_8": s["raw_byte_8"],
-                "byte_9": s["raw_byte_9"],
-            },
+            "ep": s["ep"], "rupia": s["rupia"], "bribe": s["bribe"],
+            "escape_trigger": s["escape_trigger"], "action_prob": s["action_prob"],
+            "lineup_min": s["lineup_min"], "action_prob2": s["action_prob2"],
+            "hp": s["hp"], "atk": s["atk"], "byte_9": s["byte_9"],
         })
     vanilla_stats = {v["enemy_id"]: v for v in _enemy_stats.read_all_enemy_stats(vanilla)}
     return {
@@ -3110,8 +3112,7 @@ async def patch_enemy_stat(enemy_id: int, update: EnemyStatUpdate):
     rom_array = bytearray(rom)
     try:
         result = _enemy_stats.write_enemy_stat(
-            rom_array, enemy_id,
-            hp=update.hp, ep=update.ep, rupia=update.rupia,
+            rom_array, enemy_id, **update.model_dump(exclude_none=True)
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
