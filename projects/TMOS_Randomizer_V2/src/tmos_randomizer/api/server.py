@@ -129,6 +129,10 @@ _screen_renderer: Optional[Any] = None  # ScreenRenderer instance
 _ts_walk_cache: dict | None = None
 _ts_walk_cache_key: int | None = None
 
+# Cache for the per-section theme table (pure function of the loaded ROM).
+_ts_theme_cache: dict | None = None
+_ts_theme_cache_key: int | None = None
+
 
 # =============================================================================
 # Pydantic Models
@@ -1021,6 +1025,24 @@ async def get_tilesection_walkability():
         _ts_walk_cache_key = key
 
     return {"sections": _ts_walk_cache}
+
+
+@app.get("/api/rom/tilesection-themes")
+async def get_tilesection_themes():
+    """Biome ('overworld'/'town'/'dungeon'/'maze'/'special') for every global
+    TileSection (0..470). Pure function of the loaded ROM, cached.
+    """
+    global _ts_theme_cache, _ts_theme_cache_key
+    if _rom_data is None or _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    key = id(_rom_data)
+    if _ts_theme_cache is None or _ts_theme_cache_key != key:
+        from ..validation.tiles.themes import compute_section_themes
+        _ts_theme_cache = compute_section_themes(_game_world, _rom_data)
+        _ts_theme_cache_key = key
+
+    return {"themes": _ts_theme_cache}
 
 
 @app.get("/api/rom/objectset/{chapter_num}/{objectset_id}/enemies")

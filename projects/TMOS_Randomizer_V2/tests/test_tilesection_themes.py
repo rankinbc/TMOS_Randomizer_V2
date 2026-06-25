@@ -62,3 +62,33 @@ def test_compute_section_themes_votes_and_fallback():
     assert themes["6"] == "overworld"   # voted
     assert themes["7"] == "dungeon"     # unused → tile-ID score
     assert set(themes.values()) <= set(BIOMES)
+
+
+from fastapi.testclient import TestClient
+import tmos_randomizer.api.server as server
+
+
+def test_endpoint_no_rom_returns_400():
+    server._rom_data = None
+    server._game_world = None
+    server._ts_theme_cache = None
+    server._ts_theme_cache_key = None
+    client = TestClient(server.app)
+    assert client.get("/api/rom/tilesection-themes").status_code == 400
+
+
+def test_endpoint_returns_themes():
+    server._rom_data = _fake_rom()
+    server._game_world = [[_screen(0x00, 5, 6, SectionType.OVERWORLD)]]
+    server._ts_theme_cache = None
+    server._ts_theme_cache_key = None
+    client = TestClient(server.app)
+    resp = client.get("/api/rom/tilesection-themes")
+    assert resp.status_code == 200
+    themes = resp.json()["themes"]
+    assert len(themes) == TILESECTION_COUNT
+    assert themes["5"] == "overworld"
+    assert themes["7"] == "dungeon"
+    assert all(v in BIOMES for v in themes.values())
+    server._rom_data = None
+    server._game_world = None
