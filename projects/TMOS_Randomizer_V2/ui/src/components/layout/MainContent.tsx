@@ -2,7 +2,7 @@ import { useRandomizerStore } from '../../store';
 import type { TabType, ViewMode } from '../../store';
 import { RomUpload } from '../RomUpload';
 import { TileBankView } from '../tilebank';
-import { ItemsView, HeroView, EnemiesView, AlliesView, MapView, ExpertView, WorldView } from '../views';
+import { ItemsTabView, HeroView, EnemiesView, AlliesView, MapView, ExpertView, WorldView } from '../views';
 import { DebugView } from '../debug/DebugView';
 
 const TABS: { id: TabType; label: string }[] = [
@@ -135,7 +135,7 @@ export function MainContent() {
                 </div>
               )}
 
-              {selectedTab === 'items' && planChapter && <ItemsView chapter={planChapter} />}
+              {selectedTab === 'items' && planChapter && <ItemsTabView chapter={planChapter} />}
               {selectedTab === 'hero' && <HeroView />}
               {selectedTab === 'enemies' && <EnemiesView />}
               {selectedTab === 'allies' && planChapter && <AlliesView chapter={planChapter} />}
