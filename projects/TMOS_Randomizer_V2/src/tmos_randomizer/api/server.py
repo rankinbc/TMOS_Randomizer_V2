@@ -3078,7 +3078,7 @@ async def get_enemies():
     return {
         "enemies": enriched,
         "vanilla": vanilla_stats,
-        "_note": "HP/EP/Rupia are live ROM reads from $8341 (Bank 3).",
+        "_note": "All 10 enemy record bytes are live ROM reads from $8341 (Bank 3).",
     }
 
 
