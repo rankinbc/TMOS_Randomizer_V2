@@ -4,10 +4,11 @@ This module is the single source of truth for the 3-tier safety model and the
 guided-editing metadata. Tiers and enums derive from core/enums.py, which mirrors
 the authoritative GameAnalysis2 knowledgebase.
 
-Tiers:
+Tiers (the Expert tab was retired; danger fields are no longer hidden):
     safe    - edit freely on the entity tab.
-    caution - editable inline, but validated; controls pre-filtered to valid values.
-    danger  - never shown on entity tabs; only in the gated Expert tab.
+    caution - editable inline, but validated/warned; controls pre-filtered to valid values.
+    danger  - editable inline as well, shown with a prominent warning badge because the
+              value is high-risk (can crash or corrupt). No longer gated/hidden.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any, Dict, List
 
 from .enums import ContentType, EventType, ParentWorld
 
-METADATA_VERSION = "1"
+METADATA_VERSION = "2"
 
 
 def _enum_options(enum_cls: type[IntEnum]) -> List[Dict[str, Any]]:
@@ -40,8 +41,10 @@ def _worldscreen_fields() -> Dict[str, Dict[str, Any]]:
         "ambient_sound": {
             "label": "Ambient Sound", "byte": 1, "tier": "safe", "control": "number",
             "valid_range": [0, 255],
-            "description": "Ambient sound-effect ID played on the screen.",
-            "warning": "", "used_by": [],
+            "description": "Background ambient sound-effect ID looped on this screen "
+                           "(wind, water, town bustle, etc.). Cosmetic — safe to change; "
+                           "0 is silence.",
+            "warning": "", "used_by": ["ambient audio"],
         },
         "content": {
             "label": "Content / Building", "byte": 2, "tier": "caution",
@@ -103,25 +106,32 @@ def _worldscreen_fields() -> Dict[str, Dict[str, Any]]:
         "top_tiles": {
             "label": "Top TileSection", "byte": 10, "tier": "safe", "control": "number",
             "valid_range": [0, 255],
-            "description": "TileSection index drawn in the top 4 rows.",
+            "description": "Index of the TileSection drawn across the top half of the "
+                           "screen. Best changed via the Edit-modal tile picker, which keeps "
+                           "collision seams and biome/theme coherent — blind index entry can "
+                           "mismatch the bottom half.",
             "warning": "", "used_by": ["tile rendering"],
         },
         "bottom_tiles": {
             "label": "Bottom TileSection", "byte": 11, "tier": "safe", "control": "number",
             "valid_range": [0, 255],
-            "description": "TileSection index drawn in the bottom rows.",
+            "description": "Index of the TileSection drawn across the bottom half of the "
+                           "screen. Best changed via the Edit-modal tile picker (collision/"
+                           "theme-aware) rather than raw index entry.",
             "warning": "", "used_by": ["tile rendering"],
         },
         "worldscreen_color": {
             "label": "Background Palette", "byte": 12, "tier": "safe", "control": "number",
             "valid_range": [0, 255],
-            "description": "Background color palette selector.",
+            "description": "Background color-palette selector for the screen. Also editable "
+                           "visually via Graphics → Cosmetic.",
             "warning": "", "used_by": ["palette"],
         },
         "sprites_color": {
             "label": "Sprite Palette", "byte": 13, "tier": "safe", "control": "number",
             "valid_range": [0, 255],
-            "description": "Sprite color palette selector (0x12 = town).",
+            "description": "Sprite color-palette selector (e.g. 0x12 ≈ town sprites). Also "
+                           "editable visually via Graphics → Cosmetic.",
             "warning": "", "used_by": ["palette"],
         },
         "unknown": {
@@ -144,33 +154,80 @@ def _worldscreen_fields() -> Dict[str, Dict[str, Any]]:
 
 
 def _enemy_fields() -> Dict[str, Dict[str, Any]]:
-    """Return field metadata for the 10-byte turn-based enemy record (ROM 0xC351).
+    """Field metadata for the 10-byte turn-based enemy record (ROM 0xC351).
 
-    SAFETY NOTE: Enemy IDs 0x0B and 0x0C hard-crash the game and are never
-    selectable in the UI (see core/enums.py CRASH_ENEMY_IDS). These stat fields
-    are safe to edit on valid enemy IDs.
+    Byte semantics are from the GameAnalysis2 TMOS disassembly (authoritative).
+    All 10 bytes are editable; the obscure RNG/probability bytes and the unknown
+    byte 9 use the `caution` tier (editable but warned), not `danger`.
     """
-    _crash_warning = (
-        "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable."
-    )
+    crash = "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable."
+    prob = (" Probability classes are MEDIUM-confidence; extreme values can make "
+            "battles unwinnable or trivial.")
     return {
         "ep": {
-            "label": "Experience Points (EP reward)", "byte": 0, "tier": "safe",
-            "control": "number", "valid_range": [0, 255],
-            "description": "Experience awarded when defeated.",
-            "warning": _crash_warning, "used_by": ["levelling"],
+            "label": "EXP reward", "byte": 0, "tier": "safe", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Experience awarded when this enemy is defeated.",
+            "warning": crash, "used_by": ["levelling"],
         },
         "rupia": {
-            "label": "Rupia (currency drop)", "byte": 1, "tier": "safe",
-            "control": "number", "valid_range": [0, 255],
-            "description": "Currency dropped when defeated.",
-            "warning": _crash_warning, "used_by": ["economy"],
+            "label": "Rupia reward", "byte": 1, "tier": "safe", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Currency dropped when this enemy is defeated.",
+            "warning": crash, "used_by": ["economy"],
+        },
+        "bribe": {
+            "label": "Bribe price", "byte": 2, "tier": "safe", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Rupia required to bribe/negotiate past this enemy. "
+                           "0 = refuses all bribes.",
+            "warning": crash, "used_by": ["negotiation"],
+        },
+        "escape_trigger": {
+            "label": "Escape/Trigger chance", "byte": 3, "tier": "caution", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Probability class gating escape / action triggers. "
+                           "0xFF means it (near-)never triggers.",
+            "warning": crash + prob, "used_by": ["battle RNG"],
+        },
+        "action_prob": {
+            "label": "Special-action chance", "byte": 4, "tier": "caution", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Probability class gating this enemy's special actions.",
+            "warning": crash + prob, "used_by": ["battle RNG"],
+        },
+        "lineup_min": {
+            "label": "Lineup minimum", "byte": 5, "tier": "caution", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Lineup-minimum probability class. Vanilla constant 1 across the roster.",
+            "warning": crash + " MEDIUM-confidence; vanilla never varies this (constant 1) — "
+                       "effects of changing it are unverified.",
+            "used_by": ["battle RNG"],
+        },
+        "action_prob2": {
+            "label": "Special-action chance (2)", "byte": 6, "tier": "caution", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Second action-probability byte, paired with byte 4 in the RNG gate.",
+            "warning": crash + prob, "used_by": ["battle RNG"],
         },
         "hp": {
-            "label": "HP (hit points)", "byte": 7, "tier": "safe",
-            "control": "number", "valid_range": [0, 255],
+            "label": "HP (hit points)", "byte": 7, "tier": "safe", "control": "number",
+            "valid_range": [0, 255],
             "description": "Hit points in turn-based battle.",
-            "warning": _crash_warning, "used_by": ["combat"],
+            "warning": crash, "used_by": ["combat"],
+        },
+        "atk": {
+            "label": "Attack power", "byte": 8, "tier": "safe", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Attack value used for this enemy's special-action damage.",
+            "warning": crash, "used_by": ["combat"],
+        },
+        "byte_9": {
+            "label": "Unknown (byte 9)", "byte": 9, "tier": "caution", "control": "number",
+            "valid_range": [0, 255],
+            "description": "Purpose not located in the disassembly. Vanilla constant 2 across the roster.",
+            "warning": crash + " Effect unknown — editing may do nothing or destabilize battles.",
+            "used_by": [],
         },
     }
 

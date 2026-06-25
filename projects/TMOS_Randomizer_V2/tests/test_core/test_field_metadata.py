@@ -57,3 +57,31 @@ def test_metadata_includes_enemy_entity():
         assert f["control"] == "number"
         assert len(f["valid_range"]) == 2
         assert f["description"]
+
+
+def test_enemy_entity_documents_all_ten_bytes():
+    fields = build_field_metadata()["entities"]["enemy"]["fields"]
+    assert set(fields) == {
+        "ep", "rupia", "bribe", "escape_trigger", "action_prob",
+        "lineup_min", "action_prob2", "hp", "atk", "byte_9",
+    }
+    # Byte offsets are exactly 0..9, one per field.
+    assert sorted(f["byte"] for f in fields.values()) == list(range(10))
+    assert fields["bribe"]["byte"] == 2
+    assert fields["atk"]["byte"] == 8
+    for f in fields.values():
+        assert f["tier"] in {"safe", "caution", "danger"}
+        assert f["valid_range"] == [0, 255]
+        assert f["description"]
+
+
+def test_enemy_tier_assignment():
+    fields = build_field_metadata()["entities"]["enemy"]["fields"]
+    assert fields["bribe"]["tier"] == "safe"
+    assert fields["atk"]["tier"] == "safe"
+    assert fields["escape_trigger"]["tier"] == "caution"
+    assert fields["byte_9"]["tier"] == "caution"
+
+
+def test_metadata_version_is_two():
+    assert build_field_metadata()["version"] == "2"
