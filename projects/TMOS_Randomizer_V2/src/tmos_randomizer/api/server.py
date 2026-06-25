@@ -125,6 +125,10 @@ _rom_data: Optional[bytes] = None  # Raw ROM bytes for rendering (mutated by edi
 _rom_vanilla: Optional[bytes] = None  # Snapshot of ROM as uploaded (never mutated)
 _screen_renderer: Optional[Any] = None  # ScreenRenderer instance
 
+# Cache for the per-section walkability table (pure function of the loaded ROM).
+_ts_walk_cache: dict | None = None
+_ts_walk_cache_key: int | None = None
+
 
 # =============================================================================
 # Pydantic Models
@@ -997,6 +1001,26 @@ async def render_tilesection(
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=3600", "X-Section-Index": str(index)},
     )
+
+
+@app.get("/api/rom/tilesection-walkability")
+async def get_tilesection_walkability():
+    """Intrinsic walkability signature for every global TileSection (0..470).
+
+    Each value is a 32-char bitstring ('1'=walkable, '0'=blocking) over the
+    section's 4 rows x 8 cols, row-major. Pure function of the ROM, cached.
+    """
+    global _ts_walk_cache, _ts_walk_cache_key
+    if _rom_data is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    key = id(_rom_data)
+    if _ts_walk_cache is None or _ts_walk_cache_key != key:
+        from ..validation.tiles.edges import all_tilesection_walkability
+        _ts_walk_cache = all_tilesection_walkability(_rom_data)
+        _ts_walk_cache_key = key
+
+    return {"sections": _ts_walk_cache}
 
 
 @app.get("/api/rom/objectset/{chapter_num}/{objectset_id}/enemies")

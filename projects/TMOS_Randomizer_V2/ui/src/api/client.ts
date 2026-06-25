@@ -187,6 +187,10 @@ export interface ObjectSetEnemiesResponse {
   enemies: ObjectSetEnemy[];
 }
 
+export interface TileSectionWalkabilityResponse {
+  sections: Record<string, string>;  // global index -> 32-char walkability signature
+}
+
 // Per-screen edge walkability flags. true = edge is fully non-walkable (collision wall).
 export interface ScreenEdgeBlocked {
   top: boolean;
@@ -871,6 +875,11 @@ class ApiClient {
     return this.fetch<ObjectSetEnemiesResponse>(
       `/api/rom/objectset/${chapterNum}/${objectsetId}/enemies`
     );
+  }
+
+  // Intrinsic walkability signatures for all 471 sections (read-only, cached server-side).
+  async getTileSectionWalkability(): Promise<TileSectionWalkabilityResponse> {
+    return this.fetch<TileSectionWalkabilityResponse>(`/api/rom/tilesection-walkability`);
   }
 
   objectSetImageUrl(file: string): string {

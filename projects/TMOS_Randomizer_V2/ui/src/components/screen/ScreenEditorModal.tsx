@@ -14,6 +14,11 @@ import {
   SPRITE_COLOR_SWATCHES,
 } from './worldScreenFieldOptions';
 import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './screenEnums';
+import { useRandomizerStore } from '../../store';
+import {
+  rankSections, sectionPair, suggestPairs,
+  type NeighborSigs, type SectionPair,
+} from './tileFilter';
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
 
@@ -72,6 +77,7 @@ interface ScreenEditorModalProps {
     value: number,
   ) => void;
   onTilePick: (which: 'top' | 'bottom', globalIndex: number) => void;
+  onPickPair?: (topGlobal: number, bottomGlobal: number) => void;
   fieldMetadata?: EntityMetadata | null;
   vanilla?: ScreenVanilla | null;
 }
@@ -86,6 +92,7 @@ export function ScreenEditorModal({
   onScreenSelect,
   onFieldChange,
   onTilePick,
+  onPickPair,
   fieldMetadata,
   vanilla,
 }: ScreenEditorModalProps) {
@@ -104,6 +111,56 @@ export function ScreenEditorModal({
   const currentByte = activeHalf === 'top' ? screen.top_tiles : screen.bottom_tiles;
   const currentBank = activeHalf === 'top' ? banks.top : banks.bottom;
   const currentGlobal = currentBank * 256 + currentByte;
+
+  const tileWalkability = useRandomizerStore((s) => s.tileWalkability);
+  const loadTileWalkability = useRandomizerStore((s) => s.loadTileWalkability);
+  const [collisionFilter, setCollisionFilter] = useState(false);
+
+  useEffect(() => {
+    loadTileWalkability();
+  }, [loadTileWalkability]);
+
+  // Resolve the four neighbors' section signatures from the walkability table.
+  const neighbors = useMemo<NeighborSigs>(() => {
+    const table = tileWalkability;
+    const resolve = (navVal: number): SectionPair | null => {
+      if (!table) return null;
+      const n = byIndex.get(navVal);
+      if (!n) return null; // blocked (0xFF) / building (0xFE) / no such screen
+      const nb = getBanks(n.datapointer);
+      return sectionPair(table, nb.top * 256 + n.top_tiles, nb.bottom * 256 + n.bottom_tiles);
+    };
+    return {
+      up: resolve(screen.nav_up),
+      down: resolve(screen.nav_down),
+      left: resolve(screen.nav_left),
+      right: resolve(screen.nav_right),
+    };
+  }, [tileWalkability, byIndex, screen]);
+
+  // Ordered list of {globalIndex, mismatch}. Filter off → natural 0..470 order.
+  const filterOn = collisionFilter && tileWalkability != null;
+  const ordered = useMemo(() => {
+    if (filterOn) return rankSections(tileWalkability!, activeHalf, neighbors, TOTAL);
+    return indices.map((g) => ({ globalIndex: g, mismatch: 0 }));
+  }, [filterOn, tileWalkability, activeHalf, neighbors, indices]);
+
+  // Which neighbor directions the active half is ranked against, split present/skipped.
+  const summary = useMemo(() => {
+    const dirs: { key: keyof NeighborSigs; label: string }[] =
+      activeHalf === 'top'
+        ? [{ key: 'up', label: '↑ up' }, { key: 'left', label: '← left' }, { key: 'right', label: '→ right' }]
+        : [{ key: 'down', label: '↓ down' }, { key: 'left', label: '← left' }, { key: 'right', label: '→ right' }];
+    const present = dirs.filter((d) => neighbors[d.key]).map((d) => d.label);
+    const skipped = dirs.filter((d) => !neighbors[d.key]).map((d) => d.label);
+    return { present, skipped };
+  }, [activeHalf, neighbors]);
+
+  const [showPairs, setShowPairs] = useState(false);
+  const pairs = useMemo(() => {
+    if (!showPairs || tileWalkability == null) return [];
+    return suggestPairs(tileWalkability, neighbors, TOTAL);
+  }, [showPairs, tileWalkability, neighbors]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -231,21 +288,78 @@ export function ScreenEditorModal({
         {/* Right pane — tilesection picker. Fixed 150×75 (2:1) cells via auto-fill
             so the grid reflows to the pane width while keeping every section's true
             8x4 (2:1) shape (a grid item's own aspect-ratio does NOT size its track). */}
-        <div
-          className="flex-1 overflow-y-auto p-3 grid gap-2 content-start"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, 150px)', gridAutoRows: '75px' }}
-        >
-          {indices.map((g) => (
-            <SectionThumb
-              key={g}
-              globalIndex={g}
-              chr={chr}
-              selected={g === currentGlobal}
-              crossBank={g >= 256}
-              shadeBottomRows={activeHalf === 'bottom'}
-              onClick={() => onTilePick(activeHalf, g)}
-            />
-          ))}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex items-center gap-3 px-3 pt-3 text-xs">
+            <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={collisionFilter}
+                disabled={tileWalkability == null}
+                onChange={(e) => setCollisionFilter(e.target.checked)}
+              />
+              Filter: collision
+            </label>
+            {tileWalkability == null && <span className="text-slate-500">loading…</span>}
+            {filterOn && (
+              <span className="text-slate-500">
+                Ranked vs {summary.present.join(', ') || '(no neighbors)'}
+                {summary.skipped.length > 0 && ` — ${summary.skipped.join(', ')} skipped`}
+                {' '}({activeHalf} half)
+              </span>
+            )}
+            <button
+              type="button"
+              disabled={tileWalkability == null}
+              onClick={() => setShowPairs((v) => !v)}
+              className="ml-auto px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40"
+            >
+              {showPairs ? 'Hide pairs' : 'Suggest pairs'}
+            </button>
+          </div>
+          {showPairs && (
+            <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/40">
+              {pairs.length === 0 ? (
+                <div className="text-xs text-slate-500">No suggestions available.</div>
+              ) : (
+                <div className="flex gap-2 overflow-x-auto">
+                  {pairs.map((p) => (
+                    <button
+                      key={`${p.top}-${p.bottom}`}
+                      type="button"
+                      onClick={() => onPickPair?.(p.top, p.bottom)}
+                      className="flex-shrink-0 rounded border border-slate-700 hover:border-emerald-400 p-1"
+                      title={`Top ${p.top} + Bottom ${p.bottom} — ${p.mismatch} mismatches`}
+                    >
+                      <div className="flex flex-col w-[80px]">
+                        <img src={api.getTileSectionPreviewUrl(p.top, chr, 2)} alt={`top ${p.top}`} className="w-full h-[40px] object-contain" />
+                        <img src={api.getTileSectionPreviewUrl(p.bottom, chr, 2)} alt={`bottom ${p.bottom}`} className="w-full h-[20px] object-contain" />
+                        <span className="text-[9px] text-center text-slate-400">⚠{p.mismatch}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div
+            className="flex-1 overflow-y-auto p-3 grid gap-2 content-start"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, 150px)', gridAutoRows: '75px' }}
+          >
+            {ordered.map(({ globalIndex: g, mismatch }) => (
+              <SectionThumb
+                key={g}
+                globalIndex={g}
+                chr={chr}
+                selected={g === currentGlobal}
+                crossBank={g >= 256}
+                shadeBottomRows={activeHalf === 'bottom'}
+                dim={filterOn && mismatch > 0}
+                badge={filterOn && mismatch > 0 ? mismatch : undefined}
+                perfect={filterOn && mismatch === 0}
+                onClick={() => onTilePick(activeHalf, g)}
+              />
+            ))}
+          </div>
         </div>
         </div>
         <div className="p-2 border-t border-slate-700 text-xs text-slate-500">
@@ -257,13 +371,16 @@ export function ScreenEditorModal({
 }
 
 function SectionThumb({
-  globalIndex, chr, selected, crossBank, shadeBottomRows, onClick,
+  globalIndex, chr, selected, crossBank, shadeBottomRows, dim, badge, perfect, onClick,
 }: {
   globalIndex: number;
   chr: number;
   selected: boolean;
   crossBank: boolean;
   shadeBottomRows?: boolean;
+  dim?: boolean;
+  badge?: number;
+  perfect?: boolean;
   onClick: () => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -285,8 +402,12 @@ function SectionThumb({
       ref={ref}
       onClick={onClick}
       className={`relative rounded overflow-hidden border transition-all ${
-        selected ? 'border-yellow-400 ring-2 ring-yellow-400' : 'border-slate-700 hover:border-blue-400'
-      }`}
+        selected
+          ? 'border-yellow-400 ring-2 ring-yellow-400'
+          : perfect
+          ? 'border-emerald-400 ring-1 ring-emerald-400'
+          : 'border-slate-700 hover:border-blue-400'
+      } ${dim ? 'opacity-40' : ''}`}
       title={`Section ${globalIndex} (0x${byte.toString(16).toUpperCase()}${crossBank ? ', bank 1' : ''})`}
       style={{ backgroundColor: '#0f172a' }}
     >
@@ -308,6 +429,11 @@ function SectionThumb({
       <span className="absolute top-0 left-0 bg-black/70 text-white text-[8px] font-mono px-1">
         {globalIndex}{crossBank ? '*' : ''}
       </span>
+      {badge !== undefined && (
+        <span className="absolute top-0 right-0 bg-amber-600/90 text-white text-[8px] font-mono px-1">
+          ⚠{badge}
+        </span>
+      )}
     </button>
   );
 }
