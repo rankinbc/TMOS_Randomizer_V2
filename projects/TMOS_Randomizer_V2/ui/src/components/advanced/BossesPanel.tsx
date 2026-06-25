@@ -49,7 +49,7 @@ export function BossesPanel({
 }: {
   /**
    * When provided, restricts which boss fields are rendered/editable by tier.
-   * Used by the Expert tab to exclude 'safe' fields (now owned by the Enemies tab)
+   * Used by the Enemies → Boss Bytes sub-tab to exclude 'safe' fields (owned by the Bosses sub-tab)
    * so nothing overlaps. Default (no prop) renders every field as before.
    */
   tierFilter?: (tier: string) => boolean;
