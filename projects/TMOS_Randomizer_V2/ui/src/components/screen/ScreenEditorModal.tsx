@@ -19,7 +19,7 @@ import {
   rankSections, sectionPair, suggestPairs,
   type NeighborSigs, type SectionPair,
 } from './tileFilter';
-import { offTheme, BIOME_OPTIONS, type TargetTheme } from './themeFilter';
+import { offTheme, coherentPairCandidates, BIOME_OPTIONS, type TargetTheme } from './themeFilter';
 
 const TOTAL = ApiClient.TILESECTION_COUNT; // 471
 
@@ -194,11 +194,16 @@ export function ScreenEditorModal({
     return { present, skipped };
   }, [activeHalf, neighbors]);
 
-  const [showPairs, setShowPairs] = useState(false);
+  const [pairMode, setPairMode] = useState<'off' | 'collision' | 'coherent'>('off');
   const pairs = useMemo(() => {
-    if (!showPairs || tileWalkability == null) return [];
+    if (pairMode === 'off' || tileWalkability == null) return [];
+    if (pairMode === 'coherent') {
+      if (tileThemes == null) return [];
+      const cands = coherentPairCandidates(tileThemes, themeSel, TOTAL);
+      return suggestPairs(tileWalkability, neighbors, TOTAL, 40, 12, cands);
+    }
     return suggestPairs(tileWalkability, neighbors, TOTAL);
-  }, [showPairs, tileWalkability, neighbors]);
+  }, [pairMode, tileWalkability, tileThemes, themeSel, neighbors]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -358,16 +363,27 @@ export function ScreenEditorModal({
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              disabled={tileWalkability == null}
-              onClick={() => setShowPairs((v) => !v)}
-              className="ml-auto px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40"
-            >
-              {showPairs ? 'Hide pairs' : 'Suggest pairs'}
-            </button>
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={tileWalkability == null}
+                onClick={() => setPairMode((m) => (m === 'collision' ? 'off' : 'collision'))}
+                className={`px-2 py-0.5 rounded text-slate-200 disabled:opacity-40 ${pairMode === 'collision' ? 'bg-emerald-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+              >
+                Suggest pairs
+              </button>
+              <button
+                type="button"
+                disabled={tileWalkability == null || tileThemes == null}
+                onClick={() => setPairMode((m) => (m === 'coherent' ? 'off' : 'coherent'))}
+                className={`px-2 py-0.5 rounded text-slate-200 disabled:opacity-40 ${pairMode === 'coherent' ? 'bg-emerald-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+                title={themeSel === 'all' ? 'Coherent pairs across all biomes' : `Coherent ${themeSel} pairs`}
+              >
+                Coherent swap
+              </button>
+            </div>
           </div>
-          {showPairs && (
+          {pairMode !== 'off' && (
             <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/40">
               {pairs.length === 0 ? (
                 <div className="text-xs text-slate-500">No suggestions available.</div>
