@@ -1,6 +1,7 @@
 import { api } from '../../api/client';
 import type { BossStat } from '../../api/client';
 import { ByteField } from '../advanced/ByteField';
+import { BossPortraits } from '../advanced/BossPortraits';
 import { PanelFrame, TierBadge, useRomResource } from '../advanced/panelHelpers';
 import type { Tier } from '../advanced/panelHelpers';
 import { HelpChip } from '../stats/HelpChip';
@@ -78,7 +79,8 @@ export function BossSafeSection() {
                 key={boss.boss_id}
                 className="rounded-lg border border-slate-700 overflow-hidden"
               >
-                <div className="px-4 py-2 bg-slate-800/60">
+                <div className="px-4 py-2 bg-slate-800/60 flex items-center gap-3">
+                  <BossPortraits bossId={boss.boss_id} />
                   <span className="text-sm font-semibold text-slate-200">{boss.boss_label}</span>
                 </div>
                 <ul className="divide-y divide-slate-800">
