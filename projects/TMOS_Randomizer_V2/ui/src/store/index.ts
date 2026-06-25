@@ -29,7 +29,14 @@ import {
 } from '../api/client';
 
 // Enemies-tab sub-sections (also used by the URL router).
-export type EnemiesSection = 'roster' | 'encounters' | 'bosses' | 'overworld';
+export type EnemiesSection =
+  | 'roster'
+  | 'encounters'
+  | 'bosses'
+  | 'overworld'
+  | 'bossbytes'
+  | 'encrates'
+  | 'tbformulas';
 
 // Entity-centric IA: 7 entity tabs + 1 gated Expert tab.
 export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'expert' | 'debug';
