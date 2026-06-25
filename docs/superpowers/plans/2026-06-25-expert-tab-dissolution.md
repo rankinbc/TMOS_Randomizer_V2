@@ -13,7 +13,8 @@
 - **No panel rewrites.** Reuse `MpTablePanel`, `WeaponDamagePanel`, `LevelCapsPanel`, `BossesPanel`, `EncounterRatesPanel`, `TbFormulasPanel`, `EconomyPanel`, `PalettePanel` exactly as `AdvancedView.tsx` mounts them today (same props). Do not edit their internals.
 - **No backend changes.** Frontend-only.
 - **No editable field appears in two tabs** in the END state. `BossesPanel` under Enemies keeps `tierFilter={(tier) => tier !== 'safe'}` so safe boss fields (already in the existing Enemies → Bosses section) never duplicate. Temporary duplication mid-plan (before Expert is deleted in Task 6) is acceptable.
-- **Each task must end with `tsc -b` (via `npm run build`'s typecheck) and `npm run lint` passing.** Mid-plan the build stays green; `TabType` is narrowed only in the final task, after all consumers are migrated.
+- **Each task must end with `npm run build` (tsc -b) passing clean** — this is the primary gate. Mid-plan the build stays green; `TabType` is narrowed only in the final task, after all consumers are migrated.
+- **LINT GATE — read carefully.** The repo baseline has **32 pre-existing ESLint errors** in files unrelated to this work (e.g. `panelHelpers.tsx`, `Tooltip.tsx`, `ConsequencePreview.tsx`, `MapView.tsx`, `LineupEditor.tsx`, `EnemyPicker.tsx`). Do **NOT** use whole-tree `npm run lint` (`eslint .`) as a task gate — it fails on that pre-existing debt and is not yours to fix. Instead lint **only the files this task created or modified**: `npx eslint <file1> <file2> …` and require **0 errors** on those files. (`EnemiesView.tsx` carries a pre-existing exhaustive-deps *warning* on its mount effect; warnings don't fail the gate — only errors do. Don't "fix" pre-existing warnings outside your task's lines.)
 - **Danger marker = inline only.** Danger sub-tabs get the amber "expert" tag on their `SubTabBar` button (the same markup `AdvancedView`'s `t.expert` buttons render today: `text-[10px] uppercase tracking-wide text-amber-400/80`, label `expert`). No full-page gate anywhere.
 - **Shared working tree.** Commit explicit paths only — never `git add -A`.
 - **Verification convention (matches Specs #1–#3):** `.tsx` view wiring is verified by `tsc` + `eslint` + a manual checklist (no React testing-library in this repo). Pure `.ts` utils get Vitest tests. Only `screenLinks.test.ts` changes here.
@@ -174,15 +175,16 @@ const SECTIONS: SubTab<EnemiesSection>[] = [
       )}
 ```
 
-- [ ] **Step 4: Typecheck + lint**
+- [ ] **Step 4: Typecheck + scoped lint**
 
 Run (from `projects/TMOS_Randomizer_V2/ui`):
 
 ```bash
-npm run build && npm run lint
+npm run build
+npx eslint src/components/common/SubTabBar.tsx src/store/index.ts src/components/views/EnemiesView.tsx
 ```
 
-Expected: `tsc -b` and `vite build` succeed (exit 0); ESLint reports no errors. (Vite build is the project's typecheck path via `tsc -b`.)
+Expected: `npm run build` (`tsc -b` + `vite build`) succeeds (exit 0). The scoped `eslint` reports **0 errors** on these three files (a pre-existing exhaustive-deps *warning* on `EnemiesView.tsx:52` may remain — warnings are fine). Do NOT run whole-tree `npm run lint` (32 pre-existing baseline errors, not yours).
 
 - [ ] **Step 5: Manual check**
 
@@ -281,13 +283,14 @@ to:
               {selectedTab === 'hero' && <HeroView />}
 ```
 
-- [ ] **Step 4: Typecheck + lint**
+- [ ] **Step 4: Typecheck + scoped lint**
 
 ```bash
-npm run build && npm run lint
+npm run build
+npx eslint src/components/views/HeroView.tsx src/components/views/index.ts src/components/layout/MainContent.tsx
 ```
 
-Expected: exit 0, no ESLint errors.
+Expected: `npm run build` exit 0; scoped `eslint` reports 0 errors on these files. Do NOT run whole-tree `npm run lint` (pre-existing baseline errors).
 
 - [ ] **Step 5: Manual check**
 
@@ -398,13 +401,14 @@ to:
               {selectedTab === 'items' && planChapter && <ItemsTabView chapter={planChapter} />}
 ```
 
-- [ ] **Step 4: Typecheck + lint**
+- [ ] **Step 4: Typecheck + scoped lint**
 
 ```bash
-npm run build && npm run lint
+npm run build
+npx eslint src/components/views/ItemsTabView.tsx src/components/views/index.ts src/components/layout/MainContent.tsx
 ```
 
-Expected: exit 0, no ESLint errors.
+Expected: `npm run build` exit 0; scoped `eslint` reports 0 errors on these files. Do NOT run whole-tree `npm run lint` (pre-existing baseline errors).
 
 - [ ] **Step 5: Manual check**
 
@@ -520,13 +524,14 @@ to:
               {selectedTab === 'graphics' && <GraphicsView />}
 ```
 
-- [ ] **Step 4: Typecheck + lint**
+- [ ] **Step 4: Typecheck + scoped lint**
 
 ```bash
-npm run build && npm run lint
+npm run build
+npx eslint src/components/views/GraphicsView.tsx src/components/views/index.ts src/components/layout/MainContent.tsx
 ```
 
-Expected: exit 0, no ESLint errors. (If `tsc` reports `TileBankView` declared-but-unused, confirm line 4's import was removed.)
+Expected: `npm run build` exit 0 (if `tsc` reports `TileBankView` declared-but-unused, confirm line 4's import was removed); scoped `eslint` reports 0 errors on these files. Do NOT run whole-tree `npm run lint` (pre-existing baseline errors).
 
 - [ ] **Step 5: Manual check**
 
@@ -663,13 +668,14 @@ npm test -- screenLinks
 
 Expected: PASS — all `screenLinksFor` tests green, including the repointed shop and palette assertions.
 
-- [ ] **Step 6: Typecheck + lint**
+- [ ] **Step 6: Typecheck + scoped lint**
 
 ```bash
-npm run build && npm run lint
+npm run build
+npx eslint src/components/screen/screenLinks.ts src/components/screen/screenLinks.test.ts src/components/views/WorldView.tsx
 ```
 
-Expected: exit 0. (`store` still defines `unlockExpert`/`expertUnlocked` and `TabType` still has `'expert'` — `ExpertView`/`AdvancedView` still consume them, so the build stays green; they are removed in Task 6.)
+Expected: `npm run build` exit 0 (`store` still defines `unlockExpert`/`expertUnlocked` and `TabType` still has `'expert'` — `ExpertView`/`AdvancedView` still consume them, so the build stays green; they are removed in Task 6). Scoped `eslint` reports 0 errors on these files. Do NOT run whole-tree `npm run lint` (pre-existing baseline errors).
 
 - [ ] **Step 7: Commit**
 
@@ -765,13 +771,15 @@ grep -rn "expertUnlocked\|unlockExpert\|ExpertView\|AdvancedView\|tab: 'expert'\
 
 Expected: no matches. If any appear (other than already-handled ones), resolve them — `tsc` in the next step is the backstop.
 
-- [ ] **Step 6: Typecheck + lint + full test run**
+- [ ] **Step 6: Typecheck + scoped lint + full test run**
 
 ```bash
-npm run build && npm run lint && npm test
+npm run build
+npx eslint src/components/views/index.ts src/components/layout/MainContent.tsx src/store/index.ts
+npm test
 ```
 
-Expected: `tsc -b` passes (the narrowed `TabType` surfaces any missed `'expert'` reference as a compile error — there should be none), ESLint clean, all Vitest suites green.
+Expected: `npm run build` passes (`tsc -b` — the narrowed `TabType` surfaces any missed `'expert'` reference as a compile error; there should be none). Scoped `eslint` reports 0 errors on these files. All Vitest suites green (80+ tests). Do NOT run whole-tree `npm run lint` (32 pre-existing baseline errors unrelated to this work). Note: the whole-tree error count must not *increase* from the 32-error baseline — the scoped lint on changed files guarantees this.
 
 - [ ] **Step 7: Manual checklist**
 
