@@ -28,6 +28,9 @@ import {
   type ScreenVanilla,
 } from '../api/client';
 
+// Enemies-tab sub-sections (also used by the URL router).
+export type EnemiesSection = 'roster' | 'encounters' | 'bosses' | 'overworld';
+
 // Entity-centric IA: 7 entity tabs + 1 gated Expert tab.
 export type TabType = 'world' | 'enemies' | 'items' | 'hero' | 'allies' | 'graphics' | 'randomize' | 'expert' | 'debug';
 
@@ -95,6 +98,10 @@ interface RandomizerState {
   // UI State
   selectedChapter: number;
   selectedTab: TabType;
+  // Enemies-tab navigation (URL-addressable; lifted from component-local state)
+  enemiesSection: EnemiesSection;
+  enemiesSelectedId: number | null;
+  enemiesChapter: number;
   selectedSection: string | null;
   selectedScreen: number | null;
   focusTarget: FocusTarget | null;
@@ -174,6 +181,9 @@ interface RandomizerState {
   setPlanLoading: (loading: boolean) => void;
   setSelectedChapter: (chapter: number) => void;
   setSelectedTab: (tab: TabType) => void;
+  setEnemiesSection: (section: EnemiesSection) => void;
+  setEnemiesSelectedId: (id: number | null) => void;
+  setEnemiesChapter: (ch: number) => void;
   setSelectedSection: (section: string | null) => void;
   setSelectedScreen: (screen: number | null) => void;
   setFocusTarget: (target: FocusTarget) => void;
@@ -326,6 +336,9 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   sectionMap: null,
   selectedChapter: 1,
   selectedTab: 'world',
+  enemiesSection: 'roster',
+  enemiesSelectedId: null,
+  enemiesChapter: 1,
   selectedSection: null,
   selectedScreen: null,
   focusTarget: null,
@@ -407,6 +420,10 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     set({ selectedChapter: chapter, selectedSection: null, selectedScreen: null }),
 
   setSelectedTab: (tab) => set({ selectedTab: tab }),
+
+  setEnemiesSection: (section) => set({ enemiesSection: section }),
+  setEnemiesSelectedId: (id) => set({ enemiesSelectedId: id }),
+  setEnemiesChapter: (ch) => set({ enemiesChapter: ch }),
 
   setSelectedSection: (section) => set({ selectedSection: section, selectedScreen: null }),
 
