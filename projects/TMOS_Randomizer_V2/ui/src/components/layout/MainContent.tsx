@@ -1,7 +1,7 @@
 import { useRandomizerStore } from '../../store';
 import type { TabType, ViewMode } from '../../store';
 import { RomUpload } from '../RomUpload';
-import { ItemsTabView, HeroView, EnemiesView, AlliesView, MapView, ExpertView, WorldView, GraphicsView } from '../views';
+import { ItemsTabView, HeroView, EnemiesView, AlliesView, MapView, WorldView, GraphicsView } from '../views';
 import { DebugView } from '../debug/DebugView';
 
 const TABS: { id: TabType; label: string }[] = [
@@ -12,7 +12,6 @@ const TABS: { id: TabType; label: string }[] = [
   { id: 'allies', label: 'Allies' },
   { id: 'graphics', label: 'Graphics' },
   { id: 'randomize', label: 'Randomize' },
-  { id: 'expert', label: '⚠ Expert' },
   { id: 'debug', label: 'Debug' },
 ];
 
@@ -23,7 +22,7 @@ const VIEW_MODES: { id: ViewMode; label: string }[] = [
 
 // Tabs that edit ROM-global data and don't need a chapter selected first.
 // (The screen/tiles/flow tabs are chapter-scoped and still require chapterData.)
-const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'expert', 'randomize', 'debug']);
+const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'randomize', 'debug']);
 
 export function MainContent() {
   const {
@@ -139,7 +138,6 @@ export function MainContent() {
               {selectedTab === 'enemies' && <EnemiesView />}
               {selectedTab === 'allies' && planChapter && <AlliesView chapter={planChapter} />}
               {selectedTab === 'graphics' && <GraphicsView />}
-              {selectedTab === 'expert' && <ExpertView />}
               {selectedTab === 'debug' && <DebugView />}
             </div>
           </div>

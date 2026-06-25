@@ -56,8 +56,8 @@ export function BossesPanel({
   title?: string;
   romNote?: string;
   /**
-   * Tier shown on the panel header badge. Defaults to 'safe'; the Expert tab
-   * passes 'expert' since it renders only the advanced (non-safe) boss bytes.
+   * Tier shown on the panel header badge. Defaults to 'safe'; set to 'expert'
+   * to render only the advanced (non-safe) boss bytes.
    */
   headerTier?: Tier;
 } = {}) {

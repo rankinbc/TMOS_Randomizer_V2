@@ -8,7 +8,7 @@ export interface AppRoute {
 }
 
 const VALID_TABS: TabType[] = [
-  'world', 'enemies', 'items', 'hero', 'allies', 'graphics', 'randomize', 'expert', 'debug',
+  'world', 'enemies', 'items', 'hero', 'allies', 'graphics', 'randomize', 'debug',
 ];
 const ENEMIES_SUBS: EnemiesSection[] = ['roster', 'encounters', 'bosses', 'overworld'];
 
