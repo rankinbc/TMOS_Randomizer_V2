@@ -45,6 +45,11 @@ export function GuidedField({ meta, value, vanilla, children }: GuidedFieldProps
       {showInfo && (
         <div id={`info-${meta.byte}`} className="mt-1 p-2 bg-slate-800 border border-dashed border-slate-600 rounded text-xs text-slate-300">
           <div>{meta.description}</div>
+          {meta.valid_range && (
+            <div className="mt-1 text-slate-500">
+              Range: {meta.valid_range[0]}–{meta.valid_range[1]}
+            </div>
+          )}
           {meta.warning && (
             <div className="mt-1 text-amber-400"><span aria-hidden>{'⚠'}</span> {meta.warning}</div>
           )}

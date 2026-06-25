@@ -1,5 +1,5 @@
 {
-  "version": "1",
+  "version": "2",
   "generated_from": "tmos_randomizer.core.enums + curated descriptions",
   "entities": {
     "worldscreen": {
@@ -140,9 +140,11 @@
             0,
             255
           ],
-          "description": "Ambient sound-effect ID played on the screen.",
+          "description": "Background ambient sound-effect ID looped on this screen (wind, water, town bustle, etc.). Cosmetic \u2014 safe to change; 0 is silence.",
           "warning": "",
-          "used_by": []
+          "used_by": [
+            "ambient audio"
+          ]
         },
         "content": {
           "label": "Content / Building",
@@ -372,7 +374,7 @@
             0,
             255
           ],
-          "description": "TileSection index drawn in the top 4 rows.",
+          "description": "Index of the TileSection drawn across the top half of the screen. Best changed via the Edit-modal tile picker, which keeps collision seams and biome/theme coherent \u2014 blind index entry can mismatch the bottom half.",
           "warning": "",
           "used_by": [
             "tile rendering"
@@ -387,7 +389,7 @@
             0,
             255
           ],
-          "description": "TileSection index drawn in the bottom rows.",
+          "description": "Index of the TileSection drawn across the bottom half of the screen. Best changed via the Edit-modal tile picker (collision/theme-aware) rather than raw index entry.",
           "warning": "",
           "used_by": [
             "tile rendering"
@@ -402,7 +404,7 @@
             0,
             255
           ],
-          "description": "Background color palette selector.",
+          "description": "Background color-palette selector for the screen. Also editable visually via Graphics \u2192 Cosmetic.",
           "warning": "",
           "used_by": [
             "palette"
@@ -417,7 +419,7 @@
             0,
             255
           ],
-          "description": "Sprite color palette selector (0x12 = town).",
+          "description": "Sprite color-palette selector (e.g. 0x12 \u2248 town sprites). Also editable visually via Graphics \u2192 Cosmetic.",
           "warning": "",
           "used_by": [
             "palette"
@@ -517,7 +519,7 @@
       "label": "Battle Enemy",
       "fields": {
         "ep": {
-          "label": "Experience Points (EP reward)",
+          "label": "EXP reward",
           "byte": 0,
           "tier": "safe",
           "control": "number",
@@ -525,14 +527,14 @@
             0,
             255
           ],
-          "description": "Experience awarded when defeated.",
+          "description": "Experience awarded when this enemy is defeated.",
           "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
           "used_by": [
             "levelling"
           ]
         },
         "rupia": {
-          "label": "Rupia (currency drop)",
+          "label": "Rupia reward",
           "byte": 1,
           "tier": "safe",
           "control": "number",
@@ -540,10 +542,85 @@
             0,
             255
           ],
-          "description": "Currency dropped when defeated.",
+          "description": "Currency dropped when this enemy is defeated.",
           "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
           "used_by": [
             "economy"
+          ]
+        },
+        "bribe": {
+          "label": "Bribe price",
+          "byte": 2,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Rupia required to bribe/negotiate past this enemy. 0 = refuses all bribes.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
+          "used_by": [
+            "negotiation"
+          ]
+        },
+        "escape_trigger": {
+          "label": "Escape/Trigger chance",
+          "byte": 3,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Probability class gating escape / action triggers. 0xFF means it (near-)never triggers.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable. Probability classes are MEDIUM-confidence; extreme values can make battles unwinnable or trivial.",
+          "used_by": [
+            "battle RNG"
+          ]
+        },
+        "action_prob": {
+          "label": "Special-action chance",
+          "byte": 4,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Probability class gating this enemy's special actions.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable. Probability classes are MEDIUM-confidence; extreme values can make battles unwinnable or trivial.",
+          "used_by": [
+            "battle RNG"
+          ]
+        },
+        "lineup_min": {
+          "label": "Lineup minimum",
+          "byte": 5,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Lineup-minimum probability class. Vanilla constant 1 across the roster.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable. MEDIUM-confidence; vanilla never varies this (constant 1) \u2014 effects of changing it are unverified.",
+          "used_by": [
+            "battle RNG"
+          ]
+        },
+        "action_prob2": {
+          "label": "Special-action chance (2)",
+          "byte": 6,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Second action-probability byte, paired with byte 4 in the RNG gate.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable. Probability classes are MEDIUM-confidence; extreme values can make battles unwinnable or trivial.",
+          "used_by": [
+            "battle RNG"
           ]
         },
         "hp": {
@@ -560,6 +637,34 @@
           "used_by": [
             "combat"
           ]
+        },
+        "atk": {
+          "label": "Attack power",
+          "byte": 8,
+          "tier": "safe",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Attack value used for this enemy's special-action damage.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable.",
+          "used_by": [
+            "combat"
+          ]
+        },
+        "byte_9": {
+          "label": "Unknown (byte 9)",
+          "byte": 9,
+          "tier": "caution",
+          "control": "number",
+          "valid_range": [
+            0,
+            255
+          ],
+          "description": "Purpose not located in the disassembly. Vanilla constant 2 across the roster.",
+          "warning": "Enemy IDs 0x0B and 0x0C hard-crash the game and are never selectable. Effect unknown \u2014 editing may do nothing or destabilize battles.",
+          "used_by": []
         }
       }
     }

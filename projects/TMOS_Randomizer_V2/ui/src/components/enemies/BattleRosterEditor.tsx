@@ -1,21 +1,19 @@
 import { useEffect, useMemo } from 'react';
 import { useRandomizerStore } from '../../store';
-import type { BattleEnemy } from '../../api/client';
+import type { BattleEnemy, EnemyStat, EnemyStatPatch } from '../../api/client';
 import { GuidedNumberField } from '../screen/GuidedNumberField';
 import { SafetyBadge } from '../shared/SafetyBadge';
 import type { FieldMetadata } from '../../types/metadata';
 import { DANGER_ENEMY_IDS } from '../../utils/enemySelection';
 
-type StatKey = 'hp' | 'ep' | 'rupia';
-const STAT_KEYS: StatKey[] = ['hp', 'ep', 'rupia'];
-
 /** Fallback metadata if the backend hasn't populated entities.enemy.fields.* */
-function fallbackMeta(key: StatKey): FieldMetadata {
+function fallbackMeta(key: string): FieldMetadata {
   return {
     label: key.toUpperCase(),
     byte: 0,
     tier: 'caution',
-    description: `Turn-based enemy ${key.toUpperCase()} value (live ROM byte).`,
+    description: `Turn-based enemy ${key} byte (live ROM value).`,
+    valid_range: [0, 255],
   };
 }
 
@@ -153,21 +151,29 @@ export function BattleRosterEditor() {
 
 interface EnemyPanelProps {
   enemy: BattleEnemy;
-  vanilla?: { hp: number; ep: number; rupia: number };
+  vanilla?: EnemyStat;
   fieldMetadata: ReturnType<typeof useRandomizerStore.getState>['fieldMetadata'];
   isDanger: boolean;
   appearsIn: { chapter: number; lineupIndex: number; slot: number }[];
-  onPatch: (patch: { hp?: number; ep?: number; rupia?: number }) => Promise<void>;
+  onPatch: (patch: EnemyStatPatch) => Promise<void>;
 }
 
 function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatch }: EnemyPanelProps) {
-  const imgUrl = enemy.image
-    ? `/assets/enemies/${enemy.image}`
-    : null;
+  const imgUrl = enemy.image ? `/assets/enemies/${enemy.image}` : null;
 
   const enemyFields = fieldMetadata?.entities?.enemy?.fields;
-  const liveValue = (key: StatKey): number =>
-    key === 'hp' ? enemy.hp ?? 0 : key === 'ep' ? enemy.ep ?? 0 : enemy.rupia ?? 0;
+  // Render fields in ROM byte order, driven entirely by metadata.
+  const orderedKeys = useMemo(
+    () =>
+      enemyFields
+        ? Object.keys(enemyFields).sort((a, b) => enemyFields[a].byte - enemyFields[b].byte)
+        : [],
+    [enemyFields]
+  );
+  const liveValue = (key: string): number =>
+    ((enemy as unknown as Record<string, unknown>)[key] as number | null | undefined) ?? 0;
+  const vanillaValue = (key: string): number | undefined =>
+    vanilla ? (vanilla as unknown as Record<string, number>)[key] : undefined;
 
   return (
     <div className="space-y-4">
@@ -220,32 +226,34 @@ function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatc
                 Stats are shown read-only.
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              {STAT_KEYS.map((key) => (
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {orderedKeys.map((key) => (
                 <div key={key} className="bg-slate-900/60 rounded px-2 py-1.5 border border-slate-700">
-                  <div className="text-slate-500 uppercase text-[10px]">{key}</div>
+                  <div className="text-slate-500 uppercase text-[10px]">
+                    {enemyFields?.[key]?.label ?? key}
+                  </div>
                   <div className="font-mono text-slate-300">{liveValue(key)}</div>
-                  {vanilla && (
-                    <div className="text-[10px] text-slate-600">vanilla {vanilla[key]}</div>
+                  {vanillaValue(key) !== undefined && (
+                    <div className="text-[10px] text-slate-600">vanilla {vanillaValue(key)}</div>
                   )}
                 </div>
               ))}
             </div>
           </div>
         ) : (
-          <div>
-            {STAT_KEYS.map((key) => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            {orderedKeys.map((key) => {
               const meta = enemyFields?.[key] ?? fallbackMeta(key);
               return (
                 <GuidedNumberField
                   key={key}
                   meta={meta}
                   value={liveValue(key)}
-                  vanilla={vanilla?.[key]}
+                  vanilla={vanillaValue(key)}
                   onChange={(v) => {
                     if (v !== liveValue(key)) {
-                      // Optimistic update + patch + reconcile + rollback all live in
-                      // the store's updateEnemyStat action (mirrors World-tab pattern).
+                      // Optimistic update + patch + reconcile + rollback live in the
+                      // store's updateEnemyStat action (mirrors the World-tab pattern).
                       void onPatch({ [key]: v });
                     }
                   }}
