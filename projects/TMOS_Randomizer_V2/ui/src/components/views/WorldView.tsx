@@ -134,6 +134,14 @@ export function WorldView() {
               which === 'top' ? { top_tiles: globalIndex } : { bottom_tiles: globalIndex },
             ).catch(() => {});
           }}
+          onPickPair={(topGlobal, bottomGlobal) => {
+            updateScreenTiles(editor.index, {
+              top_tiles: topGlobal,
+              bottom_tiles: bottomGlobal,
+            }).catch(() => {
+              // store surfaces the failure via apiError
+            });
+          }}
         />
       )}
     </div>

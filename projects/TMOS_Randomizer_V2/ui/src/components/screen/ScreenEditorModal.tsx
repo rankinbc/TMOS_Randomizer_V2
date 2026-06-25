@@ -16,7 +16,7 @@ import {
 import { CONTENT_TYPES, CHAPTER_NPCS, EVENT_TYPES } from './screenEnums';
 import { useRandomizerStore } from '../../store';
 import {
-  rankSections, sectionPair,
+  rankSections, sectionPair, suggestPairs,
   type NeighborSigs, type SectionPair,
 } from './tileFilter';
 
@@ -77,6 +77,7 @@ interface ScreenEditorModalProps {
     value: number,
   ) => void;
   onTilePick: (which: 'top' | 'bottom', globalIndex: number) => void;
+  onPickPair?: (topGlobal: number, bottomGlobal: number) => void;
   fieldMetadata?: EntityMetadata | null;
   vanilla?: ScreenVanilla | null;
 }
@@ -91,6 +92,7 @@ export function ScreenEditorModal({
   onScreenSelect,
   onFieldChange,
   onTilePick,
+  onPickPair,
   fieldMetadata,
   vanilla,
 }: ScreenEditorModalProps) {
@@ -153,6 +155,12 @@ export function ScreenEditorModal({
     const skipped = dirs.filter((d) => !neighbors[d.key]).map((d) => d.label);
     return { present, skipped };
   }, [activeHalf, neighbors]);
+
+  const [showPairs, setShowPairs] = useState(false);
+  const pairs = useMemo(() => {
+    if (!showPairs || tileWalkability == null) return [];
+    return suggestPairs(tileWalkability, neighbors, TOTAL);
+  }, [showPairs, tileWalkability, neighbors]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -299,7 +307,40 @@ export function ScreenEditorModal({
                 {' '}({activeHalf} half)
               </span>
             )}
+            <button
+              type="button"
+              disabled={tileWalkability == null}
+              onClick={() => setShowPairs((v) => !v)}
+              className="ml-auto px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40"
+            >
+              {showPairs ? 'Hide pairs' : 'Suggest pairs'}
+            </button>
           </div>
+          {showPairs && (
+            <div className="px-3 py-2 border-b border-slate-700 bg-slate-900/40">
+              {pairs.length === 0 ? (
+                <div className="text-xs text-slate-500">No suggestions available.</div>
+              ) : (
+                <div className="flex gap-2 overflow-x-auto">
+                  {pairs.map((p) => (
+                    <button
+                      key={`${p.top}-${p.bottom}`}
+                      type="button"
+                      onClick={() => onPickPair?.(p.top, p.bottom)}
+                      className="flex-shrink-0 rounded border border-slate-700 hover:border-emerald-400 p-1"
+                      title={`Top ${p.top} + Bottom ${p.bottom} — ${p.mismatch} mismatches`}
+                    >
+                      <div className="flex flex-col w-[80px]">
+                        <img src={api.getTileSectionPreviewUrl(p.top, chr, 2)} alt={`top ${p.top}`} className="w-full h-[40px] object-contain" />
+                        <img src={api.getTileSectionPreviewUrl(p.bottom, chr, 2)} alt={`bottom ${p.bottom}`} className="w-full h-[20px] object-contain" />
+                        <span className="text-[9px] text-center text-slate-400">⚠{p.mismatch}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div
             className="flex-1 overflow-y-auto p-3 grid gap-2 content-start"
             style={{ gridTemplateColumns: 'repeat(auto-fill, 150px)', gridAutoRows: '75px' }}
