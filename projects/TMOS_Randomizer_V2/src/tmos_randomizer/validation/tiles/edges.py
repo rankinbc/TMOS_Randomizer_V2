@@ -24,6 +24,8 @@ from typing import List, Tuple, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from ...core.worldscreen import WorldScreen
 
+from .categories import get_walkability_signature
+
 # Constants from screen_renderer.py
 TILESECTION_BASE = 0x03C4C7
 TILESECTION_OFFSET = 32  # Each TileSection is 32 bytes
@@ -252,3 +254,29 @@ def get_connecting_edges(
     edge_a = screen_a_edges.get_edge(direction)
     edge_b = screen_b_edges.get_edge(opposite)
     return (edge_a, edge_b)
+
+
+def tilesection_walkability(rom_data: bytes, index: int) -> str:
+    """Walkability signature for one global TileSection index.
+
+    `index` is a global section index (0..TILESECTION_COUNT-1); the bank is
+    already baked into it (read_tilesection reads TILESECTION_BASE + index*32).
+    Returns a 32-char bitstring ('1'=walkable, '0'=blocking) in row-major order
+    over the section's 4 rows x 8 cols.
+    """
+    grid = get_tilesection_grid(read_tilesection(rom_data, index))
+    tiles = [t for row in grid for t in row]
+    return get_walkability_signature(tiles)
+
+
+def all_tilesection_walkability(rom_data: bytes) -> dict:
+    """Walkability signatures for every global section index 0..TILESECTION_COUNT-1.
+
+    Returns {str(global_index): "<32-char signature>"}.
+    """
+    from ...core.constants import TILESECTION_COUNT
+
+    return {
+        str(g): tilesection_walkability(rom_data, g)
+        for g in range(TILESECTION_COUNT)
+    }
