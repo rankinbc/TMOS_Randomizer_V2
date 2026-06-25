@@ -6,9 +6,11 @@ import { Footer } from './components/layout/Footer';
 import { RandomizeModal } from './components/modals/RandomizeModal';
 import { PatchRomModal } from './components/modals/PatchRomModal';
 import { useRandomizerStore } from './store';
+import { useAppRouting } from './routing/useAppRouting';
 import './index.css';
 
 function App() {
+  useAppRouting();
   const { checkApiConnection, checkRomStatus, romFilename } = useRandomizerStore();
 
   // Check API connection and ROM status on mount

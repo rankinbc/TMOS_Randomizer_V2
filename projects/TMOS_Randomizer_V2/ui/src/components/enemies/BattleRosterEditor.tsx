@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRandomizerStore } from '../../store';
 import type { BattleEnemy } from '../../api/client';
 import { GuidedNumberField } from '../screen/GuidedNumberField';
@@ -36,7 +36,8 @@ export function BattleRosterEditor() {
   const loadEnemies = useRandomizerStore((s) => s.loadEnemies);
   const updateEnemyStat = useRandomizerStore((s) => s.updateEnemyStat);
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selectedId = useRandomizerStore((s) => s.enemiesSelectedId);
+  const setSelectedId = useRandomizerStore((s) => s.setEnemiesSelectedId);
 
   // Ensure roster is loaded on mount (guard against duplicate loads the same
   // way EnemiesView does: only fetch when the store slice is still empty).
