@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useRandomizerStore } from '../../store';
+import { useEffect } from 'react';
+import { useRandomizerStore, type EnemiesSection } from '../../store';
 import { BattleRosterEditor } from '../enemies/BattleRosterEditor';
 import { LineupEditor } from '../enemies/LineupEditor';
 import { EncounterGroupEditor } from '../enemies/EncounterGroupEditor';
@@ -7,8 +7,6 @@ import { BossSafeSection } from '../enemies/BossSafeSection';
 import { OverworldSafeSection } from '../enemies/OverworldSafeSection';
 import { EditLog } from '../stats/EditLog';
 import { HelpChip } from '../stats/HelpChip';
-
-type EnemiesSection = 'roster' | 'encounters' | 'bosses' | 'overworld';
 
 const SECTIONS: { id: EnemiesSection; label: string }[] = [
   { id: 'roster', label: 'Roster' },
@@ -35,8 +33,10 @@ export function EnemiesView() {
   const updateEncounterGroup = useRandomizerStore((s) => s.updateEncounterGroup);
   const clearEditLog = useRandomizerStore((s) => s.clearEditLog);
 
-  const [section, setSection] = useState<EnemiesSection>('roster');
-  const [selectedChapter, setSelectedChapter] = useState(1);
+  const section = useRandomizerStore((s) => s.enemiesSection);
+  const setSection = useRandomizerStore((s) => s.setEnemiesSection);
+  const selectedChapter = useRandomizerStore((s) => s.enemiesChapter);
+  const setSelectedChapter = useRandomizerStore((s) => s.setEnemiesChapter);
 
   const focusTarget = useRandomizerStore((s) => s.focusTarget);
   const consumeFocusTarget = useRandomizerStore((s) => s.consumeFocusTarget);
