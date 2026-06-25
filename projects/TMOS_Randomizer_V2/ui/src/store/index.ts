@@ -1370,24 +1370,24 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     const state = get();
     if (!state.battleEnemies) return;
     const prev = state.battleEnemies;
-    // Optimistic merge
+    // Optimistic merge: patch keys are a subset of BattleEnemy's byte keys.
     const optimistic = prev.map((e) =>
-      e.enemy_id === enemyId
-        ? {
-            ...e,
-            ...(patch.hp !== undefined && { hp: patch.hp }),
-            ...(patch.ep !== undefined && { ep: patch.ep }),
-            ...(patch.rupia !== undefined && { rupia: patch.rupia }),
-          }
-        : e
+      e.enemy_id === enemyId ? { ...e, ...patch } : e
     );
     set({ battleEnemies: optimistic, enemiesError: null });
     try {
       const resp = await api.patchEnemyStat(enemyId, patch);
-      // Reconcile from server-confirmed values
+      const stat = resp.stat;
+      // Reconcile every byte from the server-confirmed record.
       const confirmed = optimistic.map((e) =>
         e.enemy_id === enemyId
-          ? { ...e, hp: resp.stat.hp, ep: resp.stat.ep, rupia: resp.stat.rupia }
+          ? {
+              ...e,
+              ep: stat.ep, rupia: stat.rupia, bribe: stat.bribe,
+              escape_trigger: stat.escape_trigger, action_prob: stat.action_prob,
+              lineup_min: stat.lineup_min, action_prob2: stat.action_prob2,
+              hp: stat.hp, atk: stat.atk, byte_9: stat.byte_9,
+            }
           : e
       );
       set({ battleEnemies: confirmed });

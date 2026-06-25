@@ -384,14 +384,20 @@ export interface BattleEnemy {
   enemy_id_hex: string;
   name: string;
   hp: number | null;          // live ROM read from $8341 byte 7
-  ep?: number;                // live ROM read from $8341 byte 0
-  rupia?: number;             // live ROM read from $8341 byte 1
+  ep?: number;                // byte 0
+  rupia?: number;             // byte 1
+  bribe?: number;             // byte 2
+  escape_trigger?: number;    // byte 3
+  action_prob?: number;       // byte 4
+  lineup_min?: number;        // byte 5
+  action_prob2?: number;      // byte 6
+  atk?: number;               // byte 8
+  byte_9?: number;            // byte 9
   rom_offset?: string;
   image: string | null;
   notes: string;
   confidence: 'high' | 'medium' | 'low';
   chapter_first_seen: number | null;
-  raw_bytes?: { byte_2: number; byte_3: number; byte_4: number; byte_5: number; byte_6: number; byte_8: number; byte_9: number };
 }
 
 export interface EnemyStat {
@@ -400,15 +406,27 @@ export interface EnemyStat {
   rom_offset: string;
   ep: number;
   rupia: number;
+  bribe: number;
+  escape_trigger: number;
+  action_prob: number;
+  lineup_min: number;
+  action_prob2: number;
   hp: number;
-  raw_byte_2: number; raw_byte_3: number; raw_byte_4: number;
-  raw_byte_5: number; raw_byte_6: number; raw_byte_8: number; raw_byte_9: number;
+  atk: number;
+  byte_9: number;
 }
 
 export interface EnemyStatPatch {
-  hp?: number;
   ep?: number;
   rupia?: number;
+  bribe?: number;
+  escape_trigger?: number;
+  action_prob?: number;
+  lineup_min?: number;
+  action_prob2?: number;
+  hp?: number;
+  atk?: number;
+  byte_9?: number;
 }
 
 export interface LineupSlot {
