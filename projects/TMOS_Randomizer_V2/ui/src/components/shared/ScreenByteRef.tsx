@@ -1,19 +1,13 @@
 import { formatHex } from '../../utils/formatters';
+import { getScreenRenderUrl, BASE_WIDTH, BASE_HEIGHT } from '../../utils/screenRenderUrl';
 import { useJumpToWorldScreen } from './jumpLinks';
-
-// Matches the render URL pattern used by ScreenRenderer.tsx
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-// Screen aspect ratio: 512×384 (8 tiles × 6 tiles at 64px)
-const BASE_WIDTH = 512;
-const BASE_HEIGHT = 384;
 
 /**
  * Clickable chip that shows a screen hex reference and an optional thumbnail.
  * Clicking navigates to the World tab and selects the given screen.
  *
- * Thumbnail uses the same `${API_BASE}/api/rom/render/{chapter}/{index}?scale=1`
- * URL pattern as ScreenRenderer.tsx.
+ * The thumbnail reuses the shared `getScreenRenderUrl` builder (also used by
+ * ScreenRenderer.tsx).
  */
 export function ScreenByteRef({
   chapter,
@@ -35,8 +29,8 @@ export function ScreenByteRef({
   const thumbW = 64;
   const thumbH = Math.round(thumbW * (BASE_HEIGHT / BASE_WIDTH));
 
-  // API render URL — same pattern as ScreenRenderer.tsx's getScreenRenderUrl
-  const renderUrl = `${API_BASE}/api/rom/render/${chapter}/${screenIndex}?scale=1`;
+  // Shared URL builder — API scale=1 gives 512×384; CSS clips to thumb size.
+  const renderUrl = getScreenRenderUrl(chapter, screenIndex, 1);
 
   return (
     <button
@@ -56,6 +50,12 @@ export function ScreenByteRef({
             imageRendering: 'pixelated',
             flexShrink: 0,
             objectFit: 'cover',
+          }}
+          onError={(e) => {
+            // Render failed (e.g. backend down) — hide the broken image so the
+            // chip degrades gracefully to just its hex label. Mirrors the
+            // hide-on-error behavior in ScreenRenderer.tsx.
+            e.currentTarget.style.display = 'none';
           }}
         />
       )}

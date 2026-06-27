@@ -1,5 +1,6 @@
 import type { ScreenData } from '../../api/client';
 import { formatScreenId } from '../../utils/formatters';
+import { getScreenRenderUrl, BASE_WIDTH, BASE_HEIGHT } from '../../utils/screenRenderUrl';
 
 interface ScreenRendererProps {
   screen: ScreenData;
@@ -9,34 +10,6 @@ interface ScreenRendererProps {
   showInfo?: boolean;
   selected?: boolean;
   onClick?: () => void;
-}
-
-// Base screen dimensions (8 tiles × 6 tiles, each tile is 64px metatile)
-// Full rendered size at scale=1 is 512x384
-const BASE_WIDTH = 512;  // 8 tiles * 64px
-const BASE_HEIGHT = 384; // 6 tiles * 64px
-
-// API base URL
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-// Get the rendered screen image URL
-// Include tile data as cache-busting params to force refresh when screen data changes
-function getScreenRenderUrl(
-  chapterNum: number,
-  screenIndex: number,
-  scale: number = 4,
-  topTiles?: number,
-  bottomTiles?: number,
-  datapointer?: number,
-  wsColor?: number
-): string {
-  let url = `${API_BASE}/api/rom/render/${chapterNum}/${screenIndex}?scale=${scale}`;
-  // Add cache-busting params based on tile data
-  if (topTiles !== undefined) url += `&t=${topTiles}`;
-  if (bottomTiles !== undefined) url += `&b=${bottomTiles}`;
-  if (datapointer !== undefined) url += `&d=${datapointer}`;
-  if (wsColor !== undefined) url += `&ws_color=${wsColor}`;
-  return url;
 }
 
 export function ScreenRenderer({
