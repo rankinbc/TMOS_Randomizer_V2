@@ -80,6 +80,14 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
+  /**
+   * Both shared store slices must be loaded before any edit can succeed:
+   * updateLineupSlot / updateEncounterGroup early-return (no throw) when their
+   * slice is null, which would otherwise silently drop a fast click. Gate the
+   * controls on this so a no-op edit is impossible.
+   */
+  const tablesReady = encounterLineups != null && encounterGroups != null;
+
   /** Number of lineups available in the store for this chapter (dropdown range). */
   const lineupCount = useMemo(
     () => encounterLineups?.find((c) => c.chapter === chapter)?.lineup_count ?? 0,
@@ -107,13 +115,20 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
    * Re-fetches getEncounterByScreen to reflect the newly resolved lineup here.
    */
   const handleLineupChange = async (group: EncounterByScreenGroup, newLineupIdx: number) => {
+    // Guard: the store action no-ops (no throw) when encounterGroups is null.
+    if (!tablesReady) {
+      setError('Encounter tables still loading — try again in a moment.');
+      return;
+    }
     setSavingGroup(group.entry_index);
+    setError(null);
     try {
       const newMonsterGroup = (group.monster_group & 0x80) | (newLineupIdx & 0x7f);
       await updateEncounterGroup(chapter, group.entry_index, { monster_group: newMonsterGroup });
       await fetchData();
-    } catch {
-      // error lands in store.enemiesError; surface via UI is the Enemies tab
+    } catch (e) {
+      // store also records this in enemiesError (Enemies tab); surface it here too.
+      setError(e instanceof Error ? e.message : 'Edit failed');
     } finally {
       setSavingGroup(null);
     }
@@ -131,11 +146,18 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
   ) => {
     if (group.lineup == null) return;
     setPickingSlot(null);
+    // Guard: the store action no-ops (no throw) when encounterLineups is null.
+    if (!tablesReady) {
+      setError('Encounter tables still loading — try again in a moment.');
+      return;
+    }
+    setError(null);
     try {
       await updateLineupSlot(chapter, group.lineup_index, slot, enemyId);
       await fetchData();
-    } catch {
-      // error lands in store.enemiesError
+    } catch (e) {
+      // store also records this in enemiesError (Enemies tab); surface it here too.
+      setError(e instanceof Error ? e.message : 'Edit failed');
     }
   };
 
@@ -162,19 +184,27 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
 
       {/* Body */}
       <div className="px-3 pb-4 pt-2 space-y-2">
-        {/* Error */}
+        {/* Error / transient hint — coexists with the lineup display so a failed
+            edit (or "tables still loading") never blanks the current data. */}
         {error && <p className="text-xs text-red-400 py-1">{error}</p>}
 
+        {/* Tables-loading hint: edits are disabled until the shared store slices
+            arrive (the store actions silently no-op while they're null). */}
+        {!tablesReady && (
+          <p className="text-[10px] text-slate-500 italic py-0.5">
+            Loading encounter tables… editing disabled until ready.
+          </p>
+        )}
+
         {/* No groups mapped to this screen */}
-        {!error && encounterData?.groups.length === 0 && (
+        {encounterData?.groups.length === 0 && (
           <p className="text-xs text-slate-500 italic py-1">
             No random encounter mapped to this screen.
           </p>
         )}
 
         {/* One card per group entry */}
-        {!error &&
-          encounterData?.groups.map((group, gIdx) => (
+        {encounterData?.groups.map((group, gIdx) => (
             <div
               key={group.entry_index}
               className="rounded-lg border border-slate-700 bg-slate-800/60 p-2.5 space-y-2"
@@ -194,11 +224,12 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
                   <span className="text-slate-400">Lineup:</span>
                   <select
                     value={group.lineup_index}
-                    disabled={savingGroup === group.entry_index}
+                    disabled={!tablesReady || savingGroup === group.entry_index}
                     onChange={(e) =>
                       void handleLineupChange(group, parseInt(e.target.value, 10))
                     }
-                    className="bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-slate-200 text-xs disabled:opacity-50 cursor-pointer"
+                    title={tablesReady ? undefined : 'Loading encounter tables…'}
+                    className="bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-slate-200 text-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {lineupCount > 0
                       ? Array.from({ length: lineupCount }, (_, i) => (
@@ -251,12 +282,15 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
                               slotRefs.current[slotKey] = el;
                             }}
                             type="button"
+                            disabled={!tablesReady}
                             onClick={() =>
                               setPickingSlot(
                                 isOpen ? null : { groupIdx: gIdx, slot: slot.slot },
                               )
                             }
-                            className={`w-12 h-12 rounded border flex flex-col items-center justify-center p-0.5 transition-all cursor-pointer ${
+                            className={`w-12 h-12 rounded border flex flex-col items-center justify-center p-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                              !tablesReady ? '' : 'cursor-pointer'
+                            } ${
                               slot.is_empty
                                 ? 'border-slate-800 bg-slate-900/50 hover:border-slate-600'
                                 : isOpen
@@ -264,7 +298,9 @@ export function ScreenEncountersSection({ screen, chapter }: ScreenEncountersSec
                                 : 'border-slate-700 bg-slate-900 hover:border-blue-400'
                             }`}
                             title={
-                              slot.is_empty
+                              !tablesReady
+                                ? 'Loading encounter tables…'
+                                : slot.is_empty
                                 ? `Slot ${slot.slot}: empty (0x${slot.enemy_id
                                     .toString(16)
                                     .toUpperCase()
