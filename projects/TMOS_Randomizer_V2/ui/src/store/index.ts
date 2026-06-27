@@ -26,6 +26,7 @@ import {
   type EnemyStatPatch,
   type ScreenFieldsUpdate,
   type ScreenVanilla,
+  type ShopEconomyResponse,
 } from '../api/client';
 
 // Enemies-tab sub-sections (also used by the URL router).
@@ -141,6 +142,11 @@ interface RandomizerState {
   tileThemes: Record<string, string> | null;
   tileThemesLoading: boolean;
 
+  // Shop economy state (item_code + base_price per slot, trooper cost)
+  shopEconomy: ShopEconomyResponse | null;
+  shopEconomyLoading: boolean;
+  shopEconomyError: string | null;
+
   // Inventory Caps state (formerly "Shop Table")
   inventoryCaps: InventoryCapsResponse | null;
   inventoryCapsLoading: boolean;
@@ -236,6 +242,11 @@ interface RandomizerState {
     minitiles: [number, number, number, number]
   ) => Promise<void>;
   navigateToTile: (index: number) => void;
+
+  // Shop economy actions
+  loadShopEconomy: () => Promise<void>;
+  updateShopSlot: (shopIndex: number, slotIndex: number, patch: { item_code?: number; base_price?: number }) => Promise<void>;
+  updateTrooperCost: (cost: number) => Promise<void>;
 
   // Inventory caps actions (formerly "shops")
   loadInventoryCaps: () => Promise<void>;
@@ -371,6 +382,11 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   // Tile section themes
   tileThemes: null,
   tileThemesLoading: false,
+
+  // Shop economy state
+  shopEconomy: null,
+  shopEconomyLoading: false,
+  shopEconomyError: null,
 
   // Inventory caps / EXP state
   inventoryCaps: null,
@@ -865,6 +881,71 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       selectedTileIndex: index,
       selectedTab: 'graphics',
     });
+  },
+
+  // Shop economy actions
+  loadShopEconomy: async () => {
+    set({ shopEconomyLoading: true, shopEconomyError: null });
+    try {
+      const data = await api.getShopEconomy();
+      set({ shopEconomy: data, shopEconomyLoading: false });
+    } catch (error) {
+      set({ shopEconomyLoading: false, shopEconomyError: _maybeResetRomLoaded(set, error) });
+    }
+  },
+
+  updateShopSlot: async (shopIndex, slotIndex, patch) => {
+    const state = get();
+    if (!state.shopEconomy) return;
+    const prevShops = state.shopEconomy.shops;
+    const itemsRegistry = state.items?.gameplay_items ?? [];
+    const foundItem = patch.item_code !== undefined
+      ? itemsRegistry.find((i) => i.id === patch.item_code)
+      : null;
+    const optimistic = prevShops.map((s) =>
+      s.shop_index === shopIndex && s.slot_index === slotIndex
+        ? {
+            ...s,
+            ...(patch.item_code !== undefined && {
+              item_code: patch.item_code,
+              item_code_hex: `0x${patch.item_code.toString(16).toUpperCase().padStart(2, '0')}`,
+              item_label: foundItem?.name ?? `Item 0x${patch.item_code.toString(16).toUpperCase().padStart(2, '0')}`,
+            }),
+            ...(patch.base_price !== undefined && { base_price: patch.base_price }),
+          }
+        : s
+    );
+    set({ shopEconomy: { ...state.shopEconomy, shops: optimistic }, shopEconomyError: null });
+    try {
+      const resp = await api.patchShopSlot(shopIndex, slotIndex, patch);
+      const confirmed = optimistic.map((s) =>
+        s.shop_index === shopIndex && s.slot_index === slotIndex ? resp.slot : s
+      );
+      set({ shopEconomy: { ...state.shopEconomy, shops: confirmed } });
+    } catch (error) {
+      set({
+        shopEconomy: { ...state.shopEconomy, shops: prevShops },
+        shopEconomyError: error instanceof Error ? error.message : 'Shop slot update failed',
+      });
+      throw error;
+    }
+  },
+
+  updateTrooperCost: async (cost) => {
+    const state = get();
+    if (!state.shopEconomy) return;
+    const prevCost = state.shopEconomy.trooper_cost;
+    set({ shopEconomy: { ...state.shopEconomy, trooper_cost: { ...prevCost, cost } }, shopEconomyError: null });
+    try {
+      const resp = await api.patchTrooperCost(cost);
+      set({ shopEconomy: { ...state.shopEconomy, trooper_cost: resp.trooper } });
+    } catch (error) {
+      set({
+        shopEconomy: { ...state.shopEconomy, trooper_cost: prevCost },
+        shopEconomyError: error instanceof Error ? error.message : 'Trooper cost update failed',
+      });
+      throw error;
+    }
   },
 
   // Inventory caps actions (formerly mislabeled as "shops")
