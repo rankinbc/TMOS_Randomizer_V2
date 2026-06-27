@@ -3,11 +3,37 @@ import type { ReactNode } from 'react';
 import { api } from '../../api/client';
 import type { TbDamageTable } from '../../api/client';
 import { ByteField } from './ByteField';
-import { PanelFrame, ExpertDisclosure, useRomResource } from './panelHelpers';
+import { PanelFrame, useRomResource } from './panelHelpers';
 import { HelpChip } from '../stats/HelpChip';
 
 function vanillaValue(vanilla: TbDamageTable[] | undefined, which: string, index: number): number | undefined {
   return vanilla?.find((t) => t.which === which)?.values[index];
+}
+
+/** Plain-language explanation for each table shape. */
+function shapeExplanation(table: TbDamageTable): string {
+  const [rows, cols] = table.shape;
+  if (table.shape.length === 2 && cols === 6) {
+    return (
+      `${rows}×${cols} combat matrix: each row represents an attacker class and each column ` +
+      `a defender class. The cell at [row, col] is the raw damage lookup when that attacker ` +
+      `fights that defender. Editing a cell affects every fight with that attacker/defender ` +
+      `class pairing, across all chapters.`
+    );
+  } else if (table.shape.length === 2 && cols === 2) {
+    return (
+      `${rows} damage tiers, each stored as a (base, multiplier) byte pair. The engine selects ` +
+      `a tier for each hit and computes damage from base + level × mult. Changing a tier's ` +
+      `values scales every attack that maps to that tier game-wide.`
+    );
+  } else {
+    // shape [5] — per-chapter scalar
+    return (
+      `Per-chapter damage bonus (Ch1–Ch5). A scalar applied to all turn-based combat in that ` +
+      `chapter. Raising a value increases all attack damage in that chapter; lowering it makes ` +
+      `the chapter feel easier.`
+    );
+  }
 }
 
 function TableCard({
@@ -75,17 +101,23 @@ function TableCard({
   }
 
   return (
-    <div className="rounded-lg border border-slate-700 overflow-hidden">
-      <div className="px-4 py-2 bg-slate-800/60 text-sm font-semibold text-slate-200 flex items-center gap-2 flex-wrap">
-        <span className="flex items-center gap-1.5">
-          {table.label}
-          <HelpChip content={table.tooltip} />
-        </span>
-        <code className="ml-auto text-[10px] text-slate-600">
-          {table.cpu_addr} / {table.rom_offset}
-        </code>
+    <div className="space-y-2">
+      {/* Per-table plain-language explanation */}
+      <p className="text-xs text-slate-400 leading-relaxed px-1">
+        {shapeExplanation(table)}
+      </p>
+      <div className="rounded-lg border border-slate-700 overflow-hidden">
+        <div className="px-4 py-2 bg-slate-800/60 text-sm font-semibold text-slate-200 flex items-center gap-2 flex-wrap">
+          <span className="flex items-center gap-1.5">
+            {table.label}
+            <HelpChip content={table.tooltip} />
+          </span>
+          <code className="ml-auto text-[10px] text-slate-600">
+            {table.cpu_addr} / {table.rom_offset}
+          </code>
+        </div>
+        <div className="p-4">{body}</div>
       </div>
-      <div className="p-4">{body}</div>
     </div>
   );
 }
@@ -133,13 +165,18 @@ export function TbFormulasPanel() {
       onReload={reload}
     >
       {data && (
-        <ExpertDisclosure summary="Show turn-based damage tables (expert — edits ripple across every battle)">
-          <div className="space-y-4">
-            {data.tables.map((table) => (
-              <TableCard key={table.which} table={table} vanilla={data.vanilla} commit={commit} />
-            ))}
+        <div className="space-y-5">
+          {/* Expert notice — always visible, no toggle */}
+          <div className="rounded-lg border border-amber-700/40 bg-amber-950/10 px-4 py-2 flex items-center gap-2 text-sm text-amber-300/90">
+            <span className="text-amber-400">⚠</span>
+            Expert — edits to these tables ripple across every turn-based battle. Test thoroughly
+            after changes.
           </div>
-        </ExpertDisclosure>
+
+          {data.tables.map((table) => (
+            <TableCard key={table.which} table={table} vanilla={data.vanilla} commit={commit} />
+          ))}
+        </div>
       )}
     </PanelFrame>
   );

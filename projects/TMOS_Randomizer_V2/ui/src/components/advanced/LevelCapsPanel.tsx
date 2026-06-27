@@ -17,10 +17,26 @@ export function LevelCapsPanel() {
     >
       {data && (
         <div className="space-y-4">
+          {/* Compact at-a-glance summary */}
+          <div className="flex flex-wrap gap-2">
+            {data.caps.map((cap) => (
+              <div
+                key={cap.chapter}
+                className="flex flex-col items-center rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2 text-center"
+              >
+                <span className="text-[10px] uppercase tracking-wide text-slate-500">Ch{cap.chapter}</span>
+                <span className="text-lg font-bold tabular-nums text-slate-200">Lv {cap.level_cap}</span>
+                <span className="text-[10px] text-slate-500">max</span>
+              </div>
+            ))}
+          </div>
+
+          {/* API note */}
           <div className="px-3 py-2 rounded bg-slate-800/40 border border-slate-700/50 text-xs text-slate-400">
             {data._note}
           </div>
 
+          {/* Detail table */}
           <div className="rounded-lg border border-slate-700 overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -34,7 +50,7 @@ export function LevelCapsPanel() {
               <tbody className="divide-y divide-slate-800">
                 {data.caps.map((cap) => (
                   <tr key={cap.chapter}>
-                    <td className="px-4 py-2 text-slate-200">{cap.chapter}</td>
+                    <td className="px-4 py-2 text-slate-200">Ch{cap.chapter}</td>
                     <td className="px-4 py-2 text-slate-200 tabular-nums">{cap.level_cap}</td>
                     <td className="px-4 py-2 text-slate-400">{cap.source}</td>
                     <td className="px-4 py-2">
@@ -44,6 +60,17 @@ export function LevelCapsPanel() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Why read-only explanation */}
+          <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 px-4 py-3 flex items-start gap-3">
+            <TierBadge tier="display" />
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Level caps are a documented game rule — advancing through a chapter's Time Door
+              hard-limits your XP tier — but no confirmed ROM write address has been located for
+              these values. Until a writable ROM offset is identified and verified, they are shown
+              here for reference only and cannot be edited.
+            </p>
           </div>
         </div>
       )}
