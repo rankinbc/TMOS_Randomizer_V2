@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TypedDict
 
 from .encounter_lineups import _lineup_dto, LINEUP_COUNT
-from .encounter_groups import read_chapter_groups, GROUP_COUNT
+from .encounter_groups import read_chapter_groups
 
 
 class AppearanceDTO(TypedDict):
