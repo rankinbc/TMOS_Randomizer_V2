@@ -275,6 +275,9 @@ interface RandomizerState {
   // Edit log
   pushEditLog: (entry: EditLogEntry) => void;
   clearEditLog: () => void;
+
+  // Navigation
+  jumpToWorldScreen: (chapter: number, screenIndex: number) => Promise<void>;
 }
 
 function getDefaultSettings(): RandomizerSettings {
@@ -1411,6 +1414,15 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     set((state) => ({ editLog: [...state.editLog, entry].slice(-200) }));
   },
   clearEditLog: () => set({ editLog: [] }),
+
+  jumpToWorldScreen: async (chapter, screenIndex) => {
+    const s = get();
+    set({ selectedTab: 'world' });
+    if (s.selectedChapter !== chapter || !s.chapterData) {
+      await s.loadChapterData(chapter);
+    }
+    set({ selectedScreen: screenIndex });
+  },
 }));
 
 // Helper to transform API response to our chapter format
