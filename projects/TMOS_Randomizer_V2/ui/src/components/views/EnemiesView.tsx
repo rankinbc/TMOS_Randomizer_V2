@@ -3,7 +3,6 @@ import { useRandomizerStore, type EnemiesSection } from '../../store';
 import { BattleRosterEditor } from '../enemies/BattleRosterEditor';
 import { LineupEditor } from '../enemies/LineupEditor';
 import { EncounterGroupEditor } from '../enemies/EncounterGroupEditor';
-import { BossSafeSection } from '../enemies/BossSafeSection';
 import { OverworldSafeSection } from '../enemies/OverworldSafeSection';
 import { EditLog } from '../stats/EditLog';
 import { HelpChip } from '../stats/HelpChip';
@@ -17,7 +16,6 @@ const SECTIONS: SubTab<EnemiesSection>[] = [
   { id: 'encounters', label: 'Encounters' },
   { id: 'bosses', label: 'Bosses' },
   { id: 'overworld', label: 'Overworld' },
-  { id: 'bossbytes', label: 'Boss Bytes', expert: true },
   { id: 'encrates', label: 'Encounter Rates', expert: true },
   { id: 'tbformulas', label: 'TB Formulas', expert: true },
 ];
@@ -222,10 +220,10 @@ export function EnemiesView() {
         </div>
       )}
 
-      {/* ---- BOSSES (safe-tier) ---- */}
+      {/* ---- BOSSES (safe by default; expert toggle in panel) ---- */}
       {section === 'bosses' && (
         <div className="flex-1 overflow-auto">
-          <BossSafeSection />
+          <BossesPanel />
         </div>
       )}
 
@@ -233,18 +231,6 @@ export function EnemiesView() {
       {section === 'overworld' && (
         <div className="flex-1 overflow-auto">
           <OverworldSafeSection />
-        </div>
-      )}
-
-      {/* ---- BOSS BYTES (advanced, non-safe tiers only) ---- */}
-      {section === 'bossbytes' && (
-        <div className="flex-1 overflow-auto">
-          <BossesPanel
-            tierFilter={(tier) => tier !== 'safe'}
-            title="Boss Bytes (Advanced)"
-            romNote="Advanced boss bytes — expert/display tiers only · safe HP & damage live in the Bosses section"
-            headerTier="expert"
-          />
         </div>
       )}
 

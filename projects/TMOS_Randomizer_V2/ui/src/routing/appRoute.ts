@@ -10,7 +10,7 @@ export interface AppRoute {
 const VALID_TABS: TabType[] = [
   'world', 'enemies', 'items', 'hero', 'allies', 'graphics', 'randomize', 'debug',
 ];
-const ENEMIES_SUBS: EnemiesSection[] = ['roster', 'encounters', 'bosses', 'overworld', 'bossbytes', 'encrates', 'tbformulas'];
+const ENEMIES_SUBS: EnemiesSection[] = ['roster', 'encounters', 'bosses', 'overworld', 'encrates', 'tbformulas'];
 
 export function idToHex(n: number): string {
   return n.toString(16).padStart(2, '0');

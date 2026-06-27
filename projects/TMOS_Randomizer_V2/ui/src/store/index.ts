@@ -34,7 +34,6 @@ export type EnemiesSection =
   | 'encounters'
   | 'bosses'
   | 'overworld'
-  | 'bossbytes'
   | 'encrates'
   | 'tbformulas';
 
