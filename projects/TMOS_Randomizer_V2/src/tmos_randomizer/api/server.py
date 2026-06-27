@@ -67,6 +67,7 @@ from ..core import enemy_selection as _enemy_selection
 from ..core import enemy_stats as _enemy_stats
 from ..core import encounter_lineups as _encounter_lineups
 from ..core import encounter_groups as _encounter_groups
+from ..core import enemy_appearances as _enemy_appearances
 from ..core import items as _items
 # Advanced page systems (built + verified vs GameAnalysis2 ROM knowledge base)
 from ..core import boss_stats as _boss_stats
@@ -3092,6 +3093,25 @@ async def get_selectable_enemies():
     ROM — derived from the static enemy roster only.
     """
     return {"enemies": _enemy_selection.selectable_enemy_ids()}
+
+
+@app.get("/api/rom/enemies/{enemy_id}/appearances")
+async def get_enemy_appearances(enemy_id: int):
+    """Return all world-screens where *enemy_id* can spawn in a random encounter.
+
+    Chains three tables: encounter lineups (which enemies are in each lineup),
+    encounter groups (which screen maps to which lineup), and the enemy roster.
+    Result is deduplicated by (chapter, screen_index, lineup_index).
+    """
+    if not 0 <= enemy_id <= 0xFF:
+        raise HTTPException(status_code=400, detail="enemy_id must be 0..255")
+    rom, _ = _require_rom_pair()
+    appearances = _enemy_appearances.get_enemy_appearances(rom, enemy_id)
+    return {
+        "enemy_id": enemy_id,
+        "enemy_id_hex": f"0x{enemy_id:02X}",
+        "appearances": appearances,
+    }
 
 
 @app.get("/api/rom/enemy-stats")
