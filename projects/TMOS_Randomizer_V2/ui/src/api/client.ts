@@ -997,6 +997,12 @@ class ApiClient {
     );
   }
 
+  // URL for a single tile rendered from CHR ROM data.
+  // tileIndex is 0-255; chr is the CHR bank index (0-63); scale controls output size.
+  getTileBankTileRenderUrl(tileIndex: number, chr: number, scale = 4): string {
+    return `${this.baseUrl}/api/rom/tilebank/${tileIndex}/render?chr=${chr}&scale=${scale}`;
+  }
+
   // Inventory Caps (formerly mislabeled "Shops")
   async getInventoryCaps(): Promise<InventoryCapsResponse> {
     return this.fetch<InventoryCapsResponse>('/api/rom/inventory-caps');

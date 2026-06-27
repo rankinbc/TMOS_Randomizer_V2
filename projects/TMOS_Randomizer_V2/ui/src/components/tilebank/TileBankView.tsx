@@ -200,6 +200,7 @@ export function TileBankView() {
             tiles={tileBankData}
             selectedIndex={selectedTileIndex}
             onSelectTile={setSelectedTileIndex}
+            chr={chrBankIndex}
           />
         </div>
 
