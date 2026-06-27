@@ -27,6 +27,8 @@ import {
   type ScreenFieldsUpdate,
   type ScreenVanilla,
   type ShopEconomyResponse,
+  type AlliesResponse,
+  type TroopersResponse,
 } from '../api/client';
 
 // Enemies-tab sub-sections (also used by the URL router).
@@ -157,6 +159,16 @@ interface RandomizerState {
   itemsLoading: boolean;
   itemsError: string | null;
 
+  // Allies roster state (from /api/rom/allies)
+  allies: AlliesResponse | null;
+  alliesLoading: boolean;
+  alliesError: string | null;
+
+  // Troopers state (from /api/rom/troopers)
+  troopers: TroopersResponse | null;
+  troopersLoading: boolean;
+  troopersError: string | null;
+
   // EXP Table state
   expTable: ExpTableResponse | null;
   expUsage: ExpUsageResponse['usage'] | null;
@@ -254,6 +266,10 @@ interface RandomizerState {
 
   // Items registry action
   loadItems: () => Promise<void>;
+
+  // Allies / Troopers actions
+  loadAllies: () => Promise<void>;
+  loadTroopers: () => Promise<void>;
 
   // EXP table actions
   loadExpTable: () => Promise<void>;
@@ -397,6 +413,16 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   items: null,
   itemsLoading: false,
   itemsError: null,
+
+  // Allies state
+  allies: null,
+  alliesLoading: false,
+  alliesError: null,
+
+  // Troopers state
+  troopers: null,
+  troopersLoading: false,
+  troopersError: null,
 
   expTable: null,
   expUsage: null,
@@ -933,17 +959,36 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
 
   updateTrooperCost: async (cost) => {
     const state = get();
-    if (!state.shopEconomy) return;
-    const prevCost = state.shopEconomy.trooper_cost;
-    set({ shopEconomy: { ...state.shopEconomy, trooper_cost: { ...prevCost, cost } }, shopEconomyError: null });
+    // Optimistic update shopEconomy (if loaded)
+    const prevShopCost = state.shopEconomy?.trooper_cost;
+    if (state.shopEconomy) {
+      set({ shopEconomy: { ...state.shopEconomy, trooper_cost: { ...prevShopCost!, cost } }, shopEconomyError: null });
+    }
+    // Optimistic update troopers (if loaded)
+    const prevTrooperCost = state.troopers !== null ? state.troopers.trooper_cost : undefined;
+    if (state.troopers !== null) {
+      set({ troopers: { ...state.troopers!, trooper_cost: cost } });
+    }
     try {
       const resp = await api.patchTrooperCost(cost);
-      set({ shopEconomy: { ...state.shopEconomy, trooper_cost: resp.trooper } });
+      const cur = get();
+      if (cur.shopEconomy) {
+        set({ shopEconomy: { ...cur.shopEconomy, trooper_cost: resp.trooper } });
+      }
+      if (cur.troopers !== null) {
+        set({ troopers: { ...cur.troopers!, trooper_cost: resp.trooper.cost } });
+      }
     } catch (error) {
-      set({
-        shopEconomy: { ...state.shopEconomy, trooper_cost: prevCost },
-        shopEconomyError: error instanceof Error ? error.message : 'Trooper cost update failed',
-      });
+      const cur = get();
+      if (cur.shopEconomy && prevShopCost !== undefined) {
+        set({
+          shopEconomy: { ...cur.shopEconomy, trooper_cost: prevShopCost },
+          shopEconomyError: error instanceof Error ? error.message : 'Trooper cost update failed',
+        });
+      }
+      if (cur.troopers !== null && prevTrooperCost !== undefined) {
+        set({ troopers: { ...cur.troopers!, trooper_cost: prevTrooperCost } });
+      }
       throw error;
     }
   },
@@ -972,6 +1017,28 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
         itemsLoading: false,
         itemsError: error instanceof Error ? error.message : 'Failed to load items',
       });
+    }
+  },
+
+  loadAllies: async () => {
+    if (get().alliesLoading) return;
+    set({ alliesLoading: true, alliesError: null });
+    try {
+      const data = await api.getAllies();
+      set({ allies: data, alliesLoading: false });
+    } catch (error) {
+      set({ alliesLoading: false, alliesError: _maybeResetRomLoaded(set, error) });
+    }
+  },
+
+  loadTroopers: async () => {
+    if (get().troopersLoading) return;
+    set({ troopersLoading: true, troopersError: null });
+    try {
+      const data = await api.getTroopers();
+      set({ troopers: data, troopersLoading: false });
+    } catch (error) {
+      set({ troopersLoading: false, troopersError: _maybeResetRomLoaded(set, error) });
     }
   },
 
