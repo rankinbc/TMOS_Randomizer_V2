@@ -13,6 +13,7 @@ import {
 } from './byteLabels';
 import { screenLinksFor, type ScreenLinkActions } from './screenLinks';
 import { CONTENT_TYPES, CHAPTER_NPCS } from './screenEnums';
+import { ScreenEncountersSection } from './ScreenEncountersSection';
 
 interface ScreenDetailPanelProps {
   screen: ScreenData;
@@ -67,12 +68,6 @@ export function ScreenDetailPanel({
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
-            onClick={() => onEdit?.('top')}
-            className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white"
-          >
-            Edit
-          </button>
-          <button
             onClick={() => setCollapsed((c) => !c)}
             className="text-slate-400 hover:text-white px-1"
             title={collapsed ? 'Expand' : 'Collapse'}
@@ -88,115 +83,135 @@ export function ScreenDetailPanel({
       </div>
 
       {!collapsed && (
-        <div className="grid grid-cols-2 grid-rows-[auto_1fr] flex-1 min-h-0">
-          {/* Top-left: spatial nav grid */}
-          <div className="p-3 border-b border-r border-slate-700 flex items-center justify-center">
-            <div className="grid grid-cols-3 gap-1.5 text-center w-full max-w-[210px]">
-              <div />
-              <NavCell direction="Up" value={screen.nav_up} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
-              <div />
-              <NavCell direction="Left" value={screen.nav_left} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
-              <div className="bg-blue-500/20 rounded p-2 text-[10px] text-blue-300 font-mono flex items-center justify-center">
-                {screenId.compact}
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+
+          {/* ── World Screen Properties section ────────────────────────── */}
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-700 bg-slate-900/40 flex-shrink-0">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              World Screen Properties
+            </span>
+            <button
+              onClick={() => onEdit?.('top')}
+              className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white font-medium"
+            >
+              Edit
+            </button>
+          </div>
+
+          {/* 2×2 grid: [nav | preview] / [field table | detail box] */}
+          <div className="grid grid-cols-2 flex-shrink-0">
+            {/* Top-left: spatial nav grid */}
+            <div className="p-3 border-b border-r border-slate-700 flex items-center justify-center">
+              <div className="grid grid-cols-3 gap-1.5 text-center w-full max-w-[210px]">
+                <div />
+                <NavCell direction="Up" value={screen.nav_up} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
+                <div />
+                <NavCell direction="Left" value={screen.nav_left} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
+                <div className="bg-blue-500/20 rounded p-2 text-[10px] text-blue-300 font-mono flex items-center justify-center">
+                  {screenId.compact}
+                </div>
+                <NavCell direction="Right" value={screen.nav_right} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
+                <div />
+                <NavCell direction="Down" value={screen.nav_down} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
+                <div />
               </div>
-              <NavCell direction="Right" value={screen.nav_right} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
-              <div />
-              <NavCell direction="Down" value={screen.nav_down} screens={screens} chapterNum={chapterNum} onScreenSelect={onScreenSelect} />
-              <div />
+            </div>
+
+            {/* Top-right: preview */}
+            <div className="p-3 flex items-center justify-center bg-slate-900 border-b border-slate-700">
+              <ScreenRenderer screen={screen} chapterNum={chapterNum} scale={0.55} showInfo={false} />
+            </div>
+
+            {/* Bottom-left: field table (fixed height, scrolls within cell) */}
+            <div className="overflow-y-auto border-r border-slate-700 h-52">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 text-[10px] uppercase tracking-wide">
+                    <th className="text-left font-medium px-3 py-1.5">Field</th>
+                    <th className="text-right font-medium px-1 py-1.5">Hex</th>
+                    <th className="text-left font-medium px-3 py-1.5">Label</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {BYTE_FIELD_KEYS.map((key) => {
+                    const field = fields[key];
+                    const value = screenValueFor(screen, key);
+                    const { text, tier } = resolveByteLabel(key, value, chapterNum, field);
+                    const isSel = selectedKey === key;
+                    return (
+                      <tr
+                        key={key}
+                        onClick={() => setSelectedKey(isSel ? null : key)}
+                        className={`cursor-pointer border-t border-slate-700/50 ${
+                          isSel ? 'bg-blue-500/15' : 'hover:bg-slate-700/40'
+                        }`}
+                      >
+                        <td className="px-3 py-1.5 text-slate-300">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${tierStyle(tier).dot}`} />
+                            {field?.label ?? key}
+                          </span>
+                        </td>
+                        <td className="px-1 py-1.5 text-right font-mono text-slate-400">
+                          0x{value.toString(16).toUpperCase().padStart(2, '0')}
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-200 truncate max-w-[140px]">{text}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom-right: detail / links box (fixed height, scrolls within cell) */}
+            <div className="overflow-y-auto p-3 h-52">
+              {selectedKey ? (
+                <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-200">{selectedField?.label ?? selectedKey}</span>
+                    <span className="font-mono text-xs text-slate-400">
+                      0x{selectedValue.toString(16).toUpperCase().padStart(2, '0')} ({selectedValue})
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-300">{selectedLabel}</div>
+                  {selectedField?.description && (
+                    <p className="text-xs text-slate-400">{selectedField.description}</p>
+                  )}
+                  {selectedField?.warning && (
+                    <p className="text-xs text-amber-400">{'⚠'} {selectedField.warning}</p>
+                  )}
+                  {selectedField?.used_by && selectedField.used_by.length > 0 && (
+                    <p className="text-[10px] text-slate-500">Used by: {selectedField.used_by.join(', ')}</p>
+                  )}
+                  {selectedKey === 'objectset' && (
+                    <ObjectSetEnemyStrip chapterNum={chapterNum} objectset={selectedValue} />
+                  )}
+                  {selectedLinks.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      {selectedLinks.map((link, i) => (
+                        <div key={i}>
+                          <button
+                            onClick={link.onActivate}
+                            className="text-xs text-blue-400 hover:text-blue-300 underline"
+                          >
+                            {link.label} {'→'}
+                          </button>
+                          {link.note && <p className="text-[10px] text-slate-500">{link.note}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center text-center text-xs text-slate-500">
+                  Select a field for details.
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Top-right: preview (square, larger) */}
-          <div className="p-3 flex items-center justify-center bg-slate-900 border-b border-slate-700">
-            <ScreenRenderer screen={screen} chapterNum={chapterNum} scale={0.55} showInfo={false} />
-          </div>
-
-          {/* Bottom-left: field table (scrolls within its cell) */}
-          <div className="overflow-y-auto min-h-0 border-r border-slate-700">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-500 text-[10px] uppercase tracking-wide">
-                  <th className="text-left font-medium px-3 py-1.5">Field</th>
-                  <th className="text-right font-medium px-1 py-1.5">Hex</th>
-                  <th className="text-left font-medium px-3 py-1.5">Label</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BYTE_FIELD_KEYS.map((key) => {
-                  const field = fields[key];
-                  const value = screenValueFor(screen, key);
-                  const { text, tier } = resolveByteLabel(key, value, chapterNum, field);
-                  const isSel = selectedKey === key;
-                  return (
-                    <tr
-                      key={key}
-                      onClick={() => setSelectedKey(isSel ? null : key)}
-                      className={`cursor-pointer border-t border-slate-700/50 ${
-                        isSel ? 'bg-blue-500/15' : 'hover:bg-slate-700/40'
-                      }`}
-                    >
-                      <td className="px-3 py-1.5 text-slate-300">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full ${tierStyle(tier).dot}`} />
-                          {field?.label ?? key}
-                        </span>
-                      </td>
-                      <td className="px-1 py-1.5 text-right font-mono text-slate-400">
-                        0x{value.toString(16).toUpperCase().padStart(2, '0')}
-                      </td>
-                      <td className="px-3 py-1.5 text-slate-200 truncate max-w-[140px]">{text}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Bottom-right: detail / links box, or placeholder when nothing selected */}
-          <div className="overflow-y-auto min-h-0 p-3">
-            {selectedKey ? (
-              <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-200">{selectedField?.label ?? selectedKey}</span>
-                  <span className="font-mono text-xs text-slate-400">
-                    0x{selectedValue.toString(16).toUpperCase().padStart(2, '0')} ({selectedValue})
-                  </span>
-                </div>
-                <div className="text-xs text-slate-300">{selectedLabel}</div>
-                {selectedField?.description && (
-                  <p className="text-xs text-slate-400">{selectedField.description}</p>
-                )}
-                {selectedField?.warning && (
-                  <p className="text-xs text-amber-400">{'⚠'} {selectedField.warning}</p>
-                )}
-                {selectedField?.used_by && selectedField.used_by.length > 0 && (
-                  <p className="text-[10px] text-slate-500">Used by: {selectedField.used_by.join(', ')}</p>
-                )}
-                {selectedKey === 'objectset' && (
-                  <ObjectSetEnemyStrip chapterNum={chapterNum} objectset={selectedValue} />
-                )}
-                {selectedLinks.length > 0 && (
-                  <div className="space-y-1 pt-1">
-                    {selectedLinks.map((link, i) => (
-                      <div key={i}>
-                        <button
-                          onClick={link.onActivate}
-                          className="text-xs text-blue-400 hover:text-blue-300 underline"
-                        >
-                          {link.label} {'→'}
-                        </button>
-                        {link.note && <p className="text-[10px] text-slate-500">{link.note}</p>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-center text-xs text-slate-500">
-                Select a field for details.
-              </div>
-            )}
-          </div>
+          {/* ── Encounters section ──────────────────────────────────────── */}
+          <ScreenEncountersSection screen={screen} chapter={chapterNum} />
         </div>
       )}
     </div>
