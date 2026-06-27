@@ -105,7 +105,7 @@ export function EncounterGroupEditor({ groups, vanilla, chapterLineups, onChange
                     chapter={groups.chapter}
                     screenIndex={e.screen}
                     showRender={true}
-                    label={`0x${e.screen_hex} → World`}
+                    label={`${e.screen_hex} → World`}
                   />
                 </td>
                 <td className="pr-2">
