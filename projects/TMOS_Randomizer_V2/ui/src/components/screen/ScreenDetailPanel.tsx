@@ -98,9 +98,9 @@ export function ScreenDetailPanel({
             </span>
             <button
               onClick={() => onEdit?.('top')}
-              className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500 text-white font-medium"
+              className="flex items-center gap-1.5 px-4 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-wide shadow-lg shadow-blue-900/40 ring-1 ring-blue-400/60"
             >
-              Edit
+              <span aria-hidden>✎</span> Edit Screen
             </button>
           </div>
 

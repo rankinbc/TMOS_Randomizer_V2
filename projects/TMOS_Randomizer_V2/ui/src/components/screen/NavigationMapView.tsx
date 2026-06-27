@@ -1719,8 +1719,12 @@ export function NavigationMapView({
           <div className="text-slate-500">
             Parent World: {selectedSection ? formatHex(selectedSection.parentWorld) : '-'}
           </div>
-          <div className="text-slate-500 ml-auto">
-            Drag screens to rearrange · Drag empty canvas to pan · Scroll wheel to zoom · Hover section buttons to move between sections
+          <div className="ml-auto flex items-center gap-1.5 rounded-md bg-blue-500/15 px-2.5 py-1 ring-1 ring-blue-400/40 text-blue-200">
+            <span aria-hidden>🖱️</span>
+            <span>
+              <strong className="font-semibold text-blue-100">Right-click</strong> a screen for more options ·{' '}
+              <strong className="font-semibold text-blue-100">Drag &amp; drop</strong> screens to rearrange · Drag canvas to pan · Scroll to zoom
+            </span>
           </div>
         </div>
       </div>
