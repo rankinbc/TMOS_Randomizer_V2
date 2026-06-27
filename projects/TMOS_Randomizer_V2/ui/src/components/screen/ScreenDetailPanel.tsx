@@ -14,6 +14,12 @@ import {
 import { screenLinksFor, type ScreenLinkActions } from './screenLinks';
 import { CONTENT_TYPES, CHAPTER_NPCS } from './screenEnums';
 import { ScreenEncountersSection } from './ScreenEncountersSection';
+import { ScreenByteRef } from '../shared/ScreenByteRef';
+
+/** Nav byte field keys that hold a world-screen index (bytes 4-7). */
+const SCREEN_NAV_KEYS = new Set([
+  'screen_index_right', 'screen_index_left', 'screen_index_down', 'screen_index_up',
+]);
 
 interface ScreenDetailPanelProps {
   screen: ScreenData;
@@ -155,7 +161,24 @@ export function ScreenDetailPanel({
                         <td className="px-1 py-1.5 text-right font-mono text-slate-400">
                           0x{value.toString(16).toUpperCase().padStart(2, '0')}
                         </td>
-                        <td className="px-3 py-1.5 text-slate-200 truncate max-w-[140px]">{text}</td>
+                        <td className="px-3 py-1.5 max-w-[140px]">
+                          {SCREEN_NAV_KEYS.has(key) && value < 0xFE ? (
+                            /* stopPropagation so the chip click navigates without
+                               also toggling the row's detail-box selection. */
+                            <div
+                              className="inline-block"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ScreenByteRef
+                                chapter={chapterNum}
+                                screenIndex={value}
+                                showRender={false}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-slate-200 truncate">{text}</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -185,6 +208,17 @@ export function ScreenDetailPanel({
                   )}
                   {selectedKey === 'objectset' && (
                     <ObjectSetEnemyStrip chapterNum={chapterNum} objectset={selectedValue} />
+                  )}
+                  {/* Nav field with valid target: show a mini screen thumbnail */}
+                  {SCREEN_NAV_KEYS.has(selectedKey) && selectedValue < 0xFE && (
+                    <div className="pt-1">
+                      <p className="text-[10px] text-slate-500 mb-1">Destination:</p>
+                      <ScreenByteRef
+                        chapter={chapterNum}
+                        screenIndex={selectedValue}
+                        showRender={true}
+                      />
+                    </div>
                   )}
                   {selectedLinks.length > 0 && (
                     <div className="space-y-1 pt-1">
