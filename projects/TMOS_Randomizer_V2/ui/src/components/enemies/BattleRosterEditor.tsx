@@ -1,8 +1,10 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRandomizerStore } from '../../store';
-import type { BattleEnemy, EnemyStat, EnemyStatPatch } from '../../api/client';
-import { GuidedNumberField } from '../screen/GuidedNumberField';
+import type { BattleEnemy, EnemyStat, EnemyStatPatch, AppearanceEntry } from '../../api/client';
+import { api } from '../../api/client';
 import { SafetyBadge } from '../shared/SafetyBadge';
+import { ScreenByteRef } from '../shared/ScreenByteRef';
+import { ByteField } from '../advanced/ByteField';
 import type { FieldMetadata } from '../../types/metadata';
 import { DANGER_ENEMY_IDS } from '../../utils/enemySelection';
 
@@ -19,16 +21,13 @@ function fallbackMeta(key: string): FieldMetadata {
 
 /**
  * Entity-centric Battle Roster editor: pick a turn-based enemy on the left,
- * edit everything about it (HP / EP / Rupia editable) in the persistent panel
- * on the right. Mirrors the World-tab list+panel editing pattern.
- *
- * Self-contained: reads from the store, embeds nowhere by itself.
+ * edit everything about it in the persistent panel on the right.
+ * Mirrors the World-tab list+panel editing pattern.
  */
 export function BattleRosterEditor() {
   const battleEnemies = useRandomizerStore((s) => s.battleEnemies);
   const enemyVanillaStats = useRandomizerStore((s) => s.enemyVanillaStats);
   const fieldMetadata = useRandomizerStore((s) => s.fieldMetadata);
-  const lineups = useRandomizerStore((s) => s.encounterLineups);
   const loading = useRandomizerStore((s) => s.enemiesLoading);
   const error = useRandomizerStore((s) => s.enemiesError);
   const loadEnemies = useRandomizerStore((s) => s.loadEnemies);
@@ -37,12 +36,31 @@ export function BattleRosterEditor() {
   const selectedId = useRandomizerStore((s) => s.enemiesSelectedId);
   const setSelectedId = useRandomizerStore((s) => s.setEnemiesSelectedId);
 
-  // Ensure roster is loaded on mount (guard against duplicate loads the same
-  // way EnemiesView does: only fetch when the store slice is still empty).
+  // Appearances via the new screen-level API
+  const [appearances, setAppearances] = useState<AppearanceEntry[]>([]);
+  const [appearancesLoading, setAppearancesLoading] = useState(false);
+
+  // Ensure roster is loaded on mount
   useEffect(() => {
     if (!battleEnemies) loadEnemies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch screen appearances whenever the selected enemy changes
+  useEffect(() => {
+    if (selectedId === null) {
+      setAppearances([]);
+      return;
+    }
+    let cancelled = false;
+    setAppearancesLoading(true);
+    api
+      .getEnemyAppearances(selectedId)
+      .then((res) => { if (!cancelled) setAppearances(res.appearances); })
+      .catch(() => { if (!cancelled) setAppearances([]); })
+      .finally(() => { if (!cancelled) setAppearancesLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   const sorted = useMemo(
     () => (battleEnemies ? [...battleEnemies].sort((a, b) => a.enemy_id - b.enemy_id) : []),
@@ -53,22 +71,6 @@ export function BattleRosterEditor() {
     () => sorted.find((e) => e.enemy_id === selectedId) ?? null,
     [sorted, selectedId]
   );
-
-  // "APPEARS IN": chapter/lineup references whose slots contain the selected id.
-  const appearsIn = useMemo(() => {
-    if (selectedId === null || !lineups) return [];
-    const refs: { chapter: number; lineupIndex: number; slot: number }[] = [];
-    lineups.forEach((ch) =>
-      ch.lineups.forEach((l) =>
-        l.slots.forEach((s) => {
-          if (!s.is_empty && s.enemy_id === selectedId) {
-            refs.push({ chapter: ch.chapter, lineupIndex: l.lineup_index, slot: s.slot });
-          }
-        })
-      )
-    );
-    return refs;
-  }, [lineups, selectedId]);
 
   if (loading || !battleEnemies) {
     return (
@@ -95,9 +97,9 @@ export function BattleRosterEditor() {
 
   return (
     <div className="flex gap-3 h-full min-h-0">
-      {/* LEFT: scrollable roster list */}
-      <div className="w-56 flex-shrink-0 flex flex-col min-h-0 border border-slate-800 rounded bg-slate-900/40">
-        <div className="px-2 py-1.5 text-xs font-semibold text-slate-300 border-b border-slate-800">
+      {/* LEFT: compact scrollable roster list */}
+      <div className="w-52 flex-shrink-0 flex flex-col min-h-0 border border-slate-800 rounded bg-slate-900/40">
+        <div className="px-2 py-1 text-xs font-semibold text-slate-300 border-b border-slate-800">
           Battle Roster ({sorted.length})
         </div>
         <ul className="flex-1 overflow-auto">
@@ -109,18 +111,24 @@ export function BattleRosterEditor() {
                 <button
                   type="button"
                   onClick={() => setSelectedId(e.enemy_id)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs border-l-2 ${
+                  className={`w-full flex items-center gap-1.5 px-2 py-0.5 text-left text-xs border-l-2 ${
                     isSel
                       ? 'bg-slate-700/60 border-amber-500'
                       : 'border-transparent hover:bg-slate-800/60'
                   }`}
                 >
-                  <span className="font-mono text-slate-500 w-10">{e.enemy_id_hex}</span>
+                  {e.image && (
+                    <img
+                      src={`/assets/enemies/${e.image}`}
+                      alt=""
+                      className="h-4 w-4 object-contain flex-shrink-0"
+                      style={{ imageRendering: 'pixelated' }}
+                      onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
+                  <span className="font-mono text-slate-500 text-[10px] w-8">{e.enemy_id_hex}</span>
                   <span className="flex-1 truncate text-slate-200">{e.name}</span>
                   {isDanger && <SafetyBadge tier="danger" />}
-                  {e.hp !== null && (
-                    <span className="font-mono text-[10px] text-slate-500">{e.hp}</span>
-                  )}
                 </button>
               </li>
             );
@@ -140,7 +148,8 @@ export function BattleRosterEditor() {
             vanilla={enemyVanillaStats?.[String(selected.enemy_id)]}
             fieldMetadata={fieldMetadata}
             isDanger={DANGER_ENEMY_IDS.has(selected.enemy_id)}
-            appearsIn={appearsIn}
+            appearances={appearances}
+            appearancesLoading={appearancesLoading}
             onPatch={(patch) => updateEnemyStat(selected.enemy_id, patch)}
           />
         )}
@@ -154,11 +163,20 @@ interface EnemyPanelProps {
   vanilla?: EnemyStat;
   fieldMetadata: ReturnType<typeof useRandomizerStore.getState>['fieldMetadata'];
   isDanger: boolean;
-  appearsIn: { chapter: number; lineupIndex: number; slot: number }[];
+  appearances: AppearanceEntry[];
+  appearancesLoading: boolean;
   onPatch: (patch: EnemyStatPatch) => Promise<void>;
 }
 
-function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatch }: EnemyPanelProps) {
+function EnemyPanel({
+  enemy,
+  vanilla,
+  fieldMetadata,
+  isDanger,
+  appearances,
+  appearancesLoading,
+  onPatch,
+}: EnemyPanelProps) {
   const imgUrl = enemy.image ? `/assets/enemies/${enemy.image}` : null;
 
   const enemyFields = fieldMetadata?.entities?.enemy?.fields;
@@ -179,7 +197,7 @@ function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatc
     <div className="space-y-4">
       {/* Identity */}
       <div className="flex items-start gap-3">
-        <div className="w-20 h-20 flex-shrink-0 flex items-center justify-center bg-slate-900 rounded overflow-hidden border border-slate-700">
+        <div className="w-16 h-16 flex-shrink-0 flex items-center justify-center bg-slate-900 rounded overflow-hidden border border-slate-700">
           {imgUrl ? (
             <img
               src={imgUrl}
@@ -215,9 +233,10 @@ function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatc
         </div>
       </div>
 
-      {/* Editable stats — or read-only warning for danger IDs */}
+      {/* Stat bytes — all 10, editability based on tier + special key rules */}
       <div className="border-t border-slate-800 pt-3">
         {isDanger ? (
+          // Danger-ID enemy: all bytes read-only
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-red-400">
               <SafetyBadge tier="danger" />
@@ -226,60 +245,101 @@ function EnemyPanel({ enemy, vanilla, fieldMetadata, isDanger, appearsIn, onPatc
                 Stats are shown read-only.
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {orderedKeys.map((key) => (
-                <div key={key} className="bg-slate-900/60 rounded px-2 py-1.5 border border-slate-700">
-                  <div className="text-slate-500 uppercase text-[10px]">
-                    {enemyFields?.[key]?.label ?? key}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              {orderedKeys.map((key) => {
+                const meta = enemyFields?.[key] ?? fallbackMeta(key);
+                return (
+                  <div key={key} className="flex items-center justify-between py-0.5 border-b border-slate-800/50">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <SafetyBadge tier={meta.tier} />
+                      <span className="text-[11px] text-slate-400 truncate">{meta.label}</span>
+                    </div>
+                    <span className="inline-flex items-center justify-center w-14 px-1 py-0.5 rounded text-xs font-mono bg-slate-800/60 text-slate-400 border border-slate-700/60 ml-2 flex-shrink-0">
+                      {liveValue(key)}
+                    </span>
                   </div>
-                  <div className="font-mono text-slate-300">{liveValue(key)}</div>
-                  {vanillaValue(key) !== undefined && (
-                    <div className="text-[10px] text-slate-600">vanilla {vanillaValue(key)}</div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+          // Normal enemy: safe/caution → editable; hp + byte_9 → always read-only
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
             {orderedKeys.map((key) => {
               const meta = enemyFields?.[key] ?? fallbackMeta(key);
+              const live = liveValue(key);
+              const van = vanillaValue(key);
+              // hp (byte 7) and byte_9 have unconfirmed semantics → always read-only
+              const isUnverified = key === 'hp' || key === 'byte_9';
+              const isEditable =
+                !isUnverified && (meta.tier === 'safe' || meta.tier === 'caution');
+              const changed = van !== undefined && live !== van;
+
               return (
-                <GuidedNumberField
+                <div
                   key={key}
-                  meta={meta}
-                  value={liveValue(key)}
-                  vanilla={vanillaValue(key)}
-                  onChange={(v) => {
-                    if (v !== liveValue(key)) {
-                      // Optimistic update + patch + reconcile + rollback live in the
-                      // store's updateEnemyStat action (mirrors the World-tab pattern).
-                      void onPatch({ [key]: v });
-                    }
-                  }}
-                />
+                  className="flex items-center justify-between py-0.5 border-b border-slate-800/50"
+                >
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <SafetyBadge tier={meta.tier} />
+                      <span className="text-[11px] text-slate-400 truncate">{meta.label}</span>
+                    </div>
+                    {isUnverified && (
+                      <span className="text-[9px] text-slate-600 italic leading-none">
+                        unverified semantics
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                    {isEditable ? (
+                      <ByteField
+                        value={live}
+                        vanilla={van}
+                        min={meta.valid_range?.[0] ?? 0}
+                        max={meta.valid_range?.[1] ?? 255}
+                        onCommit={(v) => onPatch({ [key]: v })}
+                        ariaLabel={meta.label}
+                        width="w-14"
+                      />
+                    ) : (
+                      <span className="inline-flex items-center justify-center w-14 px-1 py-0.5 rounded text-xs font-mono bg-slate-800/60 text-slate-400 border border-slate-700/60">
+                        {live}
+                      </span>
+                    )}
+                    {van !== undefined && changed && (
+                      <span className="text-[10px] text-slate-600 font-mono w-6 text-right" title={`vanilla: ${van}`}>
+                        {van}
+                      </span>
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* APPEARS IN — only when lineups are loaded and there are references */}
-      {appearsIn.length > 0 && (
-        <div className="border-t border-slate-800 pt-3">
-          <div className="text-xs font-semibold text-slate-300 mb-1">Appears in</div>
-          <ul className="flex flex-wrap gap-1.5">
-            {appearsIn.map((r, i) => (
-              <li
-                key={`${r.chapter}-${r.lineupIndex}-${r.slot}-${i}`}
-                className="text-[11px] font-mono bg-slate-800 text-slate-300 rounded px-1.5 py-0.5"
-              >
-                Ch{r.chapter} · L{r.lineupIndex} · slot {r.slot}
-              </li>
+      {/* APPEARS ON SCREENS — ScreenByteRef chips from the API */}
+      <div className="border-t border-slate-800 pt-3">
+        <div className="text-xs font-semibold text-slate-300 mb-1.5">Appears on screens</div>
+        {appearancesLoading ? (
+          <div className="text-xs text-slate-500">Loading…</div>
+        ) : appearances.length === 0 ? (
+          <div className="text-xs text-slate-600 italic">no battle appearances</div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {appearances.map((a, i) => (
+              <ScreenByteRef
+                key={`${a.chapter}-${a.screen_index}-${i}`}
+                chapter={a.chapter}
+                screenIndex={a.screen_index}
+                label={`Ch${a.chapter} ${a.screen_hex}`}
+              />
             ))}
-          </ul>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

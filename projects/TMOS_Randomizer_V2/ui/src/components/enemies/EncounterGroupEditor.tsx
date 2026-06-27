@@ -1,5 +1,6 @@
 import type { ChapterGroups, EncounterGroupPatch, ChapterLineups } from '../../api/client';
 import { HelpChip } from '../stats/HelpChip';
+import { ScreenByteRef } from '../shared/ScreenByteRef';
 
 interface EncounterGroupEditorProps {
   groups: ChapterGroups;
@@ -57,6 +58,7 @@ export function EncounterGroupEditor({ groups, vanilla, chapterLineups, onChange
           <tr>
             <th className="text-left py-1 pr-2">#</th>
             <th className="text-left pr-2">Screen</th>
+            <th className="text-left pr-2">Preview</th>
             <th className="text-left pr-2">Lineup (group)</th>
             <th className="text-left pr-2">Flag</th>
             <th className="text-left">Resolves to</th>
@@ -96,6 +98,14 @@ export function EncounterGroupEditor({ groups, vanilla, chapterLineups, onChange
                       screenDiff ? 'border-amber-500/60 text-amber-300' : 'border-slate-700 text-slate-200'
                     }`}
                     title={`hex 0x${e.screen.toString(16).toUpperCase().padStart(2, '0')}`}
+                  />
+                </td>
+                <td className="pr-2">
+                  <ScreenByteRef
+                    chapter={groups.chapter}
+                    screenIndex={e.screen}
+                    showRender={true}
+                    label={`0x${e.screen_hex} → World`}
                   />
                 </td>
                 <td className="pr-2">

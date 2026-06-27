@@ -95,7 +95,7 @@ export function LineupEditor({
               ref={(el) => { slotRefs.current[slot.slot] = el; }}
               type="button"
               onClick={() => setPickingSlot(pickingSlot === slot.slot ? null : slot.slot)}
-              className={`w-full aspect-square rounded border flex flex-col items-center justify-center p-1 ${
+              className={`w-full h-10 rounded border flex flex-col items-center justify-center p-0.5 ${
                 diff
                   ? 'border-amber-500 bg-amber-500/10'
                   : slot.is_empty
@@ -109,21 +109,21 @@ export function LineupEditor({
               }
             >
               {slot.is_empty ? (
-                <span className="text-slate-700 text-xl">∅</span>
+                <span className="text-slate-700 text-sm">∅</span>
               ) : imgUrl ? (
                 <img
                   src={imgUrl}
                   alt={slot.enemy_name ?? '?'}
-                  className="max-w-full max-h-[70%] object-contain"
+                  className="max-w-full h-6 object-contain"
                   style={{ imageRendering: 'pixelated' }}
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none';
                   }}
                 />
               ) : (
-                <span className="text-slate-500 text-xs">{slot.enemy_name ?? '?'}</span>
+                <span className="text-slate-500 text-[9px] leading-tight text-center px-0.5">{slot.enemy_name ?? '?'}</span>
               )}
-              <div className="text-[9px] text-slate-500 mt-auto">slot {slot.slot}</div>
+              <div className="text-[8px] text-slate-500 leading-none">{slot.slot}</div>
             </button>
           );
         })}
