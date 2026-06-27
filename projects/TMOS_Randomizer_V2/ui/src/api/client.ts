@@ -477,6 +477,68 @@ export interface EncounterGroupPatch {
   flag?: number;
 }
 
+// Shared screen location sub-type (used by allies & troopers)
+export interface ScreenLocation {
+  chapter: number;
+  screen_index: number;
+  screen_hex: string;
+}
+
+// Encounter by screen (GET /api/rom/encounter-groups/screen/{chapter}/{screen_index})
+export interface EncounterByScreenGroup {
+  entry_index: number;
+  monster_group: number;
+  flag: number;
+  lineup_index: number;
+  lineup: Lineup | null;  // null when lineup_index exceeds chapter table size (Ch3–5)
+}
+
+export interface EncounterByScreen {
+  chapter: number;
+  screen_index: number;
+  groups: EncounterByScreenGroup[];
+}
+
+// Enemy appearances (GET /api/rom/enemies/{enemy_id}/appearances)
+export interface AppearanceEntry {
+  chapter: number;
+  screen_index: number;
+  screen_hex: string;
+  lineup_index: number;
+  flag: number;
+}
+
+export interface EnemyAppearances {
+  enemy_id: number;
+  enemy_id_hex: string;
+  appearances: AppearanceEntry[];
+}
+
+// Ally roster (GET /api/rom/allies)
+export interface AllyDTO {
+  id: number;
+  name: string;
+  klass: string;
+  chapter: number;
+  content_byte: number | null;  // null for auto-join allies (Coronya, Pukin)
+  content_hex: string | null;
+  sprite: string;
+  description: string;
+  spells: string[];
+  locations: ScreenLocation[];
+}
+
+export interface AlliesResponse {
+  allies: AllyDTO[];
+}
+
+// Troopers (GET /api/rom/troopers)
+export interface TroopersResponse {
+  trooper_cost: number | null;  // null when no ROM is loaded
+  sprite: string;
+  locations: ScreenLocation[];
+}
+
 // ---- Advanced page systems ----
 export interface BossField {
   field: string; rom_offset: string; tier: string;
@@ -1099,6 +1161,28 @@ class ApiClient {
       `/api/rom/encounter-groups/${chapter}/${entryIndex}`,
       { method: 'PATCH', body: JSON.stringify(patch) }
     );
+  }
+
+  // All encounter group entries for a specific screen, with lineups resolved
+  async getEncounterByScreen(chapter: number, screenIndex: number): Promise<EncounterByScreen> {
+    return this.fetch<EncounterByScreen>(
+      `/api/rom/encounter-groups/screen/${chapter}/${screenIndex}`
+    );
+  }
+
+  // All screens where a given enemy can appear in a random encounter
+  async getEnemyAppearances(enemyId: number): Promise<EnemyAppearances> {
+    return this.fetch<EnemyAppearances>(`/api/rom/enemies/${enemyId}/appearances`);
+  }
+
+  // Full ally roster with static metadata and computed screen locations
+  async getAllies(): Promise<AlliesResponse> {
+    return this.fetch<AlliesResponse>('/api/rom/allies');
+  }
+
+  // Trooper recruitment cost (from ROM) and screen locations across all chapters
+  async getTroopers(): Promise<TroopersResponse> {
+    return this.fetch<TroopersResponse>('/api/rom/troopers');
   }
 
   // ---- Advanced page systems ----
