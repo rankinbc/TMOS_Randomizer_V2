@@ -79,6 +79,7 @@ from ..core import weapon_damage as _weapon_damage
 from ..core import mp_table as _mp_table
 from ..core import palette_colors as _palette_colors
 from ..core import level_caps as _level_caps
+from ..core import allies as _allies
 from ..core.field_metadata import build_field_metadata
 from ..core.enums import NAV_BLOCKED, NAV_BUILDING_ENTRANCE, is_past_screen_index
 from ..logic.navigation import connect_screens, disconnect_screens, OPPOSITE_DIRECTIONS
@@ -3214,6 +3215,35 @@ async def patch_trooper_cost(update: TrooperCostUpdate):
         raise HTTPException(status_code=400, detail=str(e))
     _rom_data = bytes(rom_array)
     return {"status": "updated", "trooper": result}
+
+
+# --- Allies + Troopers roster (read-only) ---
+
+@app.get("/api/rom/allies")
+async def get_allies_roster():
+    """Return the full ally roster with computed screen locations (read-only).
+
+    Static metadata is ported from AlliesView.tsx KNOWN_ALLIES.  Screen
+    locations are computed by scanning each ally's home chapter for screens
+    whose content byte matches the ally's ContentType value.
+
+    No ROM is strictly required: if no ROM is loaded the locations list for
+    every ally will be empty but the static metadata is still returned.
+    """
+    return {"allies": _allies.get_allies(_game_world)}
+
+
+@app.get("/api/rom/troopers")
+async def get_troopers_roster():
+    """Return trooper info with recruitment cost and screen locations (read-only).
+
+    Trooper cost is read from the ROM (file offset 0x4577, vanilla = 100).
+    Screen locations are the set of screens in any chapter whose content byte
+    equals 0x7F (ContentType.TROOPERS).
+    The cost is editable via the existing PATCH /api/rom/trooper-cost; this
+    endpoint is read-only aggregation.
+    """
+    return _allies.get_troopers(_rom_data, _game_world)
 
 
 # --- Overworld (real-time) enemy stats (HP editable, expert) ---
