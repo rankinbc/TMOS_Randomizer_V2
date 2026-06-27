@@ -3442,6 +3442,40 @@ async def get_chapter_encounter_groups(chapter: int):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/rom/encounter-groups/screen/{chapter}/{screen_index}")
+async def get_encounter_groups_by_screen(chapter: int, screen_index: int):
+    """Return all encounter group entries for a specific screen, with lineups resolved.
+
+    Response shape::
+
+        {
+            "chapter": int,
+            "screen_index": int,
+            "groups": [
+                {
+                    "entry_index": int,
+                    "monster_group": int,
+                    "flag": int,
+                    "lineup_index": int,   # monster_group & 0x7F
+                    "lineup": {            # None if lineup_index exceeds table size
+                        "lineup_index": int,
+                        "start_byte": int,
+                        "slots": [{"slot": int, "enemy_id": int, "enemy_name": str|None, "is_empty": bool}],
+                        "total_hp": int
+                    }
+                }
+            ]
+        }
+
+    Returns groups: [] when no encounter entry is mapped to this screen.
+    """
+    rom, _ = _require_rom_pair()
+    try:
+        return _encounter_groups.get_screen_encounter_groups(rom, chapter, screen_index)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.patch("/api/rom/encounter-groups/{chapter}/{entry_index}")
 async def patch_encounter_group(chapter: int, entry_index: int, update: EncounterGroupUpdate):
     global _rom_data

@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from .encounter_lineups import _lineup_dto, LINEUP_COUNT as _LINEUP_COUNT
+
 
 GROUP_BASE: dict[int, int] = {
     1: 0xC02A,
@@ -137,3 +139,58 @@ def write_group_entry(
         rom[base + 2] = flag
 
     return _entry_dto(bytes(rom), chapter, entry_index)
+
+
+# ---------------------------------------------------------------------------
+# Screen lookup — resolves encounter group entries + lineups for one screen
+# ---------------------------------------------------------------------------
+
+def get_screen_encounter_groups(rom: bytes, chapter: int, screen_index: int) -> dict:
+    """Return all encounter group entries mapped to *screen_index* in *chapter*,
+    each enriched with its resolved lineup.
+
+    Return shape::
+
+        {
+            "chapter": int,
+            "screen_index": int,
+            "groups": [
+                {
+                    "entry_index": int,
+                    "monster_group": int,   # full byte (high bit + low-7 lineup index)
+                    "flag": int,            # encounter rate/intensity byte
+                    "lineup_index": int,    # monster_group & 0x7F
+                    "lineup": LineupDTO | None,  # None if lineup_index out of range
+                }
+            ]
+        }
+
+    An empty list is returned when no encounter group entry is mapped to the
+    given screen (not an error condition).
+    """
+    if chapter not in GROUP_BASE:
+        raise ValueError(f"chapter must be 1..5, got {chapter}")
+
+    chapter_data = read_chapter_groups(rom, chapter)
+    groups = []
+    for entry in chapter_data["entries"]:
+        if entry["screen"] != screen_index:
+            continue
+        lineup_index = entry["monster_group"] & 0x7F
+        # Resolve lineup only when the index falls within the active lineup range.
+        # For Ch3-5 the low-7 bits can exceed the lineup count; guard against that.
+        max_lineups = _LINEUP_COUNT.get(chapter, 0)
+        lineup = _lineup_dto(rom, chapter, lineup_index) if lineup_index < max_lineups else None
+        groups.append({
+            "entry_index": entry["entry_index"],
+            "monster_group": entry["monster_group"],
+            "flag": entry["flag"],
+            "lineup_index": lineup_index,
+            "lineup": lineup,
+        })
+
+    return {
+        "chapter": chapter,
+        "screen_index": screen_index,
+        "groups": groups,
+    }
