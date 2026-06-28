@@ -14,9 +14,12 @@ Or via CLI:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1287,24 +1290,37 @@ async def get_plan():
     }
 
 
-@app.post("/api/plan/apply-preview")
-async def apply_plan_preview():
-    """Apply the current plan to the in-memory game world for preview.
+# ── Async apply-preview job registry ───────────────────────────────────────
+# apply-preview is CPU-bound and can run for minutes on small cloud tiers,
+# where a single synchronous request looks hung and risks gateway timeouts.
+# The async endpoint runs the same work in a background thread and exposes a
+# pollable status, so the request returns immediately and never times out.
+# Single-process, in-memory; this is a single-user editing tool.
+_preview_jobs: Dict[str, Dict[str, Any]] = {}
+_PREVIEW_JOBS_MAX = 12
 
-    This modifies the in-memory ROM data so that /api/rom/chapter endpoints
-    return the randomized world. Does NOT write to disk.
+
+def _prune_preview_jobs() -> None:
+    """Keep the job registry small — drop the oldest finished jobs."""
+    if len(_preview_jobs) <= _PREVIEW_JOBS_MAX:
+        return
+    finished = sorted(
+        (jid for jid, j in _preview_jobs.items() if j["status"] != "running"),
+        key=lambda jid: _preview_jobs[jid]["started_at"],
+    )
+    for jid in finished[: len(_preview_jobs) - _PREVIEW_JOBS_MAX]:
+        _preview_jobs.pop(jid, None)
+
+
+def _apply_preview_compute() -> Dict[str, Any]:
+    """Synchronous core of apply-preview.
+
+    Mutates module state (_game_world, _current_plan, _randomizer) and returns
+    the result dict. Assumes preconditions (plan created, ROM loaded) were
+    already checked by the caller. Raises on internal failure; callers map that
+    to an HTTP 500 (sync endpoint) or a job error (async endpoint).
     """
     global _current_plan, _game_world, _randomizer
-
-    logger.info("="*60)
-    logger.info("APPLY_PLAN_PREVIEW called")
-    logger.info("="*60)
-
-    if _current_plan is None:
-        raise HTTPException(status_code=400, detail="No plan created yet")
-
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
 
     if _randomizer is None:
         _randomizer = Randomizer(get_default_config())
@@ -1460,9 +1476,84 @@ async def apply_plan_preview():
         }
     except HTTPException:
         raise
+    except Exception:
+        # Let callers decide how to surface this (HTTP 500 for the sync
+        # endpoint, a job error for the async one). Re-raise the original.
+        logger.exception("apply-preview compute failed")
+        raise
+
+
+@app.post("/api/plan/apply-preview")
+async def apply_plan_preview():
+    """Apply the current plan to the in-memory game world for preview (sync).
+
+    Modifies in-memory ROM data so /api/rom/chapter endpoints return the
+    randomized world. Does NOT write to disk. This blocks for the full
+    randomization; prefer /api/plan/apply-preview-async on slow tiers.
+    """
+    if _current_plan is None:
+        raise HTTPException(status_code=400, detail="No plan created yet")
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    try:
+        return _apply_preview_compute()
     except Exception as e:
-        logger.exception("apply-preview failed")
         raise HTTPException(status_code=500, detail=f"Failed to apply preview: {str(e)}")
+
+
+@app.post("/api/plan/apply-preview-async")
+async def apply_plan_preview_async():
+    """Start apply-preview as a background job; returns a pollable job id.
+
+    The heavy, CPU-bound randomization runs in a worker thread so this request
+    returns immediately and the long compute can't hit a gateway/request
+    timeout. Poll /api/plan/apply-preview-status/{job_id} for the result.
+    """
+    if _current_plan is None:
+        raise HTTPException(status_code=400, detail="No plan created yet")
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+
+    job_id = uuid.uuid4().hex
+    _preview_jobs[job_id] = {
+        "status": "running",
+        "result": None,
+        "error": None,
+        "started_at": time.time(),
+    }
+    _prune_preview_jobs()
+
+    def _run() -> None:
+        try:
+            res = _apply_preview_compute()
+            job = _preview_jobs.get(job_id)
+            if job is not None:
+                job["status"] = "done"
+                job["result"] = res
+        except Exception as e:  # noqa: BLE001 — surfaced to the client as job error
+            job = _preview_jobs.get(job_id)
+            if job is not None:
+                job["status"] = "error"
+                job["error"] = str(e) or e.__class__.__name__
+
+    # Schedule on the default thread pool; CPython preemptively releases the
+    # GIL (~5ms) so status polls are still served while compute runs.
+    asyncio.get_running_loop().run_in_executor(None, _run)
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/plan/apply-preview-status/{job_id}")
+async def apply_plan_preview_status(job_id: str):
+    """Poll the status/result of an async apply-preview job."""
+    job = _preview_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id")
+    return {
+        "status": job["status"],
+        "result": job["result"],
+        "error": job["error"],
+        "elapsed_seconds": round(time.time() - job["started_at"], 1),
+    }
 
 
 @app.post("/api/rom/patch")
