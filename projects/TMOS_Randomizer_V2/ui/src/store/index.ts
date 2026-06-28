@@ -29,6 +29,7 @@ import {
   type ShopEconomyResponse,
   type AlliesResponse,
   type TroopersResponse,
+  type ApplyPreviewResult,
 } from '../api/client';
 
 // Enemies-tab sub-sections (also used by the URL router).
@@ -97,6 +98,8 @@ interface RandomizerState {
   // Plan
   plan: RandomizationPlan | null;
   planLoading: boolean;
+  // Human-readable progress while the async randomize job runs (null when idle).
+  planProgress: string | null;
 
   // Navigability of the last applied plan (warp-aware, vs stock baseline)
   lastNavigability: { ok: boolean; fragmentedChapters: number[] } | null;
@@ -367,6 +370,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   settings: getDefaultSettings(),
   plan: null,
   planLoading: false,
+  planProgress: null,
   lastNavigability: null,
   sectionMap: null,
   selectedChapter: 1,
@@ -662,9 +666,16 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
 
       set({ plan: transformedPlan, lastNavigability: null });
 
-      // Apply the plan to in-memory ROM data so views show randomized world
+      // Apply the plan to in-memory ROM data so views show randomized world.
+      // Runs as a server-side background job we poll, so a slow (minutes-long)
+      // randomization on small cloud tiers can't hit a gateway/request timeout.
       try {
-        const previewResult = await api.applyPlanPreview();
+        set({ planProgress: 'Starting randomization…' });
+        const previewResult = await pollApplyPreview((sec) =>
+          set({
+            planProgress: `Randomizing… ${sec}s — this can take a couple of minutes on the server.`,
+          })
+        );
         set({
           lastNavigability: {
             ok: previewResult.navigability_ok ?? true,
@@ -714,7 +725,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
           : new Error('Randomization preview failed');
       }
 
-      set({ planLoading: false });
+      set({ planLoading: false, planProgress: null });
 
       // Reload chapter data to show randomized layout
       if (state.selectedChapter) {
@@ -723,6 +734,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     } catch (error) {
       set({
         planLoading: false,
+        planProgress: null,
         apiError: error instanceof Error ? error.message : 'Failed to create plan',
       });
       throw error;
@@ -1571,6 +1583,33 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     set({ selectedScreen: screenIndex });
   },
 }));
+
+// Kicks off the server-side apply-preview job and polls until it finishes.
+// Reports elapsed seconds via onProgress so the UI can show a live counter
+// instead of a frozen spinner. Throws on job error (surfaced in the modal).
+async function pollApplyPreview(
+  onProgress: (elapsedSeconds: number) => void
+): Promise<ApplyPreviewResult> {
+  const { job_id } = await api.applyPlanPreviewAsync();
+  const POLL_MS = 2000;
+  // Hard safety cap so a wedged server job can't poll forever (~10 min).
+  const MAX_POLLS = 300;
+  for (let i = 0; i < MAX_POLLS; i++) {
+    const status = await api.getApplyPreviewStatus(job_id);
+    if (status.status === 'done') {
+      if (!status.result) {
+        throw new Error('Randomization finished but returned no result.');
+      }
+      return status.result;
+    }
+    if (status.status === 'error') {
+      throw new Error(status.error || 'Randomization failed on the server.');
+    }
+    onProgress(Math.round(status.elapsed_seconds));
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+  throw new Error('Randomization timed out. Try another seed or strategy.');
+}
 
 // Helper to transform API response to our chapter format
 function transformApiChapters(apiPlan: Record<string, unknown>): RandomizationPlan['chapters'] {

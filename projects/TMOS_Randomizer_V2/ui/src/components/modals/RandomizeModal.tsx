@@ -14,6 +14,7 @@ export function RandomizeModal() {
     setModalOpen,
     fetchPlanFromApi,
     planLoading,
+    planProgress,
     romLoaded,
     apiConnected,
     settings,
@@ -259,6 +260,14 @@ export function RandomizeModal() {
             <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-sm text-amber-300">
               <div className="font-medium mb-1">&#9888; Navigability warning</div>
               {navWarning}
+            </div>
+          )}
+          {planLoading && planProgress && (
+            <div className="bg-purple-500/10 border border-purple-500/30 rounded p-3 text-sm text-purple-200">
+              <div className="flex items-center gap-2">
+                <span className="animate-spin">&#9696;</span>
+                <span>{planProgress}</span>
+              </div>
             </div>
           )}
         </div>

@@ -42,6 +42,33 @@ export interface PlanResponse {
   plan: Record<string, unknown>;
 }
 
+export interface ApplyPreviewResult {
+  status: string;
+  seed: number;
+  screens_modified: number;
+  navigability_ok: boolean;
+  navigability?: {
+    ok: boolean;
+    fragmented_chapters: number[];
+    chapters: {
+      chapter_num: number;
+      reachable_percent: number;
+      components: number;
+      baseline_percent: number | null;
+      baseline_components: number | null;
+      fragmented: boolean;
+    }[];
+  };
+  chapters: { chapter_num: number; screen_count: number }[];
+}
+
+export interface ApplyPreviewStatus {
+  status: 'running' | 'done' | 'error';
+  result: ApplyPreviewResult | null;
+  error: string | null;
+  elapsed_seconds: number;
+}
+
 export interface ChapterSummary {
   chapter_num: number;
   total_screens: number;
@@ -702,26 +729,19 @@ class ApiClient {
     return this.fetch<ValidateResponse>('/api/debug/validate');
   }
 
-  async applyPlanPreview(): Promise<{
-    status: string;
-    seed: number;
-    screens_modified: number;
-    navigability_ok: boolean;
-    navigability?: {
-      ok: boolean;
-      fragmented_chapters: number[];
-      chapters: {
-        chapter_num: number;
-        reachable_percent: number;
-        components: number;
-        baseline_percent: number | null;
-        baseline_components: number | null;
-        fragmented: boolean;
-      }[];
-    };
-    chapters: { chapter_num: number; screen_count: number }[];
-  }> {
+  async applyPlanPreview(): Promise<ApplyPreviewResult> {
     return this.fetch('/api/plan/apply-preview', { method: 'POST' });
+  }
+
+  // Async apply-preview: the heavy randomization runs as a background job on
+  // the server so the request never hits a gateway/request timeout on slow
+  // tiers. Kick off, then poll getApplyPreviewStatus until status !== 'running'.
+  async applyPlanPreviewAsync(): Promise<{ job_id: string; status: string }> {
+    return this.fetch('/api/plan/apply-preview-async', { method: 'POST' });
+  }
+
+  async getApplyPreviewStatus(jobId: string): Promise<ApplyPreviewStatus> {
+    return this.fetch(`/api/plan/apply-preview-status/${jobId}`);
   }
 
   async getChapters(): Promise<{ chapters: ChapterSummary[] }> {
