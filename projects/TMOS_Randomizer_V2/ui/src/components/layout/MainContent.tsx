@@ -94,7 +94,7 @@ export function MainContent() {
           <div className="flex items-center justify-center h-full p-8">
             <div className="max-w-md w-full">
               <h2 className="text-xl font-semibold text-slate-200 mb-4 text-center">
-                Welcome to TMOS Randomizer
+                Welcome to TMOS Editor
               </h2>
               <p className="text-slate-400 text-center mb-6">
                 Load a ROM file to get started. The tool will extract and display all chapter and screen data.
