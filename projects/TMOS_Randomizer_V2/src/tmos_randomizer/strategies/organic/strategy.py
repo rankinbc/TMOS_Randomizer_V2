@@ -129,6 +129,10 @@ class OrganicStrategy(RandomizationStrategy):
         pristine_reachable = compute_pristine_reachable(
             {c.chapter_num: c for c in game_world}, rom_data
         )
+        # Kept for the post-pipeline component gate: "no regressions vs
+        # pristine" is the validity bar; screens vanilla itself never
+        # reaches (battle/sub-world interiors) are not gate failures.
+        self._last_pristine_reachable = pristine_reachable
 
         max_retries = self.config.repair.max_retries
         best_state: Optional[Tuple[Dict[int, ChapterTemplate], Dict[int, ChapterPlacement], Dict[int, RepairReport], Dict[int, FailureReport], int]] = None
@@ -412,21 +416,29 @@ class OrganicStrategy(RandomizationStrategy):
     def _verify_single_component_per_chapter(
         self, game_world: GameWorld, rom_data: Optional[bytes] = None
     ) -> bool:
-        """Final navigability check: every chapter must be a single connected
-        component reachable from the chapter's REAL start/respawn screen via
-        the engine's actual mechanisms (nav pointers + stairways + $98C0
-        warps — the same traversal as detect)."""
+        """Final navigability check: every PRISTINE-REACHABLE screen must be
+        reachable from the chapter's real start/respawn screen via the
+        engine's actual mechanisms (nav pointers + stairways + $98C0 warps —
+        the same traversal as detect).
+
+        Scoped to the pristine baseline: screens vanilla itself never
+        reaches (battle-only / sub-world interiors) are not failures. When
+        no baseline is available (called outside preview_plan) it falls back
+        to all non-building-entrance screens."""
         from .detect import _nav_reachable
 
+        baseline = getattr(self, "_last_pristine_reachable", {}) or {}
         for chapter in game_world:
             total = chapter.screen_count
             if total == 0:
                 continue
             reached = _nav_reachable(chapter, rom_data)
+            required = baseline.get(chapter.chapter_num)
+            if required is not None:
+                if required - reached:
+                    return False
+                continue
             if len(reached) < total:
-                # Screens reached only via 0xFE building entrances are not
-                # "unreachable" by normal play; time-door interiors are
-                # covered by the warp traversal now, so no blanket allowance.
                 unreached_blocking = sum(
                     1 for s in chapter
                     if s.relative_index not in reached
