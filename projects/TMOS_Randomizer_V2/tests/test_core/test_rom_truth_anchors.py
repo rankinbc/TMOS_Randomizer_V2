@@ -31,7 +31,28 @@ from tmos_randomizer.core.constants import (
     TILESECTION_START,
     TILE_TABLE_ADDR,
     WORLD_ENEMY_SET_PTRS,
+    BANK_1_FILE_OFFSET,
     BANK_3_FILE_OFFSET,
+    BANK_6_FILE_OFFSET,
+    BANK_1_FREE_SPACE_START,
+    BANK_1_FREE_SPACE_END,
+    CHAPTER_START_SCREENS,
+    GOLD_MAX,
+    MAGIC_SHOP_BASE_PRICES,
+    MAGIC_SHOP_BASE_PRICE_COUNT,
+    SECRET_EVENT_SCREEN,
+    SECRET_EVENT_SCREEN_IMM,
+    SHOP_CODE_LEGAL_HI4,
+    SHOP_CODES_UNVERIFIED,
+    SHOP_CODES_VERIFIED,
+    SHOP_COUNT,
+    SHOP_DATA_TABLE,
+    SHOP_POINTER_COUNT,
+    SHOP_POINTER_TABLE,
+    SHOP_SLOT_SIZE,
+    SHOP_SLOTS_PER_SHOP,
+    WARP_DEST_GROUPS,
+    WARP_DEST_TABLE,
 )
 
 
@@ -206,3 +227,103 @@ def test_no_constant_shares_offset_with_inv_cap_table():
             f"Different names at the same offset is the exact smell that produced the "
             f"original 'SHOP_ITEM_TABLE vs INV_CAP_TABLE' bug."
         )
+
+
+# =============================================================================
+# Bank 1 shop tables (resolved 2026-07-02, RETMOS "Shop Tables WRITE Spec")
+# Authoritative doc: knowledge/systems/shops-and-economy.md
+# =============================================================================
+
+def test_bank_1_file_offset_matches_spec():
+    assert BANK_1_FILE_OFFSET == INES_HEADER_SIZE + 1 * PRG_BANK_SIZE
+
+
+def test_shop_table_offset_math():
+    assert SHOP_POINTER_TABLE == BANK_1_FILE_OFFSET + (0x94ED - 0x8000)
+    assert SHOP_DATA_TABLE == BANK_1_FILE_OFFSET + (0x94FD - 0x8000)
+    assert MAGIC_SHOP_BASE_PRICES == BANK_1_FILE_OFFSET + (0x8AAC - 0x8000)
+
+
+def test_shop_pointer_table_shape(rom):
+    """8 little-endian CPU pointers, all inside the $8000-$BFFF bank window.
+
+    Vanilla pointers are contiguous 8-byte strides starting at $94FD."""
+    ptrs = [
+        int.from_bytes(rom[SHOP_POINTER_TABLE + i * 2 : SHOP_POINTER_TABLE + i * 2 + 2], "little")
+        for i in range(SHOP_POINTER_COUNT)
+    ]
+    assert all(0x8000 <= p <= 0xBFFF for p in ptrs), ptrs
+    assert ptrs == [0x94FD + i * 8 for i in range(SHOP_POINTER_COUNT)]
+
+
+def test_shop_data_codes_all_legal(rom):
+    """Every vanilla slot code has hi-nibble in {1,3,5} and is a known code."""
+    data = rom[SHOP_DATA_TABLE : SHOP_DATA_TABLE + SHOP_COUNT * SHOP_SLOTS_PER_SHOP * SHOP_SLOT_SIZE]
+    codes = data[0::2]
+    known = SHOP_CODES_VERIFIED | SHOP_CODES_UNVERIFIED
+    for c in codes:
+        assert (c >> 4) in SHOP_CODE_LEGAL_HI4, f"illegal hi4 in vanilla code 0x{c:02X}"
+        assert c in known, f"vanilla shop code 0x{c:02X} missing from known-code sets"
+
+
+def test_shop_data_first_shop_vanilla_bytes(rom):
+    """Shop 0 vanilla slots: BREAD, MASHROOB, $10, HORN."""
+    shop0 = rom[SHOP_DATA_TABLE : SHOP_DATA_TABLE + 8]
+    assert list(shop0[0::2]) == [0x33, 0x34, 0x10, 0x53], list(shop0[0::2])
+
+
+def test_magic_shop_base_prices_vanilla(rom):
+    """$8AAC base price table, charged as base * (chapter+1)."""
+    prices = list(rom[MAGIC_SHOP_BASE_PRICES : MAGIC_SHOP_BASE_PRICES + MAGIC_SHOP_BASE_PRICE_COUNT])
+    assert prices == [20, 30, 40, 20, 40, 30, 20, 40, 30, 40, 50], prices
+
+
+def test_magic_shop_max_price_fits_bcd_gold():
+    """Highest vanilla base (50) x max chapter multiplier (6) must stay <= 999."""
+    assert 50 * 6 <= GOLD_MAX
+
+
+def test_bank_1_free_space_is_zero_filled(rom):
+    free = rom[BANK_1_FREE_SPACE_START:BANK_1_FREE_SPACE_END]
+    assert len(free) == 463
+    assert not any(free), "bank 1 free-space block is no longer zero-filled"
+
+
+# =============================================================================
+# Bank 6 warp/time-door destination table + hardcoded screens
+# Authoritative doc: knowledge/systems/screen-relocation-constraints.md
+# =============================================================================
+
+def test_bank_6_file_offset_matches_spec():
+    assert BANK_6_FILE_OFFSET == INES_HEADER_SIZE + 6 * PRG_BANK_SIZE
+
+
+def test_warp_dest_table_offset_math():
+    assert WARP_DEST_TABLE == BANK_6_FILE_OFFSET + (0x98C0 - 0x8000)
+
+
+def test_warp_dest_table_vanilla_bytes(rom):
+    """5 chapter-groups x 8 destination screen indices ($98C0)."""
+    expected = [
+        [0x00, 0x17, 0x20, 0x7E, 0x3D, 0x42, 0x00, 0x00],
+        [0x09, 0x34, 0x26, 0x00, 0x4E, 0x00, 0x00, 0x00],
+        [0x01, 0x2B, 0x2D, 0x00, 0x35, 0x33, 0x00, 0x00],
+        [0x26, 0x28, 0x08, 0x00, 0x38, 0x60, 0x00, 0x00],
+        [0x20, 0x1C, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00],
+    ]
+    for g in range(WARP_DEST_GROUPS):
+        row = list(rom[WARP_DEST_TABLE + g * 8 : WARP_DEST_TABLE + (g + 1) * 8])
+        assert row == expected[g], f"warp group {g}: {row}"
+
+
+def test_secret_event_screen_immediate(rom):
+    """Bank 6 $90D1 CMP #$1A — the byte before the operand must be the CMP
+    immediate opcode (0xC9), proving the offset points at the operand and not
+    at coincidental data."""
+    assert rom[SECRET_EVENT_SCREEN_IMM] == SECRET_EVENT_SCREEN
+    assert rom[SECRET_EVENT_SCREEN_IMM - 1] == 0xC9
+
+
+def test_chapter_start_screens_spec():
+    """One start screen per chapter, chapter-relative index 4 + 5*(n-1) pattern."""
+    assert CHAPTER_START_SCREENS == (4, 9, 14, 19, 24)

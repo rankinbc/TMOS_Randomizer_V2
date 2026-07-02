@@ -27,6 +27,8 @@
 - [systems/chapter-indexing.md](systems/chapter-indexing.md) - **Randomizer**: Chapter-relative indexing and workarounds
 - [systems/datapointer-objectset.md](systems/datapointer-objectset.md) - **Randomizer**: CHR/ObjectSet compatibility + **Chapter-by-chapter tables**
 - [systems/disassembly-notes.md](systems/disassembly-notes.md) - ROM disassembly notes
+- [systems/shops-and-economy.md](systems/shops-and-economy.md) - **Randomizer**: Bank 1 shop tables WRITE spec, code namespace, pricing rules (supersedes $D544/Bank-2-VM claims)
+- [systems/screen-relocation-constraints.md](systems/screen-relocation-constraints.md) - **Randomizer**: content relocation safety, warp table $98C0, hardcoded screens, progress flags, ExitPosition
 
 ### Bosses
 - [bosses/all-bosses.md](bosses/all-bosses.md) - **Complete boss stats reference** (all 6 bosses)

@@ -43,20 +43,20 @@ SHOP_RECORD_SIZE = SHOP_SLOTS * SHOP_SLOT_SIZE  # 8 bytes per shop
 TROOPER_PRICE_OFFSET = 0x4577
 
 
-# Best-effort labels for the item_code category nibble. Names are NOT in a
-# ROM lookup table (item names are pre-rendered CHR tiles); these labels come
-# from the README's $0300-counter decode and are confirmed only for the
-# consumable slots. Unconfirmed codes resolve to a generic "$03xx" label.
-# Source: game_specs/systems/economy/README.md:65-106.
+# Labels for shop slot codes. Names are NOT in a ROM lookup table (item names
+# are pre-rendered CHR tiles); mapping from RETMOS $8746 delivery trace +
+# guide item-max alignment (knowledge/systems/shops-and-economy.md).
+# $10/$11 have an unresolved $0300-vs-$0308 RAM-target conflict — labels
+# provisional until emulator-verified. Unknown codes resolve to "$03xx".
 _ITEM_CODE_LABELS: dict[int, str] = {
+    0x10: "KEY (unverified)",
+    0x11: "KEY-paired (unverified)",
     0x33: "BREAD",
     0x34: "MASHROOB",
-    0x35: "KEY",
-    0x50: "ROD",
-    0x51: "FLAME",
-    0x52: "STARDUST",
+    0x51: "R.SEED",
+    0x52: "CARPET",
     0x53: "HORN",
-    0x58: "KEY-area (special-cased)",
+    0x58: "RING",
 }
 
 

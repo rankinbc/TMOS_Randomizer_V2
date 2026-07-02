@@ -45,8 +45,9 @@ TOTAL_SCREENS = sum(count for _, count in CHAPTER_OFFSETS.values())  # 739
 # (TMOS_AI/docs/human/items-economy-re-answers.md), these tables live in
 # Bank 3 (NOT Bank 6) and are used by the chest/drop pickup handler at
 # Bank 3 $94B0, NOT by any shop code. The data at 0xD544 is an inventory
-# CAP table, not a shop slot table. Real shop data lives in a Bank 2
-# bytecode interpreter that has not been decoded.
+# CAP table, not a shop slot table. Real shop data: flat tables in Bank 1
+# ($94ED/$94FD) — see the Shop Tables section below (resolved 2026-07-02;
+# the earlier "undecoded Bank 2 bytecode" theory was disproven).
 #
 # NES MMC1 PRG bank size = 16 KB (0x4000), NOT 8 KB. The original comment
 # claimed 8 KB but the math (16 + 6*0x2000) coincidentally landed in Bank 3.
@@ -73,11 +74,80 @@ INV_CAP_TABLE = 0xD544
 INV_PICKUP_AUX_DATA = 0xD5E0
 
 # Shop Content byte ranges (from WorldScreen byte 2). These are the actual
-# in-game shop entry points; the per-shop transaction logic is in Bank 2.
+# in-game shop entry points; shop id = Content & 0x1F into SHOP_POINTER_TABLE.
 GENERAL_SHOP_CONTENT_MIN = 0x60
 GENERAL_SHOP_CONTENT_MAX = 0x66
 MAGIC_SHOP_CONTENT_MIN = 0x75
 MAGIC_SHOP_CONTENT_MAX = 0x79
+
+# =============================================================================
+# Shop Tables (Bank 1) — resolved 2026-07-02
+#
+# Source: RETMOS REVERSE.md "Shop Tables WRITE Spec"; byte-verified against
+# TMOS_ORIGINAL.nes. Authoritative doc: knowledge/systems/shops-and-economy.md
+# =============================================================================
+
+# Bank 1 starts at file 0x04010 = iNES header (16) + 1 bank * 0x4000.
+BANK_1_FILE_OFFSET = 0x04010
+
+# Bank 1 $94ED — shop pointer table: 8 x u16 LE (CPU addrs in $8000-$BFFF),
+# indexed by shop id ($04E1 = Content & 0x1F). Repointable.
+SHOP_POINTER_TABLE = 0x054FD   # BANK_1_FILE_OFFSET + (0x94ED - 0x8000)
+SHOP_POINTER_COUNT = 8
+
+# Bank 1 $94FD — shop data: 8 shops x 4 slots x [code, price]. Fixed slot
+# count, no sentinel.
+SHOP_DATA_TABLE = 0x0550D      # BANK_1_FILE_OFFSET + (0x94FD - 0x8000)
+SHOP_COUNT = 8
+SHOP_SLOTS_PER_SHOP = 4
+SHOP_SLOT_SIZE = 2             # [code, price]
+
+# Slot code legality: hi-nibble must be 1, 3, or 5 (bank 1 $8746 state-command
+# namespace). Other hi4 values are password opcodes — writing them into shop
+# slots lets a purchase mutate arbitrary game state.
+SHOP_CODE_LEGAL_HI4 = frozenset({0x1, 0x3, 0x5})
+
+# Codes appearing in vanilla shops. $10/$11 have an unresolved RAM-target
+# conflict ($0300 vs $0308 door keys) — do not emit NEW $10/$11 slots until
+# emulator-verified.
+SHOP_CODES_VERIFIED = frozenset({0x33, 0x34, 0x51, 0x52, 0x53, 0x58})
+SHOP_CODES_UNVERIFIED = frozenset({0x10, 0x11})
+
+# Bank 1 $8AAC — magic-shop base prices: 11 bytes, indexed by code lo4,
+# charged as base * (chapter + 1). Magic shops IGNORE the slot price byte.
+MAGIC_SHOP_BASE_PRICES = 0x04ABC   # BANK_1_FILE_OFFSET + (0x8AAC - 0x8000)
+MAGIC_SHOP_BASE_PRICE_COUNT = 11
+
+# Gold is 3-digit BCD: price * max quantity must stay <= 999.
+GOLD_MAX = 999
+
+# Bank 1 free space (zero-filled) usable for repointed/expanded shop data.
+BANK_1_FREE_SPACE_START = 0x05741  # CPU $9731
+BANK_1_FREE_SPACE_END = 0x05910    # CPU $9900 (exclusive), 463 bytes
+
+# =============================================================================
+# Warp / Time-Door Destination Table (Bank 6) — resolved 2026-07-02
+#
+# Bank 6 $98C0: 5 chapter-groups x 8 door sub-indices -> destination screen
+# index. THE only present<->past pairing mechanism (pure data). Randomizer
+# must patch this table when moving/re-indexing any destination screen.
+# Authoritative doc: knowledge/systems/screen-relocation-constraints.md
+# =============================================================================
+
+BANK_6_FILE_OFFSET = 0x18010
+
+WARP_DEST_TABLE = 0x198D0      # BANK_6_FILE_OFFSET + (0x98C0 - 0x8000)
+WARP_DEST_GROUPS = 5
+WARP_DEST_SLOTS_PER_GROUP = 8
+
+# Bank 6 $90D1 secret event: `CMP #$1A` — requires screen 0x1A. The immediate
+# operand lives at this file offset; pin screen 0x1A or patch this byte.
+SECRET_EVENT_SCREEN_IMM = 0x190E2
+SECRET_EVENT_SCREEN = 0x1A
+
+# Chapter start screens (warp data $BB1F record 0). Password system encodes
+# these — pin them (do not relocate).
+CHAPTER_START_SCREENS = (4, 9, 14, 19, 24)
 
 # Inventory-cap table layout
 INV_CAP_SLOT_SIZE = 4

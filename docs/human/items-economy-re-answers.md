@@ -1,5 +1,12 @@
 # RE Answer: Items, Economy & Shop System
 
+> **PARTIALLY SUPERSEDED (2026-07-02)**: The "shops live in an undecoded Bank 2
+> bytecode interpreter" conclusion (Q1) was disproven by later RETMOS sessions.
+> Shops are flat data tables in Bank 1 ($94ED/$94FD, file 0x054FD/0x0550D) and
+> are fully write-specified. See `knowledge/systems/shops-and-economy.md` for
+> the current authoritative spec. The $D544/inventory-cap corrections in this
+> document remain valid.
+
 **Date**: 2026-04-16
 **Author**: RETMOS RE agent
 **Scope**: Response to `items-economy-re-guide.md`. Built from disassembly of `TMOS_ORIGINAL.nes` (MD5 `b3236db14c87f375e5f24a5b9b79f071`) cross-referenced with `RETMOS/REVERSE.md` (~150 prior session findings) and `RETMOS/labels.csv`.
