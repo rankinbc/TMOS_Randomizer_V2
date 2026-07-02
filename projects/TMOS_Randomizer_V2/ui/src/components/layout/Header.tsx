@@ -3,18 +3,16 @@ import { useRandomizerStore } from '../../store';
 import { formatSeed } from '../../utils/formatters';
 
 export function Header() {
-  const {
-    plan,
-    romFilename,
-    romLoaded,
-    setModalOpen,
-    apiConnected,
-    apiError,
-    checkApiConnection,
-    loadAssetManifest,
-    uploadRom,
-    loadDefaultRom,
-  } = useRandomizerStore();
+  const plan = useRandomizerStore(s => s.plan);
+  const romFilename = useRandomizerStore(s => s.romFilename);
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const setModalOpen = useRandomizerStore(s => s.setModalOpen);
+  const apiConnected = useRandomizerStore(s => s.apiConnected);
+  const apiError = useRandomizerStore(s => s.apiError);
+  const checkApiConnection = useRandomizerStore(s => s.checkApiConnection);
+  const loadAssetManifest = useRandomizerStore(s => s.loadAssetManifest);
+  const uploadRom = useRandomizerStore(s => s.uploadRom);
+  const loadDefaultRom = useRandomizerStore(s => s.loadDefaultRom);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);

@@ -3,7 +3,10 @@ import { useTimedFlag } from '../../hooks/useTimedFlag';
 import { useRandomizerStore } from '../../store';
 
 export function JsonDebugPanel() {
-  const { chapterData, plan, selectedChapter, sectionMap } = useRandomizerStore();
+  const chapterData = useRandomizerStore(s => s.chapterData);
+  const plan = useRandomizerStore(s => s.plan);
+  const selectedChapter = useRandomizerStore(s => s.selectedChapter);
+  const sectionMap = useRandomizerStore(s => s.sectionMap);
   const [activeSection, setActiveSection] = useState<'chapter' | 'plan' | 'screens' | 'sectionMap'>('chapter');
   const [copied, flagCopied] = useTimedFlag(2000);
 

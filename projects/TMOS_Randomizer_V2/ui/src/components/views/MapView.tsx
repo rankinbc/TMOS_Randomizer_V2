@@ -43,7 +43,12 @@ export function MapView({ chapter }: MapViewProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<number | null>(null);
-  const { selectedSection, setSelectedSection, setSelectedTab, setSelectedScreen, sectionMap, chapterData } = useRandomizerStore();
+  const selectedSection = useRandomizerStore(s => s.selectedSection);
+  const setSelectedSection = useRandomizerStore(s => s.setSelectedSection);
+  const setSelectedTab = useRandomizerStore(s => s.setSelectedTab);
+  const setSelectedScreen = useRandomizerStore(s => s.setSelectedScreen);
+  const sectionMap = useRandomizerStore(s => s.sectionMap);
+  const chapterData = useRandomizerStore(s => s.chapterData);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,

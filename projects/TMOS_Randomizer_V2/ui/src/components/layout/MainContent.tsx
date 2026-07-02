@@ -25,17 +25,15 @@ const VIEW_MODES: { id: ViewMode; label: string }[] = [
 const GLOBAL_TABS = new Set<TabType>(['enemies', 'hero', 'graphics', 'randomize', 'debug']);
 
 export function MainContent() {
-  const {
-    selectedTab,
-    setSelectedTab,
-    romLoaded,
-    chapterData,
-    chapterLoading,
-    viewMode,
-    setViewMode,
-    plan,
-    selectedChapter,
-  } = useRandomizerStore();
+  const selectedTab = useRandomizerStore(s => s.selectedTab);
+  const setSelectedTab = useRandomizerStore(s => s.setSelectedTab);
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const chapterData = useRandomizerStore(s => s.chapterData);
+  const chapterLoading = useRandomizerStore(s => s.chapterLoading);
+  const viewMode = useRandomizerStore(s => s.viewMode);
+  const setViewMode = useRandomizerStore(s => s.setViewMode);
+  const plan = useRandomizerStore(s => s.plan);
+  const selectedChapter = useRandomizerStore(s => s.selectedChapter);
 
   // Get plan chapter data for items/allies/validation views
   // Falls back to minimal data from chapterData if no plan exists

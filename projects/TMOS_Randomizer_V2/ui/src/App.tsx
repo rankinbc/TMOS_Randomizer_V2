@@ -11,7 +11,9 @@ import './index.css';
 
 function App() {
   useAppRouting();
-  const { checkApiConnection, checkRomStatus, romFilename } = useRandomizerStore();
+  const checkApiConnection = useRandomizerStore(s => s.checkApiConnection);
+  const checkRomStatus = useRandomizerStore(s => s.checkRomStatus);
+  const romFilename = useRandomizerStore(s => s.romFilename);
 
   // Check API connection and ROM status on mount
   useEffect(() => {

@@ -1,7 +1,11 @@
 import { useRandomizerStore } from '../../store';
 
 export function ChapterSelector() {
-  const { romLoaded, romChapters, selectedChapter, loadChapterData, chapterLoading } = useRandomizerStore();
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const romChapters = useRandomizerStore(s => s.romChapters);
+  const selectedChapter = useRandomizerStore(s => s.selectedChapter);
+  const loadChapterData = useRandomizerStore(s => s.loadChapterData);
+  const chapterLoading = useRandomizerStore(s => s.chapterLoading);
 
   if (!romLoaded || romChapters.length === 0) {
     return (

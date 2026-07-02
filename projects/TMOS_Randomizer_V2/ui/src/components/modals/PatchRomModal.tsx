@@ -26,7 +26,10 @@ function buildEditLogText(
 }
 
 export function PatchRomModal() {
-  const { modalOpen, setModalOpen, romFilename, editLog } = useRandomizerStore();
+  const modalOpen = useRandomizerStore(s => s.modalOpen);
+  const setModalOpen = useRandomizerStore(s => s.setModalOpen);
+  const romFilename = useRandomizerStore(s => s.romFilename);
+  const editLog = useRandomizerStore(s => s.editLog);
 
   const defaultName = romFilename
     ? `${romFilename.replace(/\.nes$/i, '')}-edited.nes`

@@ -2,7 +2,9 @@ import { useRandomizerStore } from '../../store';
 import { ChapterSelector } from '../chapter/ChapterSelector';
 
 export function Sidebar() {
-  const { chapterData, apiConnected, apiError } = useRandomizerStore();
+  const chapterData = useRandomizerStore(s => s.chapterData);
+  const apiConnected = useRandomizerStore(s => s.apiConnected);
+  const apiError = useRandomizerStore(s => s.apiError);
 
   return (
     <aside className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col overflow-hidden">

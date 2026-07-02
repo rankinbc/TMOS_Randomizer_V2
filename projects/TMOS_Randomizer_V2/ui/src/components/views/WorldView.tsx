@@ -15,19 +15,17 @@ import type { ScreenLinkActions } from '../screen/screenLinks';
  * vanilla bytes (loaded on editor-open) for safety badges and change indicators.
  */
 export function WorldView() {
-  const {
-    chapterData,
-    viewMode,
-    selectedScreen,
-    setSelectedScreen,
-    updateScreenFields,
-    updateScreenTiles,
-    fieldMetadata,
-    screenVanilla,
-    loadScreenVanilla,
-    setFocusTarget,
-    navigateToTile,
-  } = useRandomizerStore();
+  const chapterData = useRandomizerStore(s => s.chapterData);
+  const viewMode = useRandomizerStore(s => s.viewMode);
+  const selectedScreen = useRandomizerStore(s => s.selectedScreen);
+  const setSelectedScreen = useRandomizerStore(s => s.setSelectedScreen);
+  const updateScreenFields = useRandomizerStore(s => s.updateScreenFields);
+  const updateScreenTiles = useRandomizerStore(s => s.updateScreenTiles);
+  const fieldMetadata = useRandomizerStore(s => s.fieldMetadata);
+  const screenVanilla = useRandomizerStore(s => s.screenVanilla);
+  const loadScreenVanilla = useRandomizerStore(s => s.loadScreenVanilla);
+  const setFocusTarget = useRandomizerStore(s => s.setFocusTarget);
+  const navigateToTile = useRandomizerStore(s => s.navigateToTile);
 
   const [editor, setEditor] = useState<{ index: number; half: 'top' | 'bottom' } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);

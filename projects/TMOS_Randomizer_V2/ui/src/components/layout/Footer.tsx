@@ -1,7 +1,9 @@
 import { useRandomizerStore } from '../../store';
 
 export function Footer() {
-  const { plan, romLoaded, romFilename } = useRandomizerStore();
+  const plan = useRandomizerStore(s => s.plan);
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const romFilename = useRandomizerStore(s => s.romFilename);
 
   // Calculate totals from plan
   const totalScreens = plan?.chapters.reduce((sum, ch) => sum + ch.total_screens, 0) ?? 0;

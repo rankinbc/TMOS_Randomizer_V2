@@ -8,7 +8,8 @@ interface SectionBreakdownProps {
 }
 
 export function SectionBreakdown({ chapter }: SectionBreakdownProps) {
-  const { selectedSection, setSelectedSection } = useRandomizerStore();
+  const selectedSection = useRandomizerStore(s => s.selectedSection);
+  const setSelectedSection = useRandomizerStore(s => s.setSelectedSection);
 
   // Group sections by type
   const sectionsByType = chapter.sections.reduce((acc, section) => {

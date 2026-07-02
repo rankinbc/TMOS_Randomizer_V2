@@ -8,7 +8,8 @@ interface TilesViewProps {
 }
 
 export function TilesView({ chapter }: TilesViewProps) {
-  const { selectedSection, setSelectedSection } = useRandomizerStore();
+  const selectedSection = useRandomizerStore(s => s.selectedSection);
+  const setSelectedSection = useRandomizerStore(s => s.setSelectedSection);
   const [viewMode, setViewMode] = useState<'overview' | 'detail'>('overview');
 
   const currentSection = chapter.sections.find((s) => s.section_id === selectedSection) || chapter.sections[0];

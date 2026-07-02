@@ -9,18 +9,16 @@ type StrategyOption = {
 };
 
 export function RandomizeModal() {
-  const {
-    modalOpen,
-    setModalOpen,
-    fetchPlanFromApi,
-    planLoading,
-    planProgress,
-    romLoaded,
-    apiConnected,
-    settings,
-    setSettings,
-    setSelectedTab,
-  } = useRandomizerStore();
+  const modalOpen = useRandomizerStore(s => s.modalOpen);
+  const setModalOpen = useRandomizerStore(s => s.setModalOpen);
+  const fetchPlanFromApi = useRandomizerStore(s => s.fetchPlanFromApi);
+  const planLoading = useRandomizerStore(s => s.planLoading);
+  const planProgress = useRandomizerStore(s => s.planProgress);
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const apiConnected = useRandomizerStore(s => s.apiConnected);
+  const settings = useRandomizerStore(s => s.settings);
+  const setSettings = useRandomizerStore(s => s.setSettings);
+  const setSelectedTab = useRandomizerStore(s => s.setSelectedTab);
 
   const [seed, setSeed] = useState<string>('');
   const [useRandomSeed, setUseRandomSeed] = useState(true);

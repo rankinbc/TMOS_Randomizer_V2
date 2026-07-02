@@ -344,7 +344,8 @@ export function NavigationMapView({
   tileSize = 64,
 }: NavigationMapViewProps) {
   // Store actions and data
-  const { updateScreenNavigation, sectionMap } = useRandomizerStore();
+  const updateScreenNavigation = useRandomizerStore(s => s.updateScreenNavigation);
+  const sectionMap = useRandomizerStore(s => s.sectionMap);
 
   // Drag-drop state
   const [dragState, setDragState] = useState<DragState>({

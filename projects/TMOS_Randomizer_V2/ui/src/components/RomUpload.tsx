@@ -2,7 +2,12 @@ import { useCallback, useState } from 'react';
 import { useRandomizerStore } from '../store';
 
 export function RomUpload() {
-  const { romLoaded, romFilename, romChapters, apiConnected, apiError, uploadRom } = useRandomizerStore();
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const romFilename = useRandomizerStore(s => s.romFilename);
+  const romChapters = useRandomizerStore(s => s.romChapters);
+  const apiConnected = useRandomizerStore(s => s.apiConnected);
+  const apiError = useRandomizerStore(s => s.apiError);
+  const uploadRom = useRandomizerStore(s => s.uploadRom);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 

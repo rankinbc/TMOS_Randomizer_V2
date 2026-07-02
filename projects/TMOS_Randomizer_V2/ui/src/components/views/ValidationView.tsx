@@ -99,7 +99,7 @@ const SAFE_EVENTS = [0x00, 0x08, 0x22, 0x40];
 const UNSAFE_EVENTS = [0x01, 0x03, 0x09, 0x10, 0x20, 0x47, 0x48, 0x60, 0x62, 0x80, 0xC0];
 
 export function ValidationView({ chapter }: ValidationViewProps) {
-  const { plan } = useRandomizerStore();
+  const plan = useRandomizerStore(s => s.plan);
 
   // Plan-level validation
   const validation = plan?.validation;

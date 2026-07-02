@@ -620,7 +620,7 @@ function TileCell({
   tileId: number; row: number; col: number; showImage: boolean; highlightNonWalkable: boolean;
   topTiles: number; bottomTiles: number; datapointer: number; wsColor: number;
 }) {
-  const { navigateToTile } = useRandomizerStore();
+  const navigateToTile = useRandomizerStore(s => s.navigateToTile);
   const groundColor = getGroundColor(wsColor);
   const [imgError, setImgError] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);

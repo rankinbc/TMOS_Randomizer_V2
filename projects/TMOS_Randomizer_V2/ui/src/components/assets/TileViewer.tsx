@@ -27,7 +27,8 @@ interface TileViewerProps {
 }
 
 export function TileViewer({ onSelect, selectable = false, selectedTiles = [] }: TileViewerProps) {
-  const { assets, apiConnected } = useRandomizerStore();
+  const assets = useRandomizerStore(s => s.assets);
+  const apiConnected = useRandomizerStore(s => s.apiConnected);
   const [hoveredTile, setHoveredTile] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
 

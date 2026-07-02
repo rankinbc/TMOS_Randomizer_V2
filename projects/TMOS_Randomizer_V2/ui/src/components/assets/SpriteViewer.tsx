@@ -95,7 +95,8 @@ interface SpriteViewerProps {
 }
 
 export function SpriteViewer({ category = 'all', onSelect }: SpriteViewerProps) {
-  const { assets, apiConnected } = useRandomizerStore();
+  const assets = useRandomizerStore(s => s.assets);
+  const apiConnected = useRandomizerStore(s => s.apiConnected);
   const [selectedCategory, setSelectedCategory] = useState<keyof typeof SPRITE_CATEGORIES | 'all'>(category);
   const [hoveredSprite, setHoveredSprite] = useState<string | null>(null);
 

@@ -15,16 +15,14 @@ const CHR_BANK_PRESETS = [
 ];
 
 export function TileBankView() {
-  const {
-    romLoaded,
-    tileBankData,
-    tileBankLoading,
-    selectedTileIndex,
-    loadTileBankData,
-    setSelectedTileIndex,
-    updateTileBankTile,
-    apiError,
-  } = useRandomizerStore();
+  const romLoaded = useRandomizerStore(s => s.romLoaded);
+  const tileBankData = useRandomizerStore(s => s.tileBankData);
+  const tileBankLoading = useRandomizerStore(s => s.tileBankLoading);
+  const selectedTileIndex = useRandomizerStore(s => s.selectedTileIndex);
+  const loadTileBankData = useRandomizerStore(s => s.loadTileBankData);
+  const setSelectedTileIndex = useRandomizerStore(s => s.setSelectedTileIndex);
+  const updateTileBankTile = useRandomizerStore(s => s.updateTileBankTile);
+  const apiError = useRandomizerStore(s => s.apiError);
 
   // DataPointer state for CHR bank selection
   const [dataPointer, setDataPointer] = useState(0x0F); // Default to overworld
