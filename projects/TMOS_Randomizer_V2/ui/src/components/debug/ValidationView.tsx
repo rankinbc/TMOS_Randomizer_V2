@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTimedFlag } from '../../hooks/useTimedFlag';
 import { api } from '../../api/client';
 import type { ValidateResponse, ValidationIssue } from '../../api/client';
 
@@ -14,7 +15,7 @@ export function ValidationView() {
   const [result, setResult] = useState<ValidateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, flagCopied] = useTimedFlag(2000);
 
   const run = async () => {
     setLoading(true);
@@ -36,8 +37,7 @@ export function ValidationView() {
       for (const w of ch.warnings) lines.push('WARN   ' + issueLine(w));
     }
     await navigator.clipboard.writeText(lines.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    flagCopied();
   };
 
   return (

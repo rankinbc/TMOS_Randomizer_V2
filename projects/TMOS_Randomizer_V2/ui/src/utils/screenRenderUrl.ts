@@ -3,8 +3,9 @@
 // ScreenByteRef.tsx (mini link chip). Lives in a plain-TS file so it is not
 // subject to the react-refresh/only-export-components ESLint rule.
 
-// API base URL
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// API base URL (re-exported for existing importers; canonical copy in config.ts)
+import { API_BASE } from '../config';
+export { API_BASE };
 
 // Base screen dimensions (8 tiles × 6 tiles, each tile is a 64px metatile).
 // Full rendered size at scale=1 is 512×384.

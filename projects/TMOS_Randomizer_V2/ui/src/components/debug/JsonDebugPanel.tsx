@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { useTimedFlag } from '../../hooks/useTimedFlag';
 import { useRandomizerStore } from '../../store';
 
 export function JsonDebugPanel() {
   const { chapterData, plan, selectedChapter, sectionMap } = useRandomizerStore();
   const [activeSection, setActiveSection] = useState<'chapter' | 'plan' | 'screens' | 'sectionMap'>('chapter');
-  const [copied, setCopied] = useState(false);
+  const [copied, flagCopied] = useTimedFlag(2000);
 
   const getJsonData = () => {
     switch (activeSection) {
@@ -27,8 +28,7 @@ export function JsonDebugPanel() {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(jsonString);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      flagCopied();
     } catch (err) {
       console.error('Failed to copy:', err);
     }

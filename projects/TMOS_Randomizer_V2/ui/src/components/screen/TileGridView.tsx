@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ScreenData, ChapterData } from '../../api/client';
 import { useRandomizerStore } from '../../store';
+import { API_BASE } from '../../config';
 
 interface TileGridViewProps {
   chapter: ChapterData;
@@ -8,7 +9,6 @@ interface TileGridViewProps {
   onScreenSelect: (index: number) => void;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 // ROM constants for address calculation
 const TILESECTION_BASE = 0x03C4C7;
 const TILESECTION_SIZE = 32;

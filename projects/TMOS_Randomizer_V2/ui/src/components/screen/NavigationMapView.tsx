@@ -4,6 +4,7 @@ import { ScreenMini } from './ScreenRenderer';
 import { useRandomizerStore, type SectionMapData } from '../../store';
 import { formatScreenId, formatHex } from '../../utils/formatters';
 import { api } from '../../api/client';
+import { API_BASE } from '../../config';
 
 // localStorage keys for persisting overlay-toggle preferences
 const LS_OVERLAY_LINKS = 'navmap.overlay.links';
@@ -354,6 +355,16 @@ export function NavigationMapView({
   });
   const [dragOverPos, setDragOverPos] = useState<Position | null>(null);
   const [showWarning, setShowWarning] = useState<string | null>(null);
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissWarningLater = useCallback(() => {
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    warningTimerRef.current = setTimeout(() => setShowWarning(null), 3000);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    };
+  }, []);
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Zoom state
@@ -424,26 +435,29 @@ export function NavigationMapView({
     grid_bounds: { min_x: number; min_y: number; max_x: number; max_y: number };
   } | null>(null);
 
-  // Fetch spatial analysis data when multi-section mode is enabled
-  useEffect(() => {
-    if (multiSectionMode && chapter) {
-      fetch(`/api/debug/spatial-analysis/${chapter.chapter_num}`)
-        .then(res => res.json())
-        .then(data => {
-          setSpatialData(data);
-          // Default to all sections visible
-          const allSections = new Set(sections.map((_, idx) => idx));
-          setVisibleSections(allSections);
-        })
-        .catch(err => console.error('Failed to fetch spatial data:', err));
-    }
-  }, [multiSectionMode, chapter?.chapter_num]);
-
   // Build connected sections using planned assignments (R-019 compliance)
   // IMPORTANT: Must be declared before callbacks that use it
   const sections = useMemo(() => {
     return buildConnectedSections(chapter.screens, chapter.chapter_num, sectionMap);
   }, [chapter.screens, chapter.chapter_num, sectionMap]);
+
+  // Fetch spatial analysis data when multi-section mode is enabled
+  useEffect(() => {
+    if (!multiSectionMode || !chapter) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/api/debug/spatial-analysis/${chapter.chapter_num}`)
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        setSpatialData(data);
+        // Default to all sections visible
+        setVisibleSections(new Set(sections.map((_, idx) => idx)));
+      })
+      .catch(err => console.error('Failed to fetch spatial data:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [multiSectionMode, chapter, sections]);
 
   // Toggle section visibility
   const toggleSectionVisibility = useCallback((sectionIdx: number) => {
@@ -739,8 +753,8 @@ export function NavigationMapView({
     });
     setDragOverPos(null);
     // Clear warning after a delay
-    setTimeout(() => setShowWarning(null), 3000);
-  }, []);
+    dismissWarningLater();
+  }, [dismissWarningLater]);
 
   const handleDragOver = useCallback((e: React.DragEvent, pos: Position) => {
     e.preventDefault();
@@ -847,7 +861,7 @@ export function NavigationMapView({
         navUpdate.parent_world = targetParentWorld;
         // Show success message and auto-dismiss
         setShowWarning(`Screen moved to section ${selectedSectionId + 1} (parent_world: ${targetParentWorld})`);
-        setTimeout(() => setShowWarning(null), 3000);
+        dismissWarningLater();
       } else {
         setShowWarning(null);
       }
@@ -865,7 +879,7 @@ export function NavigationMapView({
         originalParentWorld: null,
       });
     }
-  }, [positionToScreen, updateScreenNavigation, chapter.screens, dragState.originalSectionId, selectedSectionId, selectedSection?.parentWorld]);
+  }, [positionToScreen, updateScreenNavigation, chapter.screens, dragState.originalSectionId, selectedSectionId, selectedSection?.parentWorld, dismissWarningLater]);
 
   // Cross-section edge exits: nav direction points to a screen in another section.
   // Used to render transparent neighbors at the appropriate adjacent grid cell.

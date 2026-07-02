@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTimedFlag } from '../../hooks/useTimedFlag';
 
 /**
  * A single editable byte input used across all Advanced panels.
@@ -32,7 +33,7 @@ export function ByteField({
   ariaLabel?: string;
 }) {
   const [text, setText] = useState(String(value));
-  const [err, setErr] = useState(false);
+  const [err, flagErr, clearErr] = useTimedFlag(1200);
   const [busy, setBusy] = useState(false);
 
   // Keep the input in sync when the upstream value changes (e.g. after load).
@@ -55,13 +56,12 @@ export function ByteField({
       return;
     }
     setBusy(true);
-    setErr(false);
+    clearErr();
     try {
       await onCommit(clamped);
     } catch {
-      setErr(true);
+      flagErr();
       setText(String(value));
-      window.setTimeout(() => setErr(false), 1200);
     } finally {
       setBusy(false);
     }
