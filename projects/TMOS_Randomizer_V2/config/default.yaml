@@ -240,6 +240,17 @@ difficulty:
     gold_drop_multiplier: 1.0
     starting_gold: 0
 
+  # Shop randomization (Bank 1 tables — knowledge/systems/shops-and-economy.md).
+  # Shuffles the 32 vanilla [item, price] slot pairs across the 8 item shops
+  # (nothing added or removed) and optionally jitters prices.
+  shop_randomization:
+    enabled: true
+    randomize_items: true       # shuffle slot pairs between shops
+    randomize_prices: true
+    price_variance: 0.25        # +/- fraction applied to each price
+    price_multiplier: 1.0       # global scale (also see shop_price_multiplier)
+    randomize_magic_prices: false  # jitter the $8AAC magic base table too
+
   # Progression
   progression:
     key_item_bias: "balanced"  # early, balanced, late

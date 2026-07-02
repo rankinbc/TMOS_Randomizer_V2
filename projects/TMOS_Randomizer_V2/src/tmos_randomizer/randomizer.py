@@ -7,6 +7,7 @@ actual pipeline — planning, ROM patching, spoiler generation.
 
 from __future__ import annotations
 
+import hashlib
 import random
 from pathlib import Path
 from typing import Optional, Type, Union
@@ -93,12 +94,49 @@ class Randomizer:
         generate_spoiler: bool = True,
     ) -> RandomizationResult:
         """Apply a randomization plan to a ROM."""
-        return self._strategy.apply_plan(
+        result = self._strategy.apply_plan(
             Path(input_rom),
             Path(output_rom),
             plan,
             generate_spoiler,
         )
+        if result.success and result.output_rom_path:
+            self._apply_shop_randomization(result, plan)
+        return result
+
+    def _apply_shop_randomization(
+        self, result: RandomizationResult, plan: RandomizationPlan
+    ) -> None:
+        """Strategy-agnostic post-pass: shuffle/reprice the Bank 1 shop
+        tables in the already-written output ROM (byte-verified write spec,
+        see knowledge/systems/shops-and-economy.md). Runs only after the
+        strategy reported success."""
+        shop_cfg = self.config.difficulty.shop_randomization
+        if not shop_cfg.enabled:
+            return
+        from .logic.shop_randomization import create_shop_plan
+
+        out_path = Path(result.output_rom_path)
+        rom = bytearray(out_path.read_bytes())
+        shop_plan = create_shop_plan(
+            bytes(rom),
+            plan.seed,
+            shuffle_slots=shop_cfg.randomize_items,
+            price_variance=(
+                shop_cfg.price_variance if shop_cfg.randomize_prices else 0.0
+            ),
+            price_multiplier=shop_cfg.price_multiplier,
+            randomize_magic_prices=shop_cfg.randomize_magic_prices,
+        )
+        written = shop_plan.apply(rom)
+        out_path.write_bytes(bytes(rom))
+        # The strategy hashed the pre-shop ROM; refresh.
+        result.rom_sha256 = hashlib.sha256(bytes(rom)).hexdigest()
+        result.stats["shops"] = {
+            "slots_shuffled": shop_cfg.randomize_items,
+            "bytes_written": written,
+            "spoiler": shop_plan.to_spoiler(),
+        }
 
     # ------------------------------------------------------------------
     # Internals

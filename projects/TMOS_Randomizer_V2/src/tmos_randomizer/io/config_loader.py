@@ -185,6 +185,7 @@ class ShopRandomizationConfig:
     randomize_prices: bool = True
     price_variance: float = 0.25  # +/- 25% from base price
     price_multiplier: float = 1.0  # Global price multiplier
+    randomize_magic_prices: bool = False  # jitter the $8AAC magic base table
 
     # Progression settings
     exclude_progression_items: bool = True  # Exclude swords/rods from shops
@@ -515,6 +516,7 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             randomize_prices=sr.get("randomize_prices", True),
             price_variance=sr.get("price_variance", 0.25),
             price_multiplier=sr.get("price_multiplier", 1.0),
+            randomize_magic_prices=sr.get("randomize_magic_prices", False),
             exclude_progression_items=sr.get("exclude_progression_items", True),
             ensure_bread_available=sr.get("ensure_bread_available", True),
             ensure_mashroob_available=sr.get("ensure_mashroob_available", True),
