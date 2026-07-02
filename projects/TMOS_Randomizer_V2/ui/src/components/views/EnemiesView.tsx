@@ -54,7 +54,7 @@ export function EnemiesView() {
       if (SECTIONS.some((s) => s.id === target)) setSection(target);
       consumeFocusTarget();
     }
-  }, [focusTarget, consumeFocusTarget]);
+  }, [focusTarget, consumeFocusTarget, setSection]);
 
   useEffect(() => {
     if (!battleEnemies) loadEnemies();

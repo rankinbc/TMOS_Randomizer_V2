@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { BattleEnemy, Lineup } from '../../api/client';
 import { EnemyPicker } from './EnemyPicker';
 import { HelpChip } from '../stats/HelpChip';
@@ -23,9 +23,9 @@ export function LineupEditor({
   onSlotChange,
   onStartByteChange,
 }: LineupEditorProps) {
-  const [pickingSlot, setPickingSlot] = useState<number | null>(null);
+  const [picking, setPicking] = useState<{ slot: number; anchor: HTMLButtonElement | null } | null>(null);
+  const pickingSlot = picking?.slot ?? null;
   const enemyById = new Map(enemies.map((e) => [e.enemy_id, e]));
-  const slotRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
   // Crash-safe choosable list: derive the set of selectable enemy IDs from the
   // shared, server-filtered source (excludes crash IDs 0x0B/0x0C and danger IDs
@@ -92,9 +92,12 @@ export function LineupEditor({
           return (
             <button
               key={slot.slot}
-              ref={(el) => { slotRefs.current[slot.slot] = el; }}
               type="button"
-              onClick={() => setPickingSlot(pickingSlot === slot.slot ? null : slot.slot)}
+              onClick={(e) =>
+                setPicking(
+                  pickingSlot === slot.slot ? null : { slot: slot.slot, anchor: e.currentTarget }
+                )
+              }
               className={`w-full h-10 rounded border flex flex-col items-center justify-center p-0.5 ${
                 diff
                   ? 'border-amber-500 bg-amber-500/10'
@@ -129,13 +132,13 @@ export function LineupEditor({
         })}
       </div>
 
-      {pickingSlot !== null && (
+      {picking !== null && (
         <EnemyPicker
           enemies={pickableEnemies}
-          currentEnemyId={lineup.slots[pickingSlot - 1].enemy_id}
-          onPick={(id) => onSlotChange(pickingSlot, id)}
-          onClose={() => setPickingSlot(null)}
-          anchorRef={{ current: slotRefs.current[pickingSlot] ?? null }}
+          currentEnemyId={lineup.slots[picking.slot - 1].enemy_id}
+          onPick={(id) => onSlotChange(picking.slot, id)}
+          onClose={() => setPicking(null)}
+          anchorRef={{ current: picking.anchor }}
         />
       )}
     </div>

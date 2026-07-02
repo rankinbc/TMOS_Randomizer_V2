@@ -130,7 +130,7 @@ export function StatCurveEditor({
       d3.select(svgRef.current!)
         .selectAll<SVGCircleElement, unknown>(`circle.point-${s.id}`)
         .each(function (_d, i) {
-          d3.select(this).call(handleDrag(s.id, i) as any);
+          d3.select(this).call(handleDrag(s.id, i));
         });
     });
   });

@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 interface TooltipProps {
@@ -9,11 +16,6 @@ interface TooltipProps {
   disabled?: boolean;
 }
 
-interface Position {
-  top: number;
-  left: number;
-}
-
 export function Tooltip({
   children,
   content,
@@ -22,11 +24,13 @@ export function Tooltip({
   disabled = false,
 }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [pos, setPos] = useState<Position>({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<number | null>(null);
 
+  // Positions the tooltip by writing styles directly to the portal element.
+  // Measuring and positioning the DOM is done outside of render/state so the
+  // effect only synchronizes React state with the DOM (no cascading renders).
   const calculatePosition = useCallback(() => {
     if (!triggerRef.current || !tooltipRef.current) return;
 
@@ -67,7 +71,8 @@ export function Tooltip({
       top = window.innerHeight - tooltipRect.height - padding;
     }
 
-    setPos({ top, left });
+    tooltipRef.current.style.top = `${top}px`;
+    tooltipRef.current.style.left = `${left}px`;
   }, [position]);
 
   const handleMouseEnter = useCallback(() => {
@@ -85,7 +90,8 @@ export function Tooltip({
     setIsVisible(false);
   }, []);
 
-  useEffect(() => {
+  // Layout effect so the tooltip is measured and positioned before paint.
+  useLayoutEffect(() => {
     if (isVisible) {
       calculatePosition();
     }
@@ -114,7 +120,7 @@ export function Tooltip({
           <div
             ref={tooltipRef}
             className="fixed z-[9999] px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-lg shadow-xl text-slate-200 max-w-xs pointer-events-none"
-            style={{ top: pos.top, left: pos.left }}
+            style={{ top: 0, left: 0 }}
           >
             {content}
           </div>,
@@ -141,11 +147,12 @@ export function HoverCard({
   className = '',
 }: HoverCardProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [pos, setPos] = useState<Position>({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<number | null>(null);
 
+  // Positions the card by writing styles directly to the portal element
+  // (see calculatePosition in Tooltip above).
   const calculatePosition = useCallback(() => {
     if (!triggerRef.current || !cardRef.current) return;
 
@@ -169,7 +176,8 @@ export function HoverCard({
     if (left < padding) left = padding;
     if (top < padding) top = padding;
 
-    setPos({ top, left });
+    cardRef.current.style.top = `${top}px`;
+    cardRef.current.style.left = `${left}px`;
   }, []);
 
   const handleMouseEnter = useCallback(() => {
@@ -187,7 +195,8 @@ export function HoverCard({
     setIsVisible(false);
   }, []);
 
-  useEffect(() => {
+  // Layout effect so the card is measured and positioned before paint.
+  useLayoutEffect(() => {
     if (isVisible) {
       calculatePosition();
     }
@@ -220,7 +229,7 @@ export function HoverCard({
             }}
             onMouseLeave={handleMouseLeave}
             className={`fixed z-[9999] bg-slate-800 border border-slate-600 rounded-lg shadow-xl pointer-events-auto ${className}`}
-            style={{ top: pos.top, left: pos.left }}
+            style={{ top: 0, left: 0 }}
           >
             {content}
           </div>,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import type { SimplifiedChapterPlan } from '../../types/randomizer';
+import type { SectionType, SimplifiedChapterPlan } from '../../types/randomizer';
 import { getSectionColor } from '../../utils/colors';
 import { useRandomizerStore } from '../../store';
 import { SectionMiniMap } from '../shared/SectionMiniMap';
@@ -13,7 +13,7 @@ interface MapViewProps {
 interface GraphNode extends d3.SimulationNodeDatum {
   id: string;
   label: string;
-  section_type: string;
+  section_type: SectionType;
   screen_count: number;
   actual_screen_count?: number;
   shape: string;
@@ -129,7 +129,7 @@ export function MapView({ chapter }: MapViewProps) {
       return {
         id: section.section_id,
         label: formatSectionLabel(section.section_id, section.type, isPast),
-        section_type: section.type,
+        section_type: section.type as SectionType,
         screen_count: section.screen_count,
         actual_screen_count: actualCount,
         shape: section.shape,
@@ -148,7 +148,7 @@ export function MapView({ chapter }: MapViewProps) {
       }));
 
     return { nodes, links };
-  }, [chapter]);
+  }, [chapter, actualScreenCounts]);
 
   useEffect(() => {
     if (!svgRef.current || !nodes.length) return;
@@ -216,12 +216,13 @@ export function MapView({ chapter }: MapViewProps) {
           clearTimeout(hoverTimeoutRef.current);
         }
         hoverTimeoutRef.current = window.setTimeout(() => {
-          const containerRect = containerRef.current?.getBoundingClientRect();
-          if (containerRect) {
+          const containerEl = containerRef.current;
+          if (containerEl) {
+            const containerRect = containerEl.getBoundingClientRect();
             setHoverState({
               visible: true,
-              x: event.clientX - containerRect.left + 10,
-              y: event.clientY - containerRect.top + 10,
+              x: Math.min(event.clientX - containerRect.left + 10, containerEl.clientWidth - 280),
+              y: Math.min(event.clientY - containerRect.top + 10, containerEl.clientHeight - 250),
               node: d,
             });
           }
@@ -272,8 +273,8 @@ export function MapView({ chapter }: MapViewProps) {
       .attr('x', -50)
       .attr('y', -30)
       .attr('rx', 8)
-      .attr('fill', (d) => getSectionColor(d.section_type as any, 'fill'))
-      .attr('stroke', (d) => selectedSection === d.id ? '#fff' : getSectionColor(d.section_type as any, 'stroke'))
+      .attr('fill', (d) => getSectionColor(d.section_type, 'fill'))
+      .attr('stroke', (d) => selectedSection === d.id ? '#fff' : getSectionColor(d.section_type, 'stroke'))
       .attr('stroke-width', (d) => selectedSection === d.id ? 3 : 2)
       .attr('opacity', 0.9);
 
@@ -310,10 +311,10 @@ export function MapView({ chapter }: MapViewProps) {
     // Update positions on tick
     simulation.on('tick', () => {
       link
-        .attr('x1', (d: any) => d.source.x)
-        .attr('y1', (d: any) => d.source.y)
-        .attr('x2', (d: any) => d.target.x)
-        .attr('y2', (d: any) => d.target.y);
+        .attr('x1', (d) => (d.source as GraphNode).x ?? 0)
+        .attr('y1', (d) => (d.source as GraphNode).y ?? 0)
+        .attr('x2', (d) => (d.target as GraphNode).x ?? 0)
+        .attr('y2', (d) => (d.target as GraphNode).y ?? 0);
 
       node.attr('transform', (d) => `translate(${d.x},${d.y})`);
     });
@@ -365,8 +366,8 @@ export function MapView({ chapter }: MapViewProps) {
           <div
             className="absolute bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-40 p-3 pointer-events-none"
             style={{
-              left: Math.min(hoverState.x, (containerRef.current?.clientWidth ?? 400) - 280),
-              top: Math.min(hoverState.y, (containerRef.current?.clientHeight ?? 300) - 250),
+              left: hoverState.x,
+              top: hoverState.y,
               maxWidth: 260,
             }}
           >
@@ -476,11 +477,11 @@ export function MapView({ chapter }: MapViewProps) {
       {/* Legend */}
       <div className="flex-shrink-0 p-3 border-t border-slate-700 bg-slate-800/50">
         <div className="flex items-center gap-4 flex-wrap">
-          {['overworld', 'town', 'dungeon', 'maze', 'boss', 'special'].map((type) => (
+          {(['overworld', 'town', 'dungeon', 'maze', 'boss', 'special'] as const).map((type) => (
             <div key={type} className="flex items-center gap-1.5">
               <div
                 className="w-3 h-3 rounded"
-                style={{ backgroundColor: getSectionColor(type as any, 'fill') }}
+                style={{ backgroundColor: getSectionColor(type, 'fill') }}
               />
               <span className="text-xs text-slate-400 capitalize">{type}</span>
             </div>

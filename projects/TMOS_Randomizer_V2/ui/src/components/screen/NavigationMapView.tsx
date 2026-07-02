@@ -670,7 +670,6 @@ export function NavigationMapView({
     });
     return () => cancelAnimationFrame(id);
     // Intentionally omit `zoom` so user-initiated zoom doesn't snap-recenter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSectionId, chapter.chapter_num, gridWidth, gridHeight]);
 
   // Create reverse position map (position -> screenIndex)

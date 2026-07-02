@@ -1,4 +1,4 @@
-import type { SimplifiedChapterPlan } from '../../types/randomizer';
+import type { SectionType, SimplifiedChapterPlan } from '../../types/randomizer';
 import { getSectionColor } from '../../utils/colors';
 import { formatSectionLabel } from '../../utils/formatters';
 import { useRandomizerStore } from '../../store';
@@ -19,7 +19,7 @@ export function SectionBreakdown({ chapter }: SectionBreakdownProps) {
     return acc;
   }, {} as Record<string, typeof chapter.sections>);
 
-  const typeOrder = ['overworld', 'town', 'dungeon', 'maze', 'boss', 'special'];
+  const typeOrder: SectionType[] = ['overworld', 'town', 'dungeon', 'maze', 'boss', 'special'];
 
   return (
     <div className="p-4">
@@ -39,7 +39,7 @@ export function SectionBreakdown({ chapter }: SectionBreakdownProps) {
                 <div className="flex items-center gap-2">
                   <div
                     className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: getSectionColor(type as any, 'fill') }}
+                    style={{ backgroundColor: getSectionColor(type, 'fill') }}
                   />
                   <span className="text-sm text-slate-300 capitalize">{type}</span>
                 </div>

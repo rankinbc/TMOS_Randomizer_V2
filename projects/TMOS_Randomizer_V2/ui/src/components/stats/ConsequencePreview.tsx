@@ -132,14 +132,17 @@ function StatChip({
   );
 }
 
-function EnemyCard({ enemy }: { enemy: PlayerStatsPreview['enemy_kills'][number] }) {
-  const swordDelta = enemy.sword_hits - enemy.sword_hits_vanilla;
-  const rodDelta = enemy.rod_hits - enemy.rod_hits_vanilla;
-  const Big = ({ n }: { n: number }) => (
+function Big({ n }: { n: number }) {
+  return (
     <span className="font-mono text-base">
       {n >= 999 ? '∞' : n}
     </span>
   );
+}
+
+function EnemyCard({ enemy }: { enemy: PlayerStatsPreview['enemy_kills'][number] }) {
+  const swordDelta = enemy.sword_hits - enemy.sword_hits_vanilla;
+  const rodDelta = enemy.rod_hits - enemy.rod_hits_vanilla;
   return (
     <div className="bg-slate-800 rounded p-2 border border-slate-700">
       <div className="flex items-center justify-between">

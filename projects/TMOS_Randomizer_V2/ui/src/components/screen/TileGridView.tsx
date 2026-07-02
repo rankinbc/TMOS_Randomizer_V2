@@ -469,7 +469,7 @@ function TileGrid({
           // API endpoint might not exist yet, show placeholder
           setError('Tile grid API not available');
         }
-      } catch (e) {
+      } catch {
         setError('Failed to load tile grid');
       } finally {
         setLoading(false);

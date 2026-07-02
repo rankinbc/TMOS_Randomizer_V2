@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { SimplifiedChapterPlan } from '../../types/randomizer';
+import type { SectionType, SimplifiedChapterPlan } from '../../types/randomizer';
 import { getSectionColor } from '../../utils/colors';
 import { useRandomizerStore } from '../../store';
 
@@ -35,7 +35,7 @@ export function TilesView({ chapter }: TilesViewProps) {
               <div className="flex items-center gap-2">
                 <div
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: getSectionColor(section.type as any, 'fill') }}
+                  style={{ backgroundColor: getSectionColor(section.type as SectionType, 'fill') }}
                 />
                 <span className="capitalize">{section.section_id.replace(/_/g, ' ')}</span>
               </div>
@@ -137,7 +137,7 @@ function SectionOverview({ chapter, currentSection }: SectionOverviewProps) {
               <div className="flex items-center gap-2 mb-2">
                 <div
                   className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: getSectionColor(section.type as any, 'fill') }}
+                  style={{ backgroundColor: getSectionColor(section.type as SectionType, 'fill') }}
                 />
                 <span className="text-sm font-medium text-slate-200 capitalize">
                   {section.section_id.replace(/_/g, ' ')}
@@ -175,18 +175,18 @@ function SectionOverview({ chapter, currentSection }: SectionOverviewProps) {
                 <div
                   key={`${section.section_id}-${i}`}
                   className="w-4 h-4 rounded-sm"
-                  style={{ backgroundColor: getSectionColor(section.type as any, 'fill') }}
+                  style={{ backgroundColor: getSectionColor(section.type as SectionType, 'fill') }}
                   title={`${section.section_id} screen ${i + 1}`}
                 />
               ))
           )}
         </div>
         <div className="flex items-center gap-4 mt-3 flex-wrap">
-          {['overworld', 'town', 'dungeon', 'maze', 'boss'].map((type) => (
+          {(['overworld', 'town', 'dungeon', 'maze', 'boss'] as const).map((type) => (
             <div key={type} className="flex items-center gap-1.5">
               <div
                 className="w-3 h-3 rounded"
-                style={{ backgroundColor: getSectionColor(type as any, 'fill') }}
+                style={{ backgroundColor: getSectionColor(type, 'fill') }}
               />
               <span className="text-xs text-slate-400 capitalize">{type}</span>
             </div>
@@ -223,7 +223,7 @@ function SectionDetail({ section }: SectionDetailProps) {
             <div className="flex items-center gap-2">
               <div
                 className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: getSectionColor(section.type as any, 'fill') }}
+                style={{ backgroundColor: getSectionColor(section.type as SectionType, 'fill') }}
               />
               <span className="text-slate-200 capitalize">{section.type}</span>
             </div>
