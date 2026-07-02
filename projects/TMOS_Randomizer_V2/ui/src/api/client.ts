@@ -653,6 +653,18 @@ export interface ValidateResponse {
   summary: { total_errors: number; total_warnings: number; all_passed: boolean; error_breakdown: Record<string, number>; };
 }
 
+// Default per-request timeout. Heavy endpoints (plan creation, ROM
+// patch/upload) pass LONG_TIMEOUT_MS instead.
+const DEFAULT_TIMEOUT_MS = 60_000;
+const LONG_TIMEOUT_MS = 600_000;
+
+// Combine our timeout with an optional caller-supplied AbortSignal so
+// requests are bounded AND cancellable from effect cleanup.
+function requestSignal(timeoutMs: number, callerSignal?: AbortSignal | null): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return callerSignal ? AbortSignal.any([timeout, callerSignal]) : timeout;
+}
+
 // API Client class
 class ApiClient {
   private baseUrl: string;
@@ -661,9 +673,14 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  private async fetch<T>(path: string, options?: RequestInit): Promise<T> {
+  private async fetch<T>(
+    path: string,
+    options?: RequestInit,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+  ): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
+      signal: requestSignal(timeoutMs, options?.signal),
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -709,10 +726,14 @@ class ApiClient {
 
   // Plan
   async createPlan(seed?: number, config?: Record<string, unknown>): Promise<PlanResponse> {
-    return this.fetch<PlanResponse>('/api/plan', {
-      method: 'POST',
-      body: JSON.stringify({ seed, config }),
-    });
+    return this.fetch<PlanResponse>(
+      '/api/plan',
+      {
+        method: 'POST',
+        body: JSON.stringify({ seed, config }),
+      },
+      LONG_TIMEOUT_MS
+    );
   }
 
   async getPlan(): Promise<PlanResponse> {
@@ -729,7 +750,7 @@ class ApiClient {
   }
 
   async applyPlanPreview(): Promise<ApplyPreviewResult> {
-    return this.fetch('/api/plan/apply-preview', { method: 'POST' });
+    return this.fetch('/api/plan/apply-preview', { method: 'POST' }, LONG_TIMEOUT_MS);
   }
 
   // Async apply-preview: the heavy randomization runs as a background job on
@@ -813,6 +834,7 @@ class ApiClient {
     const qs = filename ? `?filename=${encodeURIComponent(filename)}` : '';
     const response = await fetch(`${this.baseUrl}/api/rom/patch${qs}`, {
       method: 'POST',
+      signal: requestSignal(LONG_TIMEOUT_MS),
     });
     if (!response.ok) {
       const error = await response
@@ -869,6 +891,7 @@ class ApiClient {
     const response = await fetch(`${this.baseUrl}/api/rom/upload`, {
       method: 'POST',
       body: formData,
+      signal: requestSignal(LONG_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -882,6 +905,7 @@ class ApiClient {
   async loadDefaultRom(): Promise<RomUploadResponse> {
     const response = await fetch(`${this.baseUrl}/api/rom/load-default`, {
       method: 'POST',
+      signal: requestSignal(DEFAULT_TIMEOUT_MS),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Load failed' }));
