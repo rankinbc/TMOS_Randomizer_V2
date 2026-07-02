@@ -81,6 +81,30 @@ Flags are per-chapter story milestones keyed to script group, NOT screen index. 
 
 ---
 
+## Round-2 Answers (2026-07-02)
+
+- **ParentWorld (byte 0) is cosmetic + time-period only.** Full reader sweep:
+  music variant, palette tint, past-area flag (hi4 >= $E0), RING-teleport
+  lookup ($AAE7), ambient SFX. NONE index enemy spawns or encounters (those
+  come from ObjectSet byte 3 + bank 3 tables). "Biome salad" is mechanically
+  SAFE. Constraints: keep hi4 >= $E0 consistent with actual PAST screens;
+  RING-teleport target screens keep their lo4 in the $AAE7 table.
+- **Screen indices are CHAPTER-RELATIVE** (read_worldscreen bank4 $82A1:
+  record = chapter base + $AB*16). $98C0 and $8136 hold chapter-relative
+  indices.
+- **Boss screens $21-$2A**: chapter-keyed scripts + CHR — pin each value to
+  its native chapter, relocate freely within it, keep phase-1 reachable
+  before phase-2. Cross-chapter move loads the wrong script/CHR.
+- **Stairways: one-way legal.** Arrival loads the destination record and
+  drops the player at the destination's ExitPosition; destination needs no
+  Event bit6, no return stair, no state. Repoint Content freely.
+- **Wizard battles $01-$1F**: param = Content & $1F selects a bank 3
+  encounter (groups $8019, formations $8460, stats $8341). Shuffle
+  within-chapter only, verifying the target encounter exists.
+- **Item/door gating**: locked doors consume KEY $0308 at $F2CB; Oprin doors
+  = Event bit5 + type-6 blocker; wiseman items 24-28 need flags $03E0-$03E4.
+  These gate traversal ORDER only — they never add/remove graph edges.
+
 ## ExitPosition Semantics (WorldScreen byte 9)
 
 - hi4 = X column, lo4 = Y row (16px grid, +8 centering). Consumer: bank 4 `$826B` via `$E086` sled.

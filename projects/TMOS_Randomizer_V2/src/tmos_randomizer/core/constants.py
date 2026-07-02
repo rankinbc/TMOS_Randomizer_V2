@@ -107,11 +107,12 @@ SHOP_SLOT_SIZE = 2             # [code, price]
 # slots lets a purchase mutate arbitrary game state.
 SHOP_CODE_LEGAL_HI4 = frozenset({0x1, 0x3, 0x5})
 
-# Codes appearing in vanilla shops. $10/$11 have an unresolved RAM-target
-# conflict ($0300 vs $0308 door keys) — do not emit NEW $10/$11 slots until
-# emulator-verified.
-SHOP_CODES_VERIFIED = frozenset({0x33, 0x34, 0x51, 0x52, 0x53, 0x58})
-SHOP_CODES_UNVERIFIED = frozenset({0x10, 0x11})
+# Emulator-verified delivery paths (RETMOS tools/emu.py unit-mode, 2026-07-02):
+# $10 = Gortrat bread ($0300, cap 9 — NOT keys), $18 = shop-sellable KEY
+# ($0308 +1), $33/$34 quantity consumables, $51-$53/$58 charge/one-time items.
+SHOP_CODES_VERIFIED = frozenset({0x10, 0x11, 0x18, 0x33, 0x34, 0x51, 0x52, 0x53, 0x58})
+# Kept for backwards compatibility; the $10/$11 conflict is resolved.
+SHOP_CODES_UNVERIFIED = frozenset()
 
 # Bank 1 $8AAC — magic-shop base prices: 11 bytes, indexed by code lo4,
 # charged as base * (chapter + 1). Magic shops IGNORE the slot price byte.

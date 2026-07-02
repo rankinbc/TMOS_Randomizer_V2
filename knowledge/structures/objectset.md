@@ -41,27 +41,31 @@ Example (World 1, ObjectSet 0x03):
 
 ---
 
-## Spawn Data Format
+## Spawn Data Format — CORRECTED 2026-07-02
 
-Each ObjectSet's spawn data contains:
-1. **Header** (variable, often 3 bytes)
-2. **Spawn entries**: `[EnemyType] [X] [Y]` (3 bytes each)
+**CORRECTION (RETMOS round 2, parser trace bank4 $8686)**: entries are NOT
+`[type, X-pixels, Y-pixels]` and the "headers" were misread. Actual format,
+parsed over the $0400 buffer:
 
-### Entry Format
+| Bytes | Meaning |
+|-------|---------|
+| `$00` | terminator (confirmed) |
+| `$Fn xx` | 2-byte param record: `$05F0+n = xx+$20` (per-screen spawn config — previously misread as "headers") |
+| `tt ss pp` | 3-byte spawn: type -> `$0600,X`; state -> `$0601,X` (hi4 = direction/flags, lo4 = sub-state); `pp` = **packed grid position: hi4 = X column (0-15), lo4 = Y row (0-13)** on the 16px grid, engine centers +8px — same encoding as ExitPosition |
 
-| Byte | Purpose | Range |
-|------|---------|-------|
-| 0 | Enemy/Object Type | See enemy table below |
-| 1 | X Position | `0x00`-`0xFF` (pixels) |
-| 2 | Y Position | `0x00`-`0xFF` (pixels) |
-
-### Common Position Ranges
-
-| Area | X Range | Y Range |
-|------|---------|---------|
-| Screen center | `0x40`-`0xC0` | `0x30`-`0xA0` |
-| Left side | `0x10`-`0x40` | varies |
-| Right side | `0xA0`-`0xE0` | varies |
+Additional verified facts:
+- **Type $06 = door/blocker entity** (visibility gated by item ownership via
+  the $03C0 array + progression gates). Quest items are NOT delivered by
+  type-6 entities — they come from content-$8x scripts (chapter-keyed) and
+  enemy drops (bank3 reward groups $9524 -> inv_pickup $94B0).
+- `$Fn xx` param records feed `$05F0` (+$20): quest-item appearance (bank6
+  $921D), battle placement override ($05F5), text init. Screen-local — move
+  safely with the screen if the ObjectSet moves too.
+- Types `$10-$15` and `$19+` are respawn-suppressed enemy classes (kill
+  tracking $87B6, flags $77/$03F7); types < `$10` always spawn.
+- Randomizer rule: keep position bytes X col 0-15, Y row 0-13; ground-item
+  shuffling = move the Content code and keep the matching type-6 sprite
+  with it.
 
 ---
 

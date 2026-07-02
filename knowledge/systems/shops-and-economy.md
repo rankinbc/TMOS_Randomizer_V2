@@ -1,8 +1,8 @@
 # Shop System & Economy (Bank 1 Flat Tables)
 
-**Last Updated**: 2026-07-02
-**Sources**: RETMOS RE sessions (REVERSE.md "Shop Inventory & Pricing (bank 1)" + "Shop Tables WRITE Spec"), byte-verified against TMOS_ORIGINAL.nes 2026-07-02
-**Confidence**: HIGH (all file offsets spot-checked against ROM bytes)
+**Last Updated**: 2026-07-02 (round 2: emulator-verified delivery paths)
+**Sources**: RETMOS RE sessions (REVERSE.md "Shop Tables WRITE Spec" + "Emulator-Verified Shop Delivery"), byte-verified against TMOS_ORIGINAL.nes; delivery paths dynamically confirmed via RETMOS tools/emu.py unit-mode
+**Confidence**: HIGH (offsets byte-checked; delivery emulator-verified)
 
 ---
 
@@ -44,18 +44,19 @@ Slot `code` bytes are **bank 1 state-command bytes** (the `$8746` processor spac
 
 **Legality: hi-nibble must be $1, $3, or $5.** Other hi4 values ($Cx/$Dx etc.) are password opcodes that write arbitrary game state — never emit them into shop slots.
 
-| Code | Type path | RAM target | Cap | Item |
-|------|-----------|------------|-----|------|
-| $33 | $3x -> $0303+3 | $0306 | 10 | BREAD (quantity-purchasable) |
-| $34 | $3x -> $0303+4 | $0307 | 10 | MASHROOB (quantity-purchasable) |
-| $10 | $1x -> $0300+0 | $0300 | 9 | KEY? — UNVERIFIED, see conflict below |
-| $11 | $1x -> $0300+1 | $0301 | 9 | paired consumable — same ambiguity |
-| $51 | $5x lo4=1 | $0310 | 5 | R.SEED (charge refill) |
-| $52 | $5x lo4=2 | $0311 | 15 | CARPET (charge refill) |
-| $53 | $5x one-time | $0312 | init 5 | HORN (reject if owned; initial charges from $87F2) |
-| $58 | $5x lo4=8 | $030D | 1 | RING |
+| Code | Type path | RAM target | Cap | Item | Emu-verified |
+|------|-----------|------------|-----|------|--------------|
+| $33 | $3x -> $0303+3 | $0306 | 10 | BREAD (quantity-purchasable) | YES (qty=2 -> +2) |
+| $34 | $3x -> $0303+4 | $0307 | 10 | MASHROOB (quantity-purchasable) | — (same path as $33) |
+| $10 | $1x -> $0300+0 | $0300 | 9 | **GORTRAT BREAD** (NOT keys) | YES (+1; at cap 9 aborts) |
+| $11 | $1x -> $0300+1 | $0301 | 9 | Gortrat-paired consumable | — |
+| **$18** | $1x -> $0300+8 | **$0308** | 9 | **KEY — shop-sellable keys work** | YES (+1) |
+| $51 | $5x lo4=1 | $0310 | 5 | R.SEED (charge refill) | — |
+| $52 | $5x lo4=2 | $0311 | 15 | CARPET (charge refill) | YES (write at $87D0) |
+| $53 | $5x one-time | $0312 | init 5 | HORN (reject if owned; init from $87F2) | YES (fresh=5, owned=rejected) |
+| $58 | $5x lo4=8 | $030D | 1 | RING | YES (=1) |
 
-**OPEN CONFLICT (code $10/$11)**: purchase credits `$0300`/`$0301`, but door unlock decrements `$0308` and HUD key count reads `$0308`. Either a sync exists or the name mapping is wrong. **Do not emit NEW $10/$11 slots until emulator-verified** (RETMOS emulator task); leaving vanilla ones in place is safe.
+**RESOLVED (2026-07-02, emulator round 2)**: the old "$10 = KEY" conflict is settled. `$0300` = Gortrat bread counter; real door keys live at `$0308` and the shop-sellable code for them is **$18** (never appears in vanilla shops, but the delivery path works — randomizer may emit it). Pickup credits confirm: KEY +1 -> $0308 (bank5 $8BCA); Gortrat +1 cap 9 -> $0300 ($8C18).
 
 - Ownership/rebuy check: `$03C0 + (code & $0F) * 2` (11 logical entries, stride 2); one-time items reject if nonzero.
 - At-cap purchase aborts with error $0E and gold is NOT spent.

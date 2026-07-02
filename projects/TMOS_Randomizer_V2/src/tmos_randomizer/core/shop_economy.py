@@ -51,13 +51,13 @@ TROOPER_PRICE_OFFSET = 0x4577
 
 
 # Labels for shop slot codes. Names are NOT in a ROM lookup table (item names
-# are pre-rendered CHR tiles); mapping from RETMOS $8746 delivery trace +
-# guide item-max alignment (knowledge/systems/shops-and-economy.md).
-# $10/$11 have an unresolved $0300-vs-$0308 RAM-target conflict — labels
-# provisional until emulator-verified. Unknown codes resolve to "$03xx".
+# are pre-rendered CHR tiles); mapping emulator-verified via RETMOS
+# tools/emu.py unit-mode 2026-07-02 (knowledge/systems/shops-and-economy.md).
+# Real door KEYS are code $18 -> $0308; $10 credits the $0300 bread counter.
 _ITEM_CODE_LABELS: dict[int, str] = {
-    0x10: "KEY (unverified)",
-    0x11: "KEY-paired (unverified)",
+    0x10: "GORTRAT BREAD",
+    0x11: "GORTRAT-paired ($0301)",
+    0x18: "KEY",
     0x33: "BREAD",
     0x34: "MASHROOB",
     0x51: "R.SEED",
