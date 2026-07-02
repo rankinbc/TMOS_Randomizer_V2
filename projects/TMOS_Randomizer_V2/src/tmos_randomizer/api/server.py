@@ -30,25 +30,32 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# Configure logging for the randomizer modules
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
-# Set navigation phase to DEBUG for detailed logging
-nav_logger = logging.getLogger('tmos_randomizer.phases.phase5_navigation')
-nav_logger.setLevel(logging.DEBUG)
-# Add file handler to capture navigation logs
-_nav_log_path = os.path.join(tempfile.gettempdir(), 'tmos_navigation.log')
-_nav_file_handler = logging.FileHandler(_nav_log_path, mode='w')
-_nav_file_handler.setLevel(logging.DEBUG)
-_nav_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-nav_logger.addHandler(_nav_file_handler)
-print(f"Navigation logs will be written to: {_nav_log_path}")
-
 # Module-level logger (defined early so endpoints declared above the later
 # `logger = ...` assignment can still log at runtime).
 logger = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    """Set up app logging. Called from the startup event, not at import time,
+    so importing this module (tests, tooling) has no side effects and does not
+    truncate the navigation log of a running server."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+    # Navigation phase logs at DEBUG to a temp file for diagnosis.
+    nav_logger = logging.getLogger('tmos_randomizer.phases.phase5_navigation')
+    nav_logger.setLevel(logging.DEBUG)
+    nav_log_path = os.path.join(tempfile.gettempdir(), 'tmos_navigation.log')
+    if not any(
+        isinstance(h, logging.FileHandler) and h.baseFilename == nav_log_path
+        for h in nav_logger.handlers
+    ):
+        handler = logging.FileHandler(nav_log_path, mode='w')
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        nav_logger.addHandler(handler)
+    logger.info("Navigation logs will be written to: %s", nav_log_path)
 
 from ..randomizer import Randomizer, RandomizationPlan, RandomizationResult, preview_randomization
 from ..io.config_loader import RandomizerConfig, get_default_config
@@ -137,6 +144,51 @@ _ts_walk_cache_key: int | None = None
 # Cache for the per-section theme table (pure function of the loaded ROM).
 _ts_theme_cache: dict | None = None
 _ts_theme_cache_key: int | None = None
+
+
+def _require_rom() -> GameWorld:
+    """Return the loaded GameWorld or raise the canonical 400."""
+    if _game_world is None:
+        raise HTTPException(status_code=400, detail="No ROM loaded")
+    return _game_world
+
+
+def _require_rom_data() -> bytes:
+    """Return the live ROM bytes or raise the canonical 400."""
+    if _rom_data is None:
+        raise HTTPException(status_code=400, detail="ROM data not available")
+    return _rom_data
+
+
+def _screen_api_dict(chapter_num: int, screen) -> dict:
+    """Canonical WorldScreen -> API JSON shape (single source of truth).
+
+    Every screen-returning endpoint uses this superset; do not hand-roll
+    per-endpoint subsets (they drift).
+    """
+    return {
+        "index": screen.relative_index,
+        "modified": screen.is_modified,
+        "global_index": screen.global_index,
+        "is_past": is_past_screen_index(chapter_num, screen.relative_index),
+        "datapointer": screen.datapointer,
+        "chr_index": get_chr_index(screen.datapointer),
+        "top_tiles": screen.top_tiles,
+        "bottom_tiles": screen.bottom_tiles,
+        "objectset": screen.objectset,
+        "parent_world": screen.parent_world,
+        "ambient_sound": screen.ambient_sound,
+        "event": screen.event,
+        "content": screen.content,
+        "nav_right": screen.screen_index_right,
+        "nav_left": screen.screen_index_left,
+        "nav_down": screen.screen_index_down,
+        "nav_up": screen.screen_index_up,
+        "worldscreen_color": screen.worldscreen_color,
+        "sprites_color": screen.sprites_color,
+        "exit_position": screen.exit_position,
+        "unknown": screen.unknown,
+    }
 
 
 # =============================================================================
@@ -417,38 +469,13 @@ async def get_rom_status():
 @app.get("/api/rom/chapter/{chapter_num}")
 async def get_chapter_data(chapter_num: int):
     """Get all screen data for a chapter."""
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
         raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
 
-    screens = []
-    for screen in chapter:
-        screens.append({
-            "index": screen.relative_index,
-            "modified": screen.is_modified,
-            "global_index": screen.global_index,
-            "is_past": is_past_screen_index(chapter_num, screen.relative_index),
-            "datapointer": screen.datapointer,
-            "chr_index": get_chr_index(screen.datapointer),
-            "top_tiles": screen.top_tiles,
-            "bottom_tiles": screen.bottom_tiles,
-            "objectset": screen.objectset,
-            "parent_world": screen.parent_world,
-            "ambient_sound": screen.ambient_sound,
-            "event": screen.event,
-            "content": screen.content,
-            "nav_right": screen.screen_index_right,
-            "nav_left": screen.screen_index_left,
-            "nav_down": screen.screen_index_down,
-            "nav_up": screen.screen_index_up,
-            "worldscreen_color": screen.worldscreen_color,
-            "sprites_color": screen.sprites_color,
-            "exit_position": screen.exit_position,
-            "unknown": screen.unknown,
-        })
+    screens = [_screen_api_dict(chapter_num, screen) for screen in chapter]
 
     return {
         "chapter_num": chapter_num,
@@ -460,8 +487,7 @@ async def get_chapter_data(chapter_num: int):
 @app.get("/api/rom/screen/{chapter_num}/{screen_index}")
 async def get_screen_data(chapter_num: int, screen_index: int):
     """Get detailed data for a single screen."""
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -510,8 +536,7 @@ async def get_screen_data(chapter_num: int, screen_index: int):
 @app.get("/api/rom/navigation/{chapter_num}")
 async def get_chapter_navigation(chapter_num: int):
     """Get navigation graph for a chapter."""
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -564,10 +589,8 @@ async def get_chapter_edge_walkability(chapter_num: int):
     consists entirely of non-walkable tiles (collidable or deadly). True means
     the player cannot exit through that edge.
     """
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="ROM data not available")
+    _require_rom()
+    _require_rom_data()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -620,8 +643,7 @@ async def update_screen_navigation(
     Returns:
         List of modified screen data
     """
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -679,26 +701,7 @@ async def update_screen_navigation(
     for idx in modified_screens:
         s = chapter.get_screen(idx)
         if s:
-            result.append({
-                "index": s.relative_index,
-                "modified": s.is_modified,
-                "global_index": s.global_index,
-                "datapointer": s.datapointer,
-                "chr_index": get_chr_index(s.datapointer),
-                "top_tiles": s.top_tiles,
-                "bottom_tiles": s.bottom_tiles,
-                "objectset": s.objectset,
-                "parent_world": s.parent_world,
-                "event": s.event,
-                "content": s.content,
-                "nav_right": s.screen_index_right,
-                "nav_left": s.screen_index_left,
-                "nav_down": s.screen_index_down,
-                "nav_up": s.screen_index_up,
-                "worldscreen_color": s.worldscreen_color,
-                "sprites_color": s.sprites_color,
-                "exit_position": s.exit_position,
-            })
+            result.append(_screen_api_dict(chapter_num, s))
 
     return {
         "status": "updated",
@@ -722,8 +725,7 @@ async def update_screen_tiles(
     from ..core.constants import TILESECTION_COUNT, get_chr_index
     from ..logic.tilesection_bank import resolve_tile_update
 
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
         raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
@@ -754,27 +756,7 @@ async def update_screen_tiles(
         "status": "updated",
         "datapointer_changed": resolved["datapointer_changed"],
         "chr_changed": resolved["chr_changed"],
-        "screen": {
-            "index": screen.relative_index,
-            "modified": screen.is_modified,
-            "global_index": screen.global_index,
-            "is_past": is_past_screen_index(chapter_num, screen.relative_index),
-            "datapointer": screen.datapointer,
-            "chr_index": get_chr_index(screen.datapointer),
-            "top_tiles": screen.top_tiles,
-            "bottom_tiles": screen.bottom_tiles,
-            "objectset": screen.objectset,
-            "parent_world": screen.parent_world,
-            "event": screen.event,
-            "content": screen.content,
-            "nav_right": screen.screen_index_right,
-            "nav_left": screen.screen_index_left,
-            "nav_down": screen.screen_index_down,
-            "nav_up": screen.screen_index_up,
-            "worldscreen_color": screen.worldscreen_color,
-            "sprites_color": screen.sprites_color,
-            "exit_position": screen.exit_position,
-        },
+        "screen": _screen_api_dict(chapter_num, screen),
     }
 
 
@@ -793,8 +775,7 @@ async def update_screen_fields(
     """
     from ..core.constants import get_chr_index
 
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
         raise HTTPException(status_code=404, detail=f"Chapter {chapter_num} not found")
@@ -835,29 +816,7 @@ async def update_screen_fields(
 
     return {
         "status": "updated",
-        "screen": {
-            "index": screen.relative_index,
-            "modified": screen.is_modified,
-            "global_index": screen.global_index,
-            "is_past": is_past_screen_index(chapter_num, screen.relative_index),
-            "datapointer": screen.datapointer,
-            "chr_index": get_chr_index(screen.datapointer),
-            "top_tiles": screen.top_tiles,
-            "bottom_tiles": screen.bottom_tiles,
-            "objectset": screen.objectset,
-            "parent_world": screen.parent_world,
-            "ambient_sound": screen.ambient_sound,
-            "event": screen.event,
-            "content": screen.content,
-            "nav_right": screen.screen_index_right,
-            "nav_left": screen.screen_index_left,
-            "nav_down": screen.screen_index_down,
-            "nav_up": screen.screen_index_up,
-            "worldscreen_color": screen.worldscreen_color,
-            "sprites_color": screen.sprites_color,
-            "exit_position": screen.exit_position,
-            "unknown": screen.unknown,
-        },
+        "screen": _screen_api_dict(chapter_num, screen),
     }
 
 
@@ -895,18 +854,7 @@ async def get_screen_vanilla(chapter_num: int, screen_index: int):
     s = chapter.get_screen(screen_index)
     if s is None:
         raise HTTPException(status_code=404, detail=f"Screen {screen_index} not found")
-    return {
-        "index": s.relative_index, "global_index": s.global_index,
-        "modified": s.is_modified,
-        "parent_world": s.parent_world, "ambient_sound": s.ambient_sound,
-        "content": s.content, "objectset": s.objectset,
-        "datapointer": s.datapointer, "exit_position": s.exit_position,
-        "top_tiles": s.top_tiles, "bottom_tiles": s.bottom_tiles,
-        "worldscreen_color": s.worldscreen_color, "sprites_color": s.sprites_color,
-        "unknown": s.unknown, "event": s.event,
-        "nav_right": s.screen_index_right, "nav_left": s.screen_index_left,
-        "nav_down": s.screen_index_down, "nav_up": s.screen_index_up,
-    }
+    return _screen_api_dict(chapter_num, s)
 
 
 # =============================================================================
@@ -931,8 +879,7 @@ async def render_screen(
     Returns:
         PNG image of the rendered screen
     """
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     if not RENDERING_AVAILABLE:
         raise HTTPException(status_code=501, detail="Rendering not available. Install Pillow: pip install Pillow")
@@ -1027,8 +974,7 @@ async def get_tilesection_walkability():
     section's 4 rows x 8 cols, row-major. Pure function of the ROM, cached.
     """
     global _ts_walk_cache, _ts_walk_cache_key
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
 
     key = id(_rom_data)
     if _ts_walk_cache is None or _ts_walk_cache_key != key:
@@ -1045,8 +991,8 @@ async def get_tilesection_themes():
     TileSection (0..470). Pure function of the loaded ROM, cached.
     """
     global _ts_theme_cache, _ts_theme_cache_key
-    if _rom_data is None or _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
+    _require_rom_data()
 
     key = id(_rom_data)
     if _ts_theme_cache is None or _ts_theme_cache_key != key:
@@ -1062,8 +1008,7 @@ async def get_objectset_enemies(chapter_num: int, objectset_id: int):
     """Return the enemies an ObjectSet spawns, with sprite filenames (read-only)."""
     from ..core.overworld_enemies import parse_objectset_enemy_types, enemy_info
 
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
     if objectset_id < 0 or objectset_id > 255:
         raise HTTPException(status_code=400, detail="objectset_id must be 0-255")
 
@@ -1100,11 +1045,9 @@ async def get_screen_tile_grid(chapter_num: int, screen_index: int):
     Returns:
         JSON with 8x6 grid of tile IDs
     """
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="ROM data not available")
+    _require_rom_data()
 
     if build_screen_tile_grid is None:
         raise HTTPException(status_code=501, detail="Tile grid function not available. Install rendering module.")
@@ -1210,8 +1153,13 @@ async def update_config(update: ConfigUpdate):
 
 
 @app.post("/api/plan")
-async def create_plan(request: PlanRequest):
-    """Create a new randomization plan."""
+def create_plan(request: PlanRequest):
+    """Create a new randomization plan.
+
+    Deliberately sync (no async): the full randomization pipeline is
+    CPU-bound, so Starlette runs this handler in its threadpool instead of
+    blocking the event loop for every concurrent request.
+    """
     global _current_plan, _randomizer
 
     # Build config from request or use defaults
@@ -1493,8 +1441,7 @@ async def apply_plan_preview():
     """
     if _current_plan is None:
         raise HTTPException(status_code=400, detail="No plan created yet")
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
     try:
         return _apply_preview_compute()
     except Exception as e:
@@ -1511,8 +1458,7 @@ async def apply_plan_preview_async():
     """
     if _current_plan is None:
         raise HTTPException(status_code=400, detail="No plan created yet")
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     job_id = uuid.uuid4().hex
     _preview_jobs[job_id] = {
@@ -1566,8 +1512,7 @@ async def patch_rom(filename: Optional[str] = Query(default=None)):
     Runs a non-blocking navigability check and reports the count via a header.
     """
     _require_rom_pair()  # raises HTTPException(400) if no ROM loaded
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     # Defensive reconcile: capture any dirty screens not yet flushed.
     # _flush_screens rebuilds the _rom_data buffer in place.
@@ -1886,8 +1831,7 @@ async def debug_validate_rom():
 
     Returns detailed structured results for each chapter.
     """
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     # Sourced from the modern validation framework (validation/runner.py +
     # validation/validators/*) instead of the retired testing.validators module.
@@ -2139,8 +2083,7 @@ async def debug_navigation(chapter_num: int):
     Shows all screens with their current navigation values.
     Useful for debugging navigation issues.
     """
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -2209,8 +2152,7 @@ async def debug_section_validation(chapter_num: int):
     """
     global _current_plan, _game_world
 
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     if _current_plan is None:
         raise HTTPException(status_code=400, detail="No plan created. Call POST /api/plan first.")
@@ -2358,8 +2300,7 @@ async def debug_spatial_analysis(chapter_num: int):
     """
     global _current_plan, _game_world
 
-    if _game_world is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom()
 
     chapter = _game_world.chapters.get(chapter_num)
     if chapter is None:
@@ -2627,8 +2568,7 @@ async def get_tile_bank():
     Each tile consists of 4 MiniTile IDs forming a 2x2 grid:
     [TL, TR, BL, BR] = Top-Left, Top-Right, Bottom-Left, Bottom-Right
     """
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
 
     tiles = []
     for i in range(TILE_COUNT):
@@ -2656,8 +2596,7 @@ async def get_tile_bank_tile(tile_index: int):
     Args:
         tile_index: Tile index (0-255)
     """
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
 
     if tile_index < 0 or tile_index >= TILE_COUNT:
         raise HTTPException(
@@ -2686,8 +2625,7 @@ async def update_tile_bank_tile(tile_index: int, update: TileBankUpdate):
     """
     global _rom_data
 
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
 
     if tile_index < 0 or tile_index >= TILE_COUNT:
         raise HTTPException(
@@ -2737,8 +2675,7 @@ async def render_tile_from_chr(tile_index: int, chr: int = 0x0F, scale: int = 4)
         chr: CHR bank index (0-63), default 0x0F (overworld)
         scale: Scale factor for output (1=16x16, 4=64x64), default 4
     """
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
 
     if tile_index < 0 or tile_index >= TILE_COUNT:
         raise HTTPException(
@@ -2830,8 +2767,7 @@ def _require_rom_pair() -> tuple[bytes, bytes]:
     (e.g., the server was reloaded after my upload-handler change).
     Raises HTTPException(400) if no ROM is loaded at all."""
     global _rom_vanilla
-    if _rom_data is None:
-        raise HTTPException(status_code=400, detail="No ROM loaded")
+    _require_rom_data()
     if _rom_vanilla is None:
         _rom_vanilla = _rom_data
     return _rom_data, _rom_vanilla
@@ -3874,6 +3810,7 @@ def _autoload_default_rom() -> None:
 @app.on_event("startup")
 async def startup():
     """Initialize on startup."""
+    configure_logging()
     configure_asset_paths()
     print("TMOS Randomizer API started")
     print(f"  Sprites: {ASSET_PATHS.get('sprites')}")
