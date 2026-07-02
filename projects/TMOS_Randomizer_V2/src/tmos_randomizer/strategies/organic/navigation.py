@@ -32,6 +32,7 @@ from ...phases.phase5_navigation import (
 from ...validation.tiles.categories import is_walkable
 from ...validation.tiles.edges import ScreenEdges, extract_edges
 from .placement import ChapterPlacement
+from ._edges import cached_edges
 from .template import (
     DIRECTION_DELTAS,
     ChapterTemplate,
@@ -155,6 +156,36 @@ def write_chapter_navigation(
             chapter_nav=chapter_nav,
         )
 
+    # Step 7 — stale-pointer cleanup on UNPLACED screens. Their vanilla
+    # pointers still reference the OLD world layout; any pointer at a placed
+    # screen that doesn't point back is a stale one-way edge into the
+    # rewritten graph (navigation-conflict / asymmetric-connection errors,
+    # and unpredictable in-game walks). Block them; the stitch pass restores
+    # required connectivity afterwards.
+    for screen in chapter:
+        idx = screen.relative_index
+        if idx in placement_by_idx:
+            continue
+        for direction in DIRECTIONS:
+            tgt = getattr(screen, f"screen_index_{direction}")
+            if tgt in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+                continue
+            if tgt not in placement_by_idx:
+                continue  # unplaced -> unplaced: untouched vanilla pocket
+            tgt_screen = chapter.get_screen(tgt)
+            if tgt_screen is None:
+                continue
+            back = getattr(tgt_screen, f"screen_index_{OPPOSITE_DIRECTIONS[direction]}")
+            if back != idx:
+                setattr(screen, f"screen_index_{direction}", NAV_BLOCKED)
+                screen.mark_modified()
+                chapter_nav.navigation_changes.append(NavigationChange(
+                    screen_index=idx,
+                    direction=direction,
+                    old_value=tgt,
+                    new_value=NAV_BLOCKED,
+                ))
+
     return chapter_nav
 
 
@@ -200,8 +231,8 @@ def _pair_walkably_aligned(
     dst = chapter.get_screen(dst_idx)
     if src is None or dst is None:
         return False
-    src_edges = _cached_edges(src, rom_data, edge_cache)
-    dst_edges = _cached_edges(dst, rom_data, edge_cache)
+    src_edges = cached_edges(src, rom_data, edge_cache)
+    dst_edges = cached_edges(dst, rom_data, edge_cache)
     if src_edges is None or dst_edges is None:
         return False
     a = src_edges.get_edge(direction)
@@ -211,27 +242,6 @@ def _pair_walkably_aligned(
     n = min(len(a), len(b))
     return any(is_walkable(a[i]) and is_walkable(b[i]) for i in range(n))
 
-
-def _cached_edges(
-    screen: WorldScreen,
-    rom_data: bytes,
-    cache: Dict[int, ScreenEdges],
-) -> Optional[ScreenEdges]:
-    cached = cache.get(screen.relative_index)
-    if cached is not None:
-        return cached
-    try:
-        edges = extract_edges(
-            rom_data,
-            screen.relative_index,
-            screen.top_tiles,
-            screen.bottom_tiles,
-            screen.datapointer,
-        )
-    except Exception:
-        return None
-    cache[screen.relative_index] = edges
-    return edges
 
 
 def _link_time_doors(

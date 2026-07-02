@@ -34,6 +34,7 @@ from ...validation.tiles.edges import (
     extract_edges,
 )
 from .placement import ChapterPlacement
+from ._edges import cached_edges
 from .template import (
     DIRECTION_DELTAS,
     ChapterTemplate,
@@ -767,8 +768,8 @@ def _edges_aligned(
     if src_screen is None or dst_screen is None:
         return False
 
-    src_edges = _cached_edges(src_screen, rom_data, edge_cache)
-    dst_edges = _cached_edges(dst_screen, rom_data, edge_cache)
+    src_edges = cached_edges(src_screen, rom_data, edge_cache)
+    dst_edges = cached_edges(dst_screen, rom_data, edge_cache)
     if src_edges is None or dst_edges is None:
         return False
 
@@ -780,24 +781,3 @@ def _edges_aligned(
     n = min(len(a), len(b))
     return any(is_walkable(a[i]) and is_walkable(b[i]) for i in range(n))
 
-
-def _cached_edges(
-    screen: WorldScreen,
-    rom_data: bytes,
-    cache: Dict[int, ScreenEdges],
-) -> Optional[ScreenEdges]:
-    cached = cache.get(screen.relative_index)
-    if cached is not None:
-        return cached
-    try:
-        edges = extract_edges(
-            rom_data,
-            screen.relative_index,
-            screen.top_tiles,
-            screen.bottom_tiles,
-            screen.datapointer,
-        )
-    except Exception:
-        return None
-    cache[screen.relative_index] = edges
-    return edges

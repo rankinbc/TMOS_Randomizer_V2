@@ -21,6 +21,7 @@ from collections import deque
 from typing import Dict, List, Optional, Set, Tuple
 
 from ...core.chapter import Chapter
+from ...core.constants import CHAPTER_RESPAWN_SCREENS
 from ...core.enums import SectionType, is_past_screen_index
 from ...core.worldscreen import WorldScreen
 from ...logic.navigation import DIRECTIONS, OPPOSITE_DIRECTIONS
@@ -346,17 +347,21 @@ def grow_walkable_trunk(
     rng: random.Random,
     totals: Dict[str, int],
 ) -> None:
-    """BFS from screen 0 through grid-adjacent neighbours and cross-section
-    edges, rewriting tilesets as we go so every traversed edge walkably
-    aligns. Guarantees screen 0 is the growth anchor — anything unreachable
+    """BFS from the chapter's REAL start/respawn screen (bank 4 $8136 —
+    what the engine loads at level start) plus screen 0, through
+    grid-adjacent neighbours and cross-section edges, rewriting tilesets as
+    we go so every traversed edge walkably aligns. Anything unreachable
     after this pass is genuinely isolated (logged, not wired around)."""
 
     # (screen_idx -> (section_id, grid_pos)) and per-section grids.
     placement_by_idx: Dict[int, Tuple[int, Tuple[int, int]]] = {}
     for (sid, pos), idx in placement.placements.items():
         placement_by_idx[idx] = (sid, pos)
-    if 0 not in placement_by_idx:
-        return  # screen 0 wasn't placed — nothing to anchor on.
+
+    respawn = CHAPTER_RESPAWN_SCREENS[chapter.chapter_num - 1]
+    roots = [r for r in dict.fromkeys((respawn, 0)) if r in placement_by_idx]
+    if not roots:
+        return  # neither entry screen placed — nothing to anchor on.
 
     section_grids: Dict[int, Dict[Tuple[int, int], int]] = {
         sec.section_id: placement.section_positions(sec.section_id)
@@ -375,8 +380,8 @@ def grow_walkable_trunk(
             (edge.direction, edge.to_screen)
         )
 
-    trunk: Set[int] = {0}
-    frontier: deque = deque([0])
+    trunk: Set[int] = set(roots)
+    frontier: deque = deque(roots)
 
     while frontier:
         src_idx = frontier.popleft()

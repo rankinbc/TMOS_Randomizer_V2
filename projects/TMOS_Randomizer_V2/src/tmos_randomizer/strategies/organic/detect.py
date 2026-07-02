@@ -23,7 +23,13 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
 from ...core.chapter import Chapter
-from ...core.constants import NAV_BLOCKED, NAV_BUILDING_ENTRANCE
+from ...core.constants import (
+    CHAPTER_RESPAWN_SCREENS,
+    NAV_BLOCKED,
+    NAV_BUILDING_ENTRANCE,
+    WARP_DEST_SLOTS_PER_GROUP,
+    WARP_DEST_TABLE,
+)
 from ...core.enums import SectionType
 from ...logic.navigation import DIRECTIONS
 from ...plan import RandomizationPlan
@@ -86,7 +92,9 @@ def detect_chapter_failures(
     report.disconnected_sections = _find_disconnected_sections(
         chapter, template, placement, rom_data, edge_cache,
     )
-    report.unreachable_screens = _find_unreachable_screens(chapter, pristine_reachable)
+    report.unreachable_screens = _find_unreachable_screens(
+        chapter, pristine_reachable, rom_data
+    )
     report.stray_template_ids = _find_stray_templates(template, plan)
     report.spatial_nav_mismatches = _find_spatial_mismatches(
         chapter, template, placement,
@@ -122,21 +130,55 @@ def detect_world_failures(
     return reports
 
 
-def compute_pristine_reachable(chapters: Dict[int, Chapter]) -> Dict[int, Set[int]]:
-    """Run nav-BFS from screen 0 on the unrandomized chapters. Produces a
-    per-chapter set that any post-randomization run must preserve."""
+def compute_pristine_reachable(
+    chapters: Dict[int, Chapter],
+    rom_data: Optional[bytes] = None,
+) -> Dict[int, Set[int]]:
+    """Run the full traversal (nav + stairways + warps) from the real chapter
+    start screen on the unrandomized chapters. Produces a per-chapter set
+    that any post-randomization run must preserve."""
     out: Dict[int, Set[int]] = {}
     for chapter_num, chapter in chapters.items():
-        out[chapter_num] = _nav_reachable(chapter)
+        out[chapter_num] = _nav_reachable(chapter, rom_data)
     return out
 
 
-def _nav_reachable(chapter: Chapter) -> Set[int]:
+def _chapter_root(chapter: Chapter) -> int:
+    """The engine's actual start/respawn screen for this chapter (bank 4
+    $8136 table, read at every level start) — NOT relative screen 0."""
+    root = CHAPTER_RESPAWN_SCREENS[chapter.chapter_num - 1]
+    return root if 0 <= root < chapter.screen_count else 0
+
+
+def _warp_row(chapter_num: int, rom_data: bytes) -> List[int]:
+    """$98C0 warp/time-door destination row for this chapter group."""
+    off = WARP_DEST_TABLE + (chapter_num - 1) * WARP_DEST_SLOTS_PER_GROUP
+    return list(rom_data[off : off + WARP_DEST_SLOTS_PER_GROUP])
+
+
+def _nav_reachable(chapter: Chapter, rom_data: Optional[bytes] = None) -> Set[int]:
+    """Traversal matching the engine's actual transition mechanisms:
+
+    - directional nav pointers (edge walks)
+    - stairways: Event bit6 set -> Content byte is the destination screen
+    - warps/time doors: a reachable screen with Content $C0-$DF opens the
+      chapter's $98C0 destination row (needs rom_data)
+
+    Root is the chapter's real respawn screen, not relative 0.
+    """
     total = chapter.screen_count
     if total == 0:
         return set()
-    reached: Set[int] = {0}
-    queue: deque = deque([0])
+    root = _chapter_root(chapter)
+    warp_row = _warp_row(chapter.chapter_num, rom_data) if rom_data else []
+    reached: Set[int] = {root}
+    queue: deque = deque([root])
+
+    def visit(tgt: int) -> None:
+        if 0 <= tgt < total and tgt not in reached:
+            reached.add(tgt)
+            queue.append(tgt)
+
     while queue:
         idx = queue.popleft()
         scr = chapter.get_screen(idx)
@@ -146,12 +188,12 @@ def _nav_reachable(chapter: Chapter) -> Set[int]:
             tgt = getattr(scr, f"screen_index_{direction}")
             if tgt in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
                 continue
-            if tgt < 0 or tgt >= total:
-                continue
-            if tgt in reached:
-                continue
-            reached.add(tgt)
-            queue.append(tgt)
+            visit(tgt)
+        if scr.is_stairway:
+            visit(scr.content)
+        if warp_row and 0xC0 <= scr.content <= 0xDF:
+            for dest in warp_row:
+                visit(dest)
     return reached
 
 
@@ -222,6 +264,7 @@ def _walkable_components(
 def _find_unreachable_screens(
     chapter: Chapter,
     pristine_reachable: Optional[Set[int]] = None,
+    rom_data: Optional[bytes] = None,
 ) -> List[int]:
     """Screens the player cannot reach from the starting screen via nav
     pointers in the CURRENT (post-randomization) state.
@@ -230,7 +273,7 @@ def _find_unreachable_screens(
     reachable in the unrandomized ROM but are no longer — actual regressions
     rather than sub-world interiors.
     """
-    current = _nav_reachable(chapter)
+    current = _nav_reachable(chapter, rom_data)
     if pristine_reachable is not None:
         return sorted(idx for idx in pristine_reachable if idx not in current)
 

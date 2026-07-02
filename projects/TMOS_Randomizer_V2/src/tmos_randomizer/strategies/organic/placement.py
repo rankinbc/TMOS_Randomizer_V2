@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from ...core.chapter import Chapter
+from ...core.constants import CHAPTER_RESPAWN_SCREENS
 from ...core.worldscreen import WorldScreen
 from ...logic.exclusions import is_excluded
 from ...validation.tiles.categories import is_walkable
@@ -23,6 +24,7 @@ from ...validation.tiles.edges import (
     ScreenEdges,
     extract_edges,
 )
+from ._edges import cached_edges
 from .template import (
     DIRECTION_DELTAS,
     ChapterTemplate,
@@ -107,16 +109,28 @@ def _anchor_chapter_entry(
     result: ChapterPlacement,
     assigned: Set[int],
 ) -> None:
-    """If screen 0 is unfixed, place it at an unoccupied cell adjacent to
-    the BFS seed of its original section. Screen 0 = player start, so
-    anchoring it near the section seed guarantees high neighbour density
+    """Anchor the chapter's REAL start/respawn screen (bank 4 $8136 table —
+    what the engine loads at every level start), plus screen 0 for legacy
+    reachability tooling, at unoccupied cells of their original sections.
+    Anchoring near the section seed guarantees high neighbour density
     without clobbering any already-placed fixed screen (which often claims
     the seed position itself)."""
-    if 0 in assigned:
+    respawn = CHAPTER_RESPAWN_SCREENS[template.chapter_num - 1]
+    for entry_screen in (respawn, 0):
+        _anchor_screen(template, result, assigned, entry_screen)
+
+
+def _anchor_screen(
+    template: ChapterTemplate,
+    result: ChapterPlacement,
+    assigned: Set[int],
+    screen_idx: int,
+) -> None:
+    if screen_idx in assigned:
         return
     target_section: Optional[SectionTemplate] = None
     for sec in template.sections:
-        if 0 in sec.positions:
+        if screen_idx in sec.positions:
             target_section = sec
             break
     if target_section is None:
@@ -132,8 +146,8 @@ def _anchor_chapter_entry(
     for cand_pos in sorted(positions_set):
         key = (section_id, cand_pos)
         if key not in result.placements:
-            result.placements[key] = 0
-            assigned.add(0)
+            result.placements[key] = screen_idx
+            assigned.add(screen_idx)
             return
 
 
@@ -376,7 +390,7 @@ def _score_candidate(
     cand_screen = chapter.get_screen(candidate)
     if cand_screen is None:
         return -999
-    cand_edges = _cached_edges(cand_screen, rom_data, edge_cache)
+    cand_edges = cached_edges(cand_screen, rom_data, edge_cache)
     if cand_edges is None:
         return 0  # Fail open — don't let extract errors hurt the score.
 
@@ -403,7 +417,7 @@ def _score_candidate(
         neighbor_screen = chapter.get_screen(neighbor_idx)
         if neighbor_screen is None:
             continue
-        neighbor_edges = _cached_edges(neighbor_screen, rom_data, edge_cache)
+        neighbor_edges = cached_edges(neighbor_screen, rom_data, edge_cache)
         if neighbor_edges is None:
             continue
 
@@ -424,24 +438,3 @@ def _score_candidate(
 
     return score
 
-
-def _cached_edges(
-    screen: WorldScreen,
-    rom_data: bytes,
-    cache: Dict[int, ScreenEdges],
-) -> Optional[ScreenEdges]:
-    cached = cache.get(screen.relative_index)
-    if cached is not None:
-        return cached
-    try:
-        edges = extract_edges(
-            rom_data,
-            screen.relative_index,
-            screen.top_tiles,
-            screen.bottom_tiles,
-            screen.datapointer,
-        )
-    except Exception:
-        return None
-    cache[screen.relative_index] = edges
-    return edges

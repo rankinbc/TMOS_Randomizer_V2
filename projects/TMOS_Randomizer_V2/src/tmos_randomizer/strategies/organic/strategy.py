@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from ...core.chapter import GameWorld
 from ...io.rom_reader import load_rom
@@ -44,7 +47,14 @@ from ...phases.phase4_population import (
 from ...plan import RandomizationPlan, RandomizationResult
 from ..base import RandomizationStrategy
 from ..registry import register_strategy
-from .detect import FailureReport, compute_pristine_reachable, detect_world_failures
+from .detect import (
+    FailureReport,
+    _warp_row,
+    compute_pristine_reachable,
+    detect_world_failures,
+)
+from .exitpos import repair_exit_positions
+from .stitch import stitch_chapter_connectivity
 from .fallbacks import (
     aggressive_blob_merge,
     apply_section_consolidation,
@@ -117,7 +127,7 @@ class OrganicStrategy(RandomizationStrategy):
         # this set MUST remain reachable post-randomization — anything else
         # is a regression.
         pristine_reachable = compute_pristine_reachable(
-            {c.chapter_num: c for c in game_world}
+            {c.chapter_num: c for c in game_world}, rom_data
         )
 
         max_retries = self.config.repair.max_retries
@@ -198,12 +208,22 @@ class OrganicStrategy(RandomizationStrategy):
             if best_state is None or critical < best_score:
                 best_score = critical
                 best_state = (templates, placements, repair_reports, post_reports, attempt)
+                # Snapshot the WORLD as this attempt left it. Repair,
+                # consolidation and blob-merge mutate WorldScreen tilesets
+                # in-place; finalizing a best attempt's templates/placements
+                # against a LATER attempt's world state silently misaligns
+                # every repaired edge (walls everywhere).
+                best_world_snapshot = _snapshot_worldscreens(game_world)
 
             if critical == 0:
                 break
 
         assert best_state is not None
         templates, placements, repair_reports, post_reports, retries_used = best_state
+        if retries_used != attempt:
+            # Best attempt was not the last one executed — restore its
+            # world state so nav write + validators see matching data.
+            _restore_worldscreens(game_world, best_world_snapshot)
         chapters_map = {c.chapter_num: c for c in game_world}
         self._last_repair_reports = repair_reports
 
@@ -218,6 +238,36 @@ class OrganicStrategy(RandomizationStrategy):
             placements=placements,
             seed=plan.seed,
             rom_data=rom_data,
+        )
+
+        # Final connectivity stitch — closing guarantee on the REAL nav
+        # graph: every pristine-reachable screen must be reachable from the
+        # chapter's respawn root, or get wired in (with TS-swap alignment).
+        stitch_totals: Dict[str, int] = {}
+        for ch_num, chapter in chapters_map.items():
+            required = pristine_reachable.get(ch_num, set())
+            if not required:
+                continue
+            stitch_chapter_connectivity(
+                chapter=chapter,
+                template=templates[ch_num],
+                placement=placements[ch_num],
+                required=required,
+                rom_data=rom_data,
+                seed=plan.seed,
+                totals=stitch_totals,
+            )
+        self._last_stitch_stats = stitch_totals
+
+        # Repair ExitPosition on arrival screens (stairway/warp/respawn/
+        # battle-entry): TS-swaps above (and in the stitch) may have put the
+        # spawn tile inside a wall. $98C0 warp destinations included.
+        warp_targets = {
+            ch_num: _warp_row(ch_num, rom_data)
+            for ch_num in chapters_map
+        }
+        self._last_exitpos_fixed = repair_exit_positions(
+            chapters_map, rom_data, extra_targets=warp_targets
         )
 
         final_reports = detect_world_failures(
@@ -258,13 +308,27 @@ class OrganicStrategy(RandomizationStrategy):
 
             templates = self.preview_plan(plan, game_world, rom_data)
 
-            patch_rom(input_rom, output_rom, game_world)
-            result.output_rom_path = output_rom
+            # Evaluate the hard gate BEFORE writing anything to disk — an
+            # invalid randomization must not leave a broken ROM behind.
+            # Gate = engine-real reachability only: zero regressions vs the
+            # pristine baseline and one root component per chapter.
+            # Intra-section blob cohesion (disconnected_sections) is a
+            # quality metric, surfaced as a warning, not a validity gate —
+            # screens in a split section are still reachable via the
+            # stitched graph.
+            final_reports = getattr(self, "_last_failure_reports", {}) or {}
+            unreachable_total = sum(len(r.unreachable_screens) for r in final_reports.values())
+            disconnected_total = sum(len(r.disconnected_sections) for r in final_reports.values())
+            components_ok = self._verify_single_component_per_chapter(game_world, rom_data)
+            gate_passed = unreachable_total == 0 and components_ok
 
-            with open(output_rom, "rb") as f:
-                result.rom_sha256 = hashlib.sha256(f.read()).hexdigest()
+            if gate_passed:
+                patch_rom(input_rom, output_rom, game_world)
+                result.output_rom_path = output_rom
+                with open(output_rom, "rb") as f:
+                    result.rom_sha256 = hashlib.sha256(f.read()).hexdigest()
 
-            if generate_spoiler and self.config.output.spoiler_log_enabled:
+            if gate_passed and generate_spoiler and self.config.output.spoiler_log_enabled:
                 spoiler = self._build_spoiler(plan, templates, result.rom_sha256)
                 result.spoiler_log = spoiler
                 written = write_spoiler_log(
@@ -319,24 +383,25 @@ class OrganicStrategy(RandomizationStrategy):
             result.errors = list(plan.validation_errors)
             result.warnings = list(plan.validation_warnings)
 
-            # Hard gate: only report success when every chapter is a single
-            # connected component with zero unreachable screens. Anything else
-            # is a playable-map failure and must not be surfaced as success.
-            unreachable_total = (failure_summary or {}).get("unreachable_screens_total", 0)
-            disconnected_total = (failure_summary or {}).get("disconnected_sections_total", 0)
-            components_ok = self._verify_single_component_per_chapter(game_world)
-            if unreachable_total == 0 and disconnected_total == 0 and components_ok:
-                result.success = True
-            else:
-                result.success = False
-                if components_ok is False:
-                    result.errors.append(
-                        "Post-pipeline connectivity check failed: at least one "
-                        "chapter has multiple connected components reachable from screen 0."
-                    )
+            # Hard gate (evaluated above, before the ROM write): only report
+            # success when every chapter is a single connected component with
+            # zero unreachable screens.
+            result.success = gate_passed
+            if not gate_passed:
+                result.errors.append(
+                    f"Randomization gate failed — no ROM written: "
+                    f"unreachable={unreachable_total}, "
+                    f"single_component={components_ok}"
+                )
+            if disconnected_total:
+                result.warnings.append(
+                    f"{disconnected_total} section(s) placed as multiple "
+                    f"walkable blobs (reachable via stitched links; cosmetic)"
+                )
 
         except Exception as exc:
-            result.errors.append(str(exc))
+            logger.exception("organic apply_plan crashed (seed %s)", plan.seed)
+            result.errors.append(f"{type(exc).__name__}: {exc}")
 
         return result
 
@@ -344,45 +409,30 @@ class OrganicStrategy(RandomizationStrategy):
     # Internals
     # ------------------------------------------------------------------
 
-    def _verify_single_component_per_chapter(self, game_world: GameWorld) -> bool:
+    def _verify_single_component_per_chapter(
+        self, game_world: GameWorld, rom_data: Optional[bytes] = None
+    ) -> bool:
         """Final navigability check: every chapter must be a single connected
-        component reachable from screen 0 (ignoring NAV_BLOCKED / 0xFE)."""
-        from collections import deque
-        from ...core.constants import NAV_BLOCKED, NAV_BUILDING_ENTRANCE
-        from ...logic.navigation import DIRECTIONS
+        component reachable from the chapter's REAL start/respawn screen via
+        the engine's actual mechanisms (nav pointers + stairways + $98C0
+        warps — the same traversal as detect)."""
+        from .detect import _nav_reachable
 
         for chapter in game_world:
             total = chapter.screen_count
             if total == 0:
                 continue
-            reached = {0}
-            queue = deque([0])
-            while queue:
-                idx = queue.popleft()
-                scr = chapter.get_screen(idx)
-                if scr is None:
-                    continue
-                for direction in DIRECTIONS:
-                    t = getattr(scr, f"screen_index_{direction}")
-                    if t in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
-                        continue
-                    if t < 0 or t >= total:
-                        continue
-                    if t in reached:
-                        continue
-                    reached.add(t)
-                    queue.append(t)
-            # Every screen in the chapter should be reachable from 0.
+            reached = _nav_reachable(chapter, rom_data)
             if len(reached) < total:
-                # Account for screens legitimately reached only via 0xFE/building
-                # entrances or sub-world screens — these are not "unreachable" by
-                # normal play. Allow up to 10% of unreached screens as sub-world.
-                sub_count = sum(
+                # Screens reached only via 0xFE building entrances are not
+                # "unreachable" by normal play; time-door interiors are
+                # covered by the warp traversal now, so no blanket allowance.
+                unreached_blocking = sum(
                     1 for s in chapter
                     if s.relative_index not in reached
-                    and getattr(s, "content", 0) in {0xC0, 0xC7, 0xD7}
+                    and not s.has_building_entrance
                 )
-                if (len(reached) + sub_count) < total:
+                if unreached_blocking:
                     return False
         return True
 

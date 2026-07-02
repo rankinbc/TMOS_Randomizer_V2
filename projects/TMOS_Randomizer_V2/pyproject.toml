@@ -56,6 +56,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+markers = [
+    "slow: full-pipeline tests (~1 min each); deselect with -m 'not slow'",
+]
 
 [tool.coverage.run]
 source = ["src/tmos_randomizer"]
