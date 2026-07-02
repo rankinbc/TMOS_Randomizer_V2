@@ -127,6 +127,7 @@ class Randomizer:
             ),
             price_multiplier=shop_cfg.price_multiplier,
             randomize_magic_prices=shop_cfg.randomize_magic_prices,
+            sell_keys=shop_cfg.sell_keys,
         )
         written = shop_plan.apply(rom)
         out_path.write_bytes(bytes(rom))

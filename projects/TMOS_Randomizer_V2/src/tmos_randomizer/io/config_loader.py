@@ -186,6 +186,7 @@ class ShopRandomizationConfig:
     price_variance: float = 0.25  # +/- 25% from base price
     price_multiplier: float = 1.0  # Global price multiplier
     randomize_magic_prices: bool = False  # jitter the $8AAC magic base table
+    sell_keys: int = 0  # replace up to N slots with shop-sellable KEYs ($18)
 
     # Progression settings
     exclude_progression_items: bool = True  # Exclude swords/rods from shops
@@ -517,6 +518,7 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             price_variance=sr.get("price_variance", 0.25),
             price_multiplier=sr.get("price_multiplier", 1.0),
             randomize_magic_prices=sr.get("randomize_magic_prices", False),
+            sell_keys=sr.get("sell_keys", 0),
             exclude_progression_items=sr.get("exclude_progression_items", True),
             ensure_bread_available=sr.get("ensure_bread_available", True),
             ensure_mashroob_available=sr.get("ensure_mashroob_available", True),

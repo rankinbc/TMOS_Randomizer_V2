@@ -111,3 +111,24 @@ def test_spoiler_shape(rom):
     assert len(sp["shops"]) == 8
     assert all(len(s["slots"]) == 4 for s in sp["shops"])
     assert len(sp["magic_base_prices"]) == 11
+
+
+def test_sell_keys_injects_key_code(rom):
+    plan = create_shop_plan(rom, 21, shuffle_slots=True, sell_keys=3)
+    codes = [s["item_code"] for slots in plan.slot_assignments for s in slots]
+    assert codes.count(0x18) == 3
+    # Staples untouched: BREAD/MASHROOB count unchanged from vanilla.
+    vanilla = [s["item_code"] for s in read_all_shops(rom)]
+    for staple in (0x33, 0x34):
+        assert codes.count(staple) == vanilla.count(staple)
+
+
+def test_sell_keys_zero_injects_none(rom):
+    plan = create_shop_plan(rom, 21, shuffle_slots=True, sell_keys=0)
+    codes = [s["item_code"] for slots in plan.slot_assignments for s in slots]
+    assert 0x18 not in codes
+
+
+def test_sell_keys_out_of_range_rejected(rom):
+    with pytest.raises(ValueError):
+        create_shop_plan(rom, 1, sell_keys=9)

@@ -233,6 +233,18 @@ export interface StrategyDescriptor {
   source: 'built-in' | 'lab';
 }
 
+export interface ShopRandomizationSettings {
+  enabled: boolean;
+  randomize_items: boolean;
+  randomize_prices: boolean;
+  /** 0.0-1.0 fraction applied to each price */
+  price_variance: number;
+  /** Also jitter the $8AAC magic-shop base table */
+  randomize_magic_prices: boolean;
+  /** Replace up to N slots with shop-sellable KEYs (code $18); 0-8 */
+  sell_keys: number;
+}
+
 export interface RandomizerSettings {
   strategy?: RandomizationStrategy;
   preset?: 'standard' | 'chaos' | 'beginner' | 'custom';
@@ -240,6 +252,7 @@ export interface RandomizerSettings {
   shuffle_towns: boolean;
   shuffle_dungeons: boolean;
   randomize_mazes: boolean;
+  shop_randomization?: ShopRandomizationSettings;
   section_planning: {
     overworld_count_weights: Record<number, number>;
     town_count_weights: Record<number, number>;

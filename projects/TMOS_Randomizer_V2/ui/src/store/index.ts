@@ -317,6 +317,14 @@ function getDefaultSettings(): RandomizerSettings {
     shuffle_towns: true,
     shuffle_dungeons: true,
     randomize_mazes: false,
+    shop_randomization: {
+      enabled: true,
+      randomize_items: true,
+      randomize_prices: true,
+      price_variance: 0.25,
+      randomize_magic_prices: false,
+      sell_keys: 0,
+    },
     section_planning: {
       overworld_count_weights: { 1: 35, 2: 50, 3: 15 },
       town_count_weights: { 1: 10, 2: 60, 3: 30 },
@@ -640,6 +648,14 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
         connectivity: {
           topology: state.settings.section_connection?.topology_weights ? 'branching' : 'linear',
           dungeon_last: state.settings.section_connection?.dungeon_always_last ?? true,
+        },
+        shop_randomization: {
+          enabled: state.settings.shop_randomization?.enabled ?? true,
+          randomize_items: state.settings.shop_randomization?.randomize_items ?? true,
+          randomize_prices: state.settings.shop_randomization?.randomize_prices ?? true,
+          price_variance: state.settings.shop_randomization?.price_variance ?? 0.25,
+          randomize_magic_prices: state.settings.shop_randomization?.randomize_magic_prices ?? false,
+          sell_keys: state.settings.shop_randomization?.sell_keys ?? 0,
         },
       };
 

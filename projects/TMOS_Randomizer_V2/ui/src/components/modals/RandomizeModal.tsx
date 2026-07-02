@@ -48,6 +48,17 @@ export function RandomizeModal() {
 
   if (modalOpen !== 'randomize') return null;
 
+  const shopSettings = settings.shop_randomization ?? {
+    enabled: true,
+    randomize_items: true,
+    randomize_prices: true,
+    price_variance: 0.25,
+    randomize_magic_prices: false,
+    sell_keys: 0,
+  };
+  const setShopSettings = (patch: Partial<typeof shopSettings>) =>
+    setSettings({ shop_randomization: { ...shopSettings, ...patch } });
+
   const activeStrategy = settings.strategy ?? 'organic';
   const activeStrategyInfo = strategies.find((s) => s.name === activeStrategy);
 
@@ -220,6 +231,94 @@ export function RandomizeModal() {
                 />
                 <span className="text-sm text-slate-300">Randomize Mazes</span>
               </label>
+            </div>
+          </div>
+
+          {/* Shops Section */}
+          <div className="border-t border-slate-700 pt-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
+              Shops
+            </h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={shopSettings.enabled}
+                  onChange={(e) => setShopSettings({ enabled: e.target.checked })}
+                  className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                />
+                <span className="text-sm text-slate-300">Randomize Shops</span>
+              </label>
+
+              {shopSettings.enabled && (
+                <div className="ml-6 space-y-3">
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={shopSettings.randomize_items}
+                      onChange={(e) => setShopSettings({ randomize_items: e.target.checked })}
+                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-slate-300">Shuffle items between shops</span>
+                  </label>
+
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={shopSettings.randomize_prices}
+                      onChange={(e) => setShopSettings({ randomize_prices: e.target.checked })}
+                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-slate-300">Randomize prices</span>
+                  </label>
+
+                  {shopSettings.randomize_prices && (
+                    <label className="flex items-center gap-3 ml-6">
+                      <span className="text-sm text-slate-400 w-32">
+                        Price variance ±{Math.round(shopSettings.price_variance * 100)}%
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round(shopSettings.price_variance * 100)}
+                        onChange={(e) =>
+                          setShopSettings({ price_variance: Number(e.target.value) / 100 })
+                        }
+                        className="flex-1 accent-blue-500"
+                      />
+                    </label>
+                  )}
+
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={shopSettings.randomize_magic_prices}
+                      onChange={(e) =>
+                        setShopSettings({ randomize_magic_prices: e.target.checked })
+                      }
+                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-slate-300">Randomize magic-shop prices</span>
+                  </label>
+
+                  <label className="flex items-center gap-3">
+                    <span className="text-sm text-slate-300 w-40">Keys sold in shops</span>
+                    <select
+                      value={shopSettings.sell_keys}
+                      onChange={(e) => setShopSettings({ sell_keys: Number(e.target.value) })}
+                      className="px-2 py-1 bg-slate-700 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                    >
+                      {[0, 1, 2, 3, 4].map((n) => (
+                        <option key={n} value={n}>
+                          {n === 0 ? 'None' : `${n} shop${n > 1 ? 's' : ''}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
             </div>
           </div>
 

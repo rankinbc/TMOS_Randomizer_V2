@@ -1192,6 +1192,24 @@ def create_plan(request: PlanRequest):
             if "dungeon_last" in connectivity:
                 config.connectivity.dungeon_last = connectivity["dungeon_last"]
 
+        # Apply shop randomization settings (Bank 1 tables — see
+        # knowledge/systems/shops-and-economy.md)
+        if "shop_randomization" in request.config:
+            sr = request.config["shop_randomization"]
+            shop_cfg = config.difficulty.shop_randomization
+            if "enabled" in sr:
+                shop_cfg.enabled = bool(sr["enabled"])
+            if "randomize_items" in sr:
+                shop_cfg.randomize_items = bool(sr["randomize_items"])
+            if "randomize_prices" in sr:
+                shop_cfg.randomize_prices = bool(sr["randomize_prices"])
+            if "price_variance" in sr:
+                shop_cfg.price_variance = max(0.0, min(1.0, float(sr["price_variance"])))
+            if "randomize_magic_prices" in sr:
+                shop_cfg.randomize_magic_prices = bool(sr["randomize_magic_prices"])
+            if "sell_keys" in sr:
+                shop_cfg.sell_keys = max(0, min(8, int(sr["sell_keys"])))
+
         # Strategy override — accepts either top-level `strategy` or
         # `general.strategy`. Without this the UI button silently fell
         # through to whatever the default is.
@@ -1268,7 +1286,7 @@ def _apply_preview_compute() -> Dict[str, Any]:
     already checked by the caller. Raises on internal failure; callers map that
     to an HTTP 500 (sync endpoint) or a job error (async endpoint).
     """
-    global _current_plan, _game_world, _randomizer
+    global _current_plan, _game_world, _randomizer, _rom_data
 
     if _randomizer is None:
         _randomizer = Randomizer(get_default_config())
@@ -1400,10 +1418,35 @@ def _apply_preview_compute() -> Dict[str, Any]:
         # /api/rom/patch captures the applied plan.
         _flush_screens(s for ch in _game_world for s in ch.screens if s.is_modified)
 
+        # Shop randomization post-pass on the in-memory ROM (Bank 1 tables;
+        # knowledge/systems/shops-and-economy.md). The Economy panel and the
+        # patched download both read _rom_data, so results show up live.
+        shops_result = None
+        shop_cfg = _randomizer.config.difficulty.shop_randomization
+        if shop_cfg.enabled and _rom_data:
+            from ..logic.shop_randomization import create_shop_plan
+
+            rom_array = bytearray(_rom_data)
+            shop_plan = create_shop_plan(
+                bytes(rom_array),
+                _current_plan.seed,
+                shuffle_slots=shop_cfg.randomize_items,
+                price_variance=(
+                    shop_cfg.price_variance if shop_cfg.randomize_prices else 0.0
+                ),
+                price_multiplier=shop_cfg.price_multiplier,
+                randomize_magic_prices=shop_cfg.randomize_magic_prices,
+                sell_keys=shop_cfg.sell_keys,
+            )
+            shop_plan.apply(rom_array)
+            _rom_data = bytes(rom_array)
+            shops_result = shop_plan.to_spoiler()
+
         return {
             "status": "applied",
             "seed": _current_plan.seed,
             "strategy": strategy.name,
+            "shops": shops_result,
             "screens_modified": modified_count,
             "navigability_ok": nav_ok,
             "navigability": {

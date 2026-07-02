@@ -107,6 +107,14 @@ def _clamp_price(code: int, price: int) -> int:
     return max(_PRICE_MIN, min(ceiling, price))
 
 
+# Shop-sellable KEY (emulator-verified: $18 -> $0308 +1). Never in vanilla
+# shops; injectable via sell_keys. Slots eligible for replacement: the
+# redundant Gortrat/charge-refill codes (never BREAD/MASHROOB staples, never
+# one-time items).
+_KEY_CODE = 0x18
+_KEY_REPLACEABLE = frozenset({0x10, 0x11, 0x51, 0x52})
+
+
 def create_shop_plan(
     rom: bytes,
     seed: int,
@@ -115,6 +123,7 @@ def create_shop_plan(
     price_variance: float = 0.0,
     price_multiplier: float = 1.0,
     randomize_magic_prices: bool = False,
+    sell_keys: int = 0,
 ) -> ShopRandomizationPlan:
     """Build a deterministic shop randomization plan from vanilla shop data.
 
@@ -125,11 +134,15 @@ def create_shop_plan(
         price_variance: 0.0-1.0; each price jittered by up to this fraction.
         price_multiplier: global scale applied before clamping (0.1-10.0).
         randomize_magic_prices: also jitter/scale the $8AAC magic base table.
+        sell_keys: replace up to N redundant slots with shop-sellable KEYs
+            (code $18, emulator-verified delivery to $0308). 0-8.
     """
     if not 0.0 <= price_variance <= 1.0:
         raise ValueError(f"price_variance must be 0.0..1.0, got {price_variance}")
     if not 0.1 <= price_multiplier <= 10.0:
         raise ValueError(f"price_multiplier must be 0.1..10.0, got {price_multiplier}")
+    if not 0 <= sell_keys <= 8:
+        raise ValueError(f"sell_keys must be 0..8, got {sell_keys}")
 
     rng = random.Random(seed)
 
@@ -142,6 +155,15 @@ def create_shop_plan(
     pairs: list[ShopSlotDTO] = read_all_shops(rom)
     if shuffle_slots:
         rng.shuffle(pairs)
+
+    if sell_keys:
+        candidates = [i for i, p in enumerate(pairs) if p["item_code"] in _KEY_REPLACEABLE]
+        for i in rng.sample(candidates, min(sell_keys, len(candidates))):
+            pairs[i] = {
+                **pairs[i],
+                "item_code": _KEY_CODE,
+                "item_label": "KEY",
+            }
 
     assignments: list[list[dict]] = []
     it = iter(pairs)

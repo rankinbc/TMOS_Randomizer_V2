@@ -250,6 +250,7 @@ difficulty:
     price_variance: 0.25        # +/- fraction applied to each price
     price_multiplier: 1.0       # global scale (also see shop_price_multiplier)
     randomize_magic_prices: false  # jitter the $8AAC magic base table too
+    sell_keys: 0                # replace up to N slots with shop-sellable KEYs ($18)
 
   # Progression
   progression:
