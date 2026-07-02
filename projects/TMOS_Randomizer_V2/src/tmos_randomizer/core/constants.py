@@ -149,6 +149,17 @@ SECRET_EVENT_SCREEN = 0x1A
 # these — pin them (do not relocate).
 CHAPTER_START_SCREENS = (4, 9, 14, 19, 24)
 
+# Bank 4 $8136 — chapter start/respawn screen table, loaded at EVERY
+# level-start setup ($E282). Screen indices per chapter. If the randomizer
+# moves these screens it must patch this table or respawn breaks.
+CHAPTER_RESPAWN_TABLE = 0x10146    # BANK_4 0x10010 + (0x8136 - 0x8000)
+CHAPTER_RESPAWN_SCREENS = (0x63, 0x09, 0x01, 0x26, 0x20)
+
+# Bank 1 $8E92 — chapter-intro display screens, 2 sets of 5 (toggle $049F).
+# Display-only during intro mode; keep renderable, patch if moved.
+INTRO_SCREEN_TABLE = 0x04EA2       # BANK_1_FILE_OFFSET + (0x8E92 - 0x8000)
+INTRO_SCREEN_COUNT = 10
+
 # Inventory-cap table layout
 INV_CAP_SLOT_SIZE = 4
 INV_CAP_SLOT_COUNT = 8

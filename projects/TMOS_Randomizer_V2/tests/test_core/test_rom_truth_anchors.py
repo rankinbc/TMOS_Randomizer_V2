@@ -327,3 +327,16 @@ def test_secret_event_screen_immediate(rom):
 def test_chapter_start_screens_spec():
     """One start screen per chapter, chapter-relative index 4 + 5*(n-1) pattern."""
     assert CHAPTER_START_SCREENS == (4, 9, 14, 19, 24)
+
+
+def test_chapter_respawn_table_vanilla_bytes(rom):
+    """Bank 4 $8136 — respawn screen per chapter, read at every level start."""
+    from tmos_randomizer.core.constants import CHAPTER_RESPAWN_TABLE, CHAPTER_RESPAWN_SCREENS
+    assert tuple(rom[CHAPTER_RESPAWN_TABLE : CHAPTER_RESPAWN_TABLE + 5]) == CHAPTER_RESPAWN_SCREENS
+
+
+def test_intro_screen_table_vanilla_bytes(rom):
+    """Bank 1 $8E92 — two 5-screen intro display sets."""
+    from tmos_randomizer.core.constants import INTRO_SCREEN_TABLE, INTRO_SCREEN_COUNT
+    expected = bytes([0x40, 0x4F, 0x4B, 0x38, 0x68, 0x1A, 0x01, 0x32, 0x02, 0x34])
+    assert rom[INTRO_SCREEN_TABLE : INTRO_SCREEN_TABLE + INTRO_SCREEN_COUNT] == expected

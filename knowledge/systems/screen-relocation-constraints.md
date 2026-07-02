@@ -31,9 +31,9 @@ The WorldScreen `Content` byte is passed VERBATIM as the bank 1 UI command (buil
 
 ---
 
-## Hardcoded Screen References — Complete List (3 sites in 128KB)
+## Hardcoded Screen References — Complete List (5 sites in 128KB)
 
-Sweep result: zero `LDA #imm ; STA $AB` sites exist; all normal transitions are WorldScreen-data-driven. Only these are hardcoded:
+Sweep result: zero `LDA #imm ; STA $AB` sites exist; all normal transitions are WorldScreen-data-driven. Only these are hardcoded (full transition model: RETMOS/docs/randomizer_handoff.md — 8 mechanisms write `$AB`, only edge walk / stairway / warp create graph edges):
 
 ### 1. Warp / Time-Door Destination Table — bank 6 $98C0, file 0x198D0
 
@@ -60,6 +60,14 @@ Present<->past pairing is PURE DATA in this table — no computed mapping, no Pa
 ### 3. Chapter Start Positions — warp data $BB1F record 0
 
 Chapter start screens = 4, 9, 14, 19, 24 (one per chapter), plus password-decode equivalents. **Pin these screens**: the password system encodes them, so moving chapter starts breaks password restore.
+
+### 4. Chapter Start/Respawn Table — bank 4 $8136, file 0x10146
+
+5 bytes = `63 09 01 26 20` (screen index per chapter), loaded at EVERY level-start setup ($E282). **Patch if these screens move, or respawn breaks.**
+
+### 5. Chapter-Intro Display Screens — bank 1 $8E92, file 0x04EA2
+
+10 bytes = two 5-screen sets (`40 4F 4B 38 68` / `1A 01 32 02 34`, toggled by $049F). Display-only during intro mode ($19=8): keep renderable; patch if moved.
 
 ---
 
