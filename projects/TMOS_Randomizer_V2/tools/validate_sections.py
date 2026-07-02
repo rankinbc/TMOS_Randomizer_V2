@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from tmos_randomizer.io.rom_reader import load_rom
 from tmos_randomizer.io.config_loader import get_default_config
@@ -146,7 +146,7 @@ def main():
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 12345
 
     # ROM path
-    rom_path = Path(__file__).parent.parent.parent / "rom-files" / "TMOS_ORIGINAL.nes"
+    rom_path = Path(__file__).parent.parent / "TMOS_ORIGINAL.nes"
     if not rom_path.exists():
         print(f"ERROR: ROM not found at {rom_path}")
         return 1
