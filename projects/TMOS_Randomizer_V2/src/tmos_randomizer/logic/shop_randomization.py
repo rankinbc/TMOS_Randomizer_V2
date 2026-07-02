@@ -1,339 +1,174 @@
-"""Shop inventory randomization algorithm — DISABLED.
+"""Shop randomization against the real Bank 1 tables.
 
-This module randomized a phantom data structure. The target table at 0xD544
-is NOT a shop slot table — it's the inventory cap table read by the
-inv_pickup_handler in Bank 3 $94B0. Writing the output of this module to
-that address would corrupt both the caps and the adjacent 6502 code.
+History: the first implementation of this module targeted 0xD544 (actually
+the Bank 3 inventory cap table) and was hard-disabled to prevent ROM
+corruption. RETMOS RE sessions later resolved the real shop system: flat
+tables in Bank 1 ($94FD shop data, $8AAC magic base prices), fully
+write-specified and byte-verified 2026-07-02. This implementation writes
+ONLY those verified offsets. Spec: knowledge/systems/shops-and-economy.md.
 
-Real shop data lives in an undecoded Bank 2 bytecode interpreter. Until
-that interpreter is reverse-engineered, shop randomization is not supported.
+Design:
+- Slot shuffle permutes the 32 vanilla [code, price] PAIRS globally across
+  the 8 item shops. The code multiset is preserved: no new codes are ever
+  introduced (the unverified $10/$11 codes stay exactly as prevalent as
+  vanilla), nothing is removed (BREAD/MASHROOB/key availability is
+  identical to vanilla in aggregate), and each code keeps a price chosen
+  for it, so shuffling alone cannot violate affordability rules.
+- Price variance/multiplier then adjust each slot price, clamped to the
+  safety rules: quantity-purchasable codes (BREAD/MASHROOB) cap at
+  GOLD_MAX // 10 so price x max-quantity stays within 3-digit BCD gold;
+  everything else caps at 255.
+- Magic base prices are adjusted separately (magic shops IGNORE slot
+  prices; charged = base x (chapter+1)) and clamped to MAGIC_BASE_PRICE_MAX.
 
-See TMOS_AI/docs/human/items-economy-re-answers.md for the RE finding.
+Caveat from the RE spec: shops 4-7 run a different price post-processing
+path ($86CF). Pair shuffling moves slots across that boundary; prices remain
+mechanically safe (all bounds hold) but displayed values on shops 4-7 should
+be eyeballed in-game once per release.
 """
 
-raise ImportError(
-    "tmos_randomizer.logic.shop_randomization is disabled: the data model "
-    "(ShopSlot with item_id+price) does not match ROM reality. The target "
-    "table at 0xD544 is the inventory cap table, not shop slots. "
-    "Real shop data requires Bank 2 bytecode RE (not yet done). "
-    "See TMOS_AI/docs/human/items-economy-re-answers.md."
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass, field
+
+from ..core.constants import GOLD_MAX, SHOP_COUNT, SHOP_SLOTS_PER_SHOP
+from ..core.shop_economy import (
+    MAGIC_BASE_PRICE_MAX,
+    ShopSlotDTO,
+    read_all_shops,
+    read_magic_base_prices,
+    write_magic_base_prices,
+    write_shop_slot,
 )
+
+# Codes purchasable in quantity (numeric-input path): price x qty <= GOLD_MAX.
+# Their caps are 10, so keep price <= 99.
+_QUANTITY_CODES = frozenset({0x33, 0x34})
+_QUANTITY_PRICE_MAX = GOLD_MAX // 10
+
+_PRICE_MIN = 1  # price 0 is legal (free item) but never produced here
 
 
 @dataclass
-class ShopRandomizationResult:
-    """Result of shop randomization for the game.
+class ShopRandomizationPlan:
+    """Deterministic plan: computed from (rom, seed, options), applied later.
 
-    Attributes:
-        chapter_data: Dict mapping chapter number to ChapterShopData
-        errors: List of validation error messages
-        warnings: List of warning messages
+    slot_assignments[shop][slot] = {"item_code", "item_label", "base_price"}
     """
 
-    chapter_data: Dict[int, ChapterShopData]
-    errors: List[str]
-    warnings: List[str]
+    seed: int
+    slot_assignments: list[list[dict]] = field(default_factory=list)
+    magic_base_prices: list[int] = field(default_factory=list)
+    vanilla_magic_base_prices: list[int] = field(default_factory=list)
 
-    @property
-    def is_valid(self) -> bool:
-        """Check if randomization is valid (no errors)."""
-        return len(self.errors) == 0
+    def apply(self, rom: bytearray) -> int:
+        """Write the plan into ROM bytes. Returns number of bytes written."""
+        written = 0
+        for shop_idx, slots in enumerate(self.slot_assignments):
+            for slot_idx, slot in enumerate(slots):
+                write_shop_slot(
+                    rom,
+                    shop_idx,
+                    slot_idx,
+                    item_code=slot["item_code"],
+                    base_price=slot["base_price"],
+                )
+                written += 2
+        if self.magic_base_prices != self.vanilla_magic_base_prices:
+            write_magic_base_prices(rom, self.magic_base_prices)
+            written += len(self.magic_base_prices)
+        return written
 
-    @property
-    def total_shops(self) -> int:
-        """Total number of shops randomized."""
-        return sum(data.shop_count for data in self.chapter_data.values())
+    def to_spoiler(self) -> dict:
+        """Shape consumed by SpoilerLogBuilder.add_shop (generic dict API)."""
+        return {
+            "seed": self.seed,
+            "shops": [
+                {
+                    "shop_index": i,
+                    "slots": [
+                        {
+                            "item_label": s["item_label"],
+                            "item_code": f"0x{s['item_code']:02X}",
+                            "price": s["base_price"],
+                        }
+                        for s in slots
+                    ],
+                }
+                for i, slots in enumerate(self.slot_assignments)
+            ],
+            "magic_base_prices": self.magic_base_prices,
+        }
 
 
-def collect_shop_screens(game_world) -> Dict[int, List]:
-    """Collect all shop screens from the game world.
+def _clamp_price(code: int, price: int) -> int:
+    ceiling = _QUANTITY_PRICE_MAX if code in _QUANTITY_CODES else 255
+    return max(_PRICE_MIN, min(ceiling, price))
+
+
+def create_shop_plan(
+    rom: bytes,
+    seed: int,
+    *,
+    shuffle_slots: bool = True,
+    price_variance: float = 0.0,
+    price_multiplier: float = 1.0,
+    randomize_magic_prices: bool = False,
+) -> ShopRandomizationPlan:
+    """Build a deterministic shop randomization plan from vanilla shop data.
 
     Args:
-        game_world: GameWorld containing all chapters
-
-    Returns:
-        Dict mapping chapter number to list of shop screens
+        rom: full iNES ROM bytes (vanilla shop data is read from here).
+        seed: RNG seed; same (rom, seed, options) -> same plan.
+        shuffle_slots: permute the 32 [code, price] pairs across all shops.
+        price_variance: 0.0-1.0; each price jittered by up to this fraction.
+        price_multiplier: global scale applied before clamping (0.1-10.0).
+        randomize_magic_prices: also jitter/scale the $8AAC magic base table.
     """
-    shops = defaultdict(list)
+    if not 0.0 <= price_variance <= 1.0:
+        raise ValueError(f"price_variance must be 0.0..1.0, got {price_variance}")
+    if not 0.1 <= price_multiplier <= 10.0:
+        raise ValueError(f"price_multiplier must be 0.1..10.0, got {price_multiplier}")
 
-    for chapter in game_world:
-        for screen in chapter:
-            if is_shop_content(screen.content):
-                shops[chapter.chapter_num].append(screen)
+    rng = random.Random(seed)
 
-    return dict(shops)
+    def adjust(price: int) -> int:
+        p = price * price_multiplier
+        if price_variance > 0.0:
+            p *= rng.uniform(1.0 - price_variance, 1.0 + price_variance)
+        return round(p)
 
+    pairs: list[ShopSlotDTO] = read_all_shops(rom)
+    if shuffle_slots:
+        rng.shuffle(pairs)
 
-def generate_shop_inventory(
-    screen,
-    config: ShopRandomizationConfig,
-    rng: random.Random,
-) -> ShopInventory:
-    """Generate randomized inventory for a single shop.
-
-    Args:
-        screen: WorldScreen object for the shop
-        config: Randomization configuration
-        rng: Random number generator
-
-    Returns:
-        ShopInventory with 4 randomized items
-    """
-    shop_type = get_shop_type(screen.content)
-
-    # Get eligible items for this shop type
-    if config.preserve_shop_types:
-        eligible_items = get_item_pool(shop_type, config.exclude_progression_items)
-    else:
-        # Mix all items if not preserving shop types
-        eligible_items = list(SHOP_ITEMS.values())
-        if config.exclude_progression_items:
-            eligible_items = [item for item in eligible_items if not item.is_progression]
-
-    # Ensure we have items to choose from
-    if not eligible_items:
-        eligible_items = list(SHOP_ITEMS.values())
-
-    # Select 4 items (avoid duplicates)
-    selected_items = []
-    available = list(eligible_items)
-
-    for slot_index in range(4):
-        if not available:
-            # Refill if we run out (allows duplicates as fallback)
-            available = list(eligible_items)
-
-        # Random selection
-        item = rng.choice(available)
-        available.remove(item)
-
-        # Calculate price
-        price = calculate_item_price(item, config, rng)
-
-        # Determine quantity
-        quantity = item.max_quantity if item.max_quantity > 0 else 0
-
-        selected_items.append(
-            ShopSlot(
-                item=item,
-                price=price,
-                quantity=quantity,
-                slot_index=slot_index,
+    assignments: list[list[dict]] = []
+    it = iter(pairs)
+    for _shop in range(SHOP_COUNT):
+        slots = []
+        for _slot in range(SHOP_SLOTS_PER_SHOP):
+            src = next(it)
+            slots.append(
+                {
+                    "item_code": src["item_code"],
+                    "item_label": src["item_label"],
+                    "base_price": _clamp_price(src["item_code"], adjust(src["base_price"])),
+                }
             )
-        )
+        assignments.append(slots)
 
-    return ShopInventory(
-        content_value=screen.content,
-        chapter=screen.chapter,
-        screen_index=screen.relative_index,
-        shop_type=shop_type,
-        items=selected_items,
-        original_content=screen.content,
+    vanilla_magic = read_magic_base_prices(rom)
+    magic = list(vanilla_magic)
+    if randomize_magic_prices:
+        magic = [
+            max(_PRICE_MIN, min(MAGIC_BASE_PRICE_MAX, adjust(p)))
+            for p in vanilla_magic
+        ]
+
+    return ShopRandomizationPlan(
+        seed=seed,
+        slot_assignments=assignments,
+        magic_base_prices=magic,
+        vanilla_magic_base_prices=vanilla_magic,
     )
-
-
-def calculate_item_price(
-    item: ShopItem,
-    config: ShopRandomizationConfig,
-    rng: random.Random,
-) -> int:
-    """Calculate randomized price for an item.
-
-    Args:
-        item: ShopItem to price
-        config: Randomization configuration
-        rng: Random number generator
-
-    Returns:
-        Randomized price in rupias
-    """
-    base_price = item.base_price
-
-    if config.randomize_prices and config.price_variance > 0:
-        # Apply variance
-        min_mult = 1.0 - config.price_variance
-        max_mult = 1.0 + config.price_variance
-        variance = rng.uniform(min_mult, max_mult)
-        price = int(base_price * variance)
-    else:
-        price = base_price
-
-    # Apply global multiplier
-    price = int(price * config.price_multiplier)
-
-    # Ensure minimum price of 1
-    return max(1, price)
-
-
-def validate_chapter_shops(
-    chapter_data: ChapterShopData,
-    config: ShopRandomizationConfig,
-) -> List[str]:
-    """Validate shop inventories for a chapter.
-
-    Args:
-        chapter_data: ChapterShopData to validate
-        config: Randomization configuration
-
-    Returns:
-        List of validation error messages
-    """
-    errors = []
-    chapter = chapter_data.chapter_num
-
-    # Get all items available in this chapter
-    available_items = chapter_data.get_all_items()
-
-    # Check required items
-    if config.ensure_bread_available and "Bread" not in available_items:
-        errors.append(f"Chapter {chapter}: Bread not available in any shop")
-
-    if config.ensure_mashroob_available and "Mashroob" not in available_items:
-        errors.append(f"Chapter {chapter}: Mashroob not available in any shop")
-
-    if config.ensure_keys_available and "Key" not in available_items:
-        errors.append(f"Chapter {chapter}: Key not available in any shop")
-
-    return errors
-
-
-def ensure_required_items(
-    chapter_data: ChapterShopData,
-    config: ShopRandomizationConfig,
-    rng: random.Random,
-) -> None:
-    """Ensure required items are available in the chapter.
-
-    Modifies chapter_data in place to add missing required items.
-
-    Args:
-        chapter_data: ChapterShopData to modify
-        config: Randomization configuration
-        rng: Random number generator
-    """
-    if not chapter_data.inventories:
-        return
-
-    available_items = chapter_data.get_all_items()
-    missing = []
-
-    if config.ensure_bread_available and "Bread" not in available_items:
-        missing.append(SHOP_ITEMS["Bread"])
-
-    if config.ensure_mashroob_available and "Mashroob" not in available_items:
-        missing.append(SHOP_ITEMS["Mashroob"])
-
-    if config.ensure_keys_available and "Key" not in available_items:
-        missing.append(SHOP_ITEMS["Key"])
-
-    # Add missing items to random shop slots
-    for item in missing:
-        # Pick a random shop
-        inventory = rng.choice(chapter_data.inventories)
-
-        # Replace a random slot
-        slot_index = rng.randint(0, 3)
-        price = calculate_item_price(item, config, rng)
-
-        inventory.items[slot_index] = ShopSlot(
-            item=item,
-            price=price,
-            quantity=item.max_quantity if item.max_quantity > 0 else 0,
-            slot_index=slot_index,
-        )
-
-
-def randomize_all_shops(
-    game_world,
-    config: ShopRandomizationConfig,
-    rng: random.Random,
-) -> ShopRandomizationResult:
-    """Randomize all shop inventories in the game.
-
-    Args:
-        game_world: GameWorld containing all chapters
-        config: Randomization configuration
-        rng: Random number generator
-
-    Returns:
-        ShopRandomizationResult with all chapter data
-    """
-    if not config.enabled:
-        return ShopRandomizationResult(
-            chapter_data={},
-            errors=[],
-            warnings=["Shop randomization is disabled"],
-        )
-
-    # Collect all shop screens
-    shop_screens = collect_shop_screens(game_world)
-
-    chapter_data = {}
-    all_errors = []
-    all_warnings = []
-
-    # Process each chapter
-    for chapter_num, screens in shop_screens.items():
-        inventories = []
-
-        for screen in screens:
-            inventory = generate_shop_inventory(screen, config, rng)
-            inventories.append(inventory)
-
-        data = ChapterShopData(
-            chapter_num=chapter_num,
-            inventories=inventories,
-        )
-
-        # Ensure required items are available
-        ensure_required_items(data, config, rng)
-
-        # Validate
-        errors = validate_chapter_shops(data, config)
-        all_errors.extend(errors)
-
-        chapter_data[chapter_num] = data
-
-    # Generate warnings for chapters without shops
-    for chapter_num in range(1, 6):
-        if chapter_num not in chapter_data:
-            all_warnings.append(f"Chapter {chapter_num}: No shops found")
-
-    return ShopRandomizationResult(
-        chapter_data=chapter_data,
-        errors=all_errors,
-        warnings=all_warnings,
-    )
-
-
-def randomize_chapter_shops(
-    chapter,
-    config: ShopRandomizationConfig,
-    rng: random.Random,
-) -> ChapterShopData:
-    """Randomize shop inventories for a single chapter.
-
-    Args:
-        chapter: Chapter object to randomize
-        config: Randomization configuration
-        rng: Random number generator
-
-    Returns:
-        ChapterShopData with randomized inventories
-    """
-    inventories = []
-
-    for screen in chapter:
-        if is_shop_content(screen.content):
-            inventory = generate_shop_inventory(screen, config, rng)
-            inventories.append(inventory)
-
-    data = ChapterShopData(
-        chapter_num=chapter.chapter_num,
-        inventories=inventories,
-    )
-
-    # Ensure required items
-    ensure_required_items(data, config, rng)
-
-    return data

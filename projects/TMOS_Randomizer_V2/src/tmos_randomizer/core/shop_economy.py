@@ -31,6 +31,13 @@ from __future__ import annotations
 
 from typing import Optional, TypedDict
 
+from .constants import (
+    GOLD_MAX,
+    MAGIC_SHOP_BASE_PRICES,
+    MAGIC_SHOP_BASE_PRICE_COUNT,
+    SHOP_CODE_LEGAL_HI4,
+)
+
 # --- Shop inventory table (Bank 1 $94FD) -----------------------------------
 # file = 1*0x4000 + (0x94FD - 0x8000) + 0x10 = 0x0550D
 SHOP_TABLE = 0x0550D
@@ -155,12 +162,56 @@ def write_shop_slot(
     if item_code is not None:
         if not 0 <= item_code <= 255:
             raise ValueError(f"item_code must be 0..255, got {item_code}")
+        if (item_code >> 4) not in SHOP_CODE_LEGAL_HI4:
+            # Codes outside hi4 {1,3,5} fall into the password-opcode space of
+            # the $8746 state-command processor: buying one would write
+            # arbitrary game state. Refuse loudly.
+            raise ValueError(
+                f"item_code 0x{item_code:02X} has illegal hi-nibble "
+                f"{item_code >> 4:X} (must be 1, 3, or 5 — see "
+                f"knowledge/systems/shops-and-economy.md)"
+            )
         rom[off] = item_code
     if base_price is not None:
         if not 0 <= base_price <= 255:
             raise ValueError(f"base_price must be 0..255, got {base_price}")
         rom[off + 1] = base_price
     return _read_slot(bytes(rom), shop_index, slot_index)
+
+
+# ---------------------------------------------------------------------------
+# Magic-shop base prices (Bank 1 $8AAC)
+#
+# Magic/formation shops (Content $75-$79) IGNORE the slot price byte; the
+# charged price is base_prices[code & 0x0F] * (chapter + 1). 11 entries.
+# ---------------------------------------------------------------------------
+
+# Chapter multiplier maxes out at chapter 5 -> (chapter + 1) = 6. A base above
+# GOLD_MAX // 6 = 166 could never be afforded (gold is 3-digit BCD).
+MAGIC_BASE_PRICE_MAX = GOLD_MAX // 6
+
+
+def read_magic_base_prices(rom: bytes) -> list[int]:
+    """Read the 11-entry magic-shop base price table."""
+    return list(
+        rom[MAGIC_SHOP_BASE_PRICES : MAGIC_SHOP_BASE_PRICES + MAGIC_SHOP_BASE_PRICE_COUNT]
+    )
+
+
+def write_magic_base_prices(rom: bytearray, prices: list[int]) -> list[int]:
+    """Overwrite the 11-entry magic-shop base price table."""
+    if len(prices) != MAGIC_SHOP_BASE_PRICE_COUNT:
+        raise ValueError(
+            f"expected {MAGIC_SHOP_BASE_PRICE_COUNT} prices, got {len(prices)}"
+        )
+    for i, p in enumerate(prices):
+        if not 0 <= p <= MAGIC_BASE_PRICE_MAX:
+            raise ValueError(
+                f"magic base price [{i}] = {p} outside 0..{MAGIC_BASE_PRICE_MAX} "
+                f"(base * 6 must stay <= {GOLD_MAX})"
+            )
+    rom[MAGIC_SHOP_BASE_PRICES : MAGIC_SHOP_BASE_PRICES + MAGIC_SHOP_BASE_PRICE_COUNT] = bytes(prices)
+    return read_magic_base_prices(bytes(rom))
 
 
 # ---------------------------------------------------------------------------
