@@ -26,6 +26,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from ...core.chapter import Chapter
 from ...core.constants import NAV_BLOCKED
+from ...core.enums import is_past_screen_index
 from ...logic.navigation import DIRECTIONS, OPPOSITE_DIRECTIONS
 from ...validation.tiles.edges import ScreenEdges
 from .detect import _nav_reachable
@@ -239,6 +240,13 @@ def _pick_stitch_pair(
             and sa.worldscreen_color == sb.worldscreen_color
         )
 
+    def _same_era(a: int, b: int) -> bool:
+        # PRESENT and PAST are parallel worlds; a direct nav edge across
+        # them leaks the player between eras (only Time Doors may cross).
+        return is_past_screen_index(
+            chapter.chapter_num, a
+        ) == is_past_screen_index(chapter.chapter_num, b)
+
     for m in missing:
         m_scr = chapter.get_screen(m)
         if m_scr is None:
@@ -246,7 +254,7 @@ def _pick_stitch_pair(
         # Tier 0 — reciprocate an existing one-way pointer into the reached set.
         for d in DIRECTIONS:
             tgt = getattr(m_scr, f"screen_index_{d}")
-            if tgt in reached:
+            if tgt in reached and _same_era(tgt, m):
                 r_dir = OPPOSITE_DIRECTIONS[d]
                 if r_dir in _free_dirs(chapter, tgt):
                     return (tgt, r_dir, m)
@@ -263,6 +271,8 @@ def _pick_stitch_pair(
             continue
         m_info = placement_by_idx.get(m)
         for r in reached:
+            if not _same_era(r, m):
+                continue  # eras only connect via Time Doors, never raw nav
             r_free = _free_dirs(chapter, r)
             if not r_free:
                 continue

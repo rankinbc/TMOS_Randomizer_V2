@@ -194,6 +194,29 @@ class ParentWorldConsistencyConfig:
 
 
 @dataclass
+class ProgressionConfig:
+    """Configuration for progression (completability) validation.
+
+    Per chapter: wiseman reachable from the chapter start, boss phase-1
+    reachable without being forced through a walkable phase-2, victory /
+    time-door structure present. Calibrated so vanilla passes everything.
+
+    Attributes:
+        enabled: Whether to run this validator
+        severity: Default severity for issues (individual checks carry
+            their own error/warning level; this is the fallback)
+        max_issues: Maximum issues to report per chapter (0=unlimited)
+        report_warnings: Also emit the warning-level structure checks
+    """
+
+    enabled: bool = True
+    severity: str = "error"
+    max_issues: int = 100
+
+    report_warnings: bool = True
+
+
+@dataclass
 class EdgeAlignmentConfig:
     """Configuration for edge-alignment validation.
 
@@ -303,6 +326,7 @@ class ValidationConfig:
     parent_world_consistency: ParentWorldConsistencyConfig = field(
         default_factory=ParentWorldConsistencyConfig
     )
+    progression: ProgressionConfig = field(default_factory=ProgressionConfig)
 
     # Validator enable/disable overrides
     enabled_validators: Optional[Set[str]] = None  # None = all enabled
@@ -339,6 +363,7 @@ class ValidationConfig:
             "time_period_isolation": self.time_period_isolation,
             "edge_alignment": self.edge_alignment,
             "parent_world_consistency": self.parent_world_consistency,
+            "progression": self.progression,
         }
 
         if validator_id in config_map:
@@ -370,6 +395,7 @@ class ValidationConfig:
             "time_period_isolation": self.time_period_isolation,
             "edge_alignment": self.edge_alignment,
             "parent_world_consistency": self.parent_world_consistency,
+            "progression": self.progression,
         }
 
         if validator_id in config_map:
@@ -398,6 +424,7 @@ class ValidationConfig:
             "time_period_isolation": self.time_period_isolation,
             "edge_alignment": self.edge_alignment,
             "parent_world_consistency": self.parent_world_consistency,
+            "progression": self.progression,
         }
 
         if validator_id not in config_map:
@@ -469,6 +496,8 @@ class ValidationConfig:
             config.parent_world_consistency = ParentWorldConsistencyConfig(
                 **data["parent_world_consistency"]
             )
+        if "progression" in data:
+            config.progression = ProgressionConfig(**data["progression"])
 
         return config
 
@@ -495,4 +524,5 @@ class ValidationConfig:
             "time_period_isolation": vars(self.time_period_isolation),
             "edge_alignment": vars(self.edge_alignment),
             "parent_world_consistency": vars(self.parent_world_consistency),
+            "progression": vars(self.progression),
         }

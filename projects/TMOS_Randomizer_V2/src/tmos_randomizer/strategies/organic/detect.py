@@ -161,6 +161,10 @@ def _nav_reachable(chapter: Chapter, rom_data: Optional[bytes] = None) -> Set[in
 
     - directional nav pointers (edge walks)
     - stairways: Event bit6 set -> Content byte is the destination screen
+    - building entrances: a 0xFE nav direction transitions via the screen's
+      Content byte when it holds a valid screen index (boss approaches and
+      interiors — required for the progression screens to count as
+      pristine-reachable, so the stitch guarantees them)
     - warps/time doors: a reachable screen with Content $C0-$DF opens the
       chapter's $98C0 destination row (needs rom_data)
 
@@ -184,12 +188,18 @@ def _nav_reachable(chapter: Chapter, rom_data: Optional[bytes] = None) -> Set[in
         scr = chapter.get_screen(idx)
         if scr is None:
             continue
+        has_building_nav = False
         for direction in DIRECTIONS:
             tgt = getattr(scr, f"screen_index_{direction}")
-            if tgt in (NAV_BLOCKED, NAV_BUILDING_ENTRANCE):
+            if tgt == NAV_BUILDING_ENTRANCE:
+                has_building_nav = True
+                continue
+            if tgt == NAV_BLOCKED:
                 continue
             visit(tgt)
         if scr.is_stairway:
+            visit(scr.content)
+        elif has_building_nav and scr.content < total:
             visit(scr.content)
         if warp_row and 0xC0 <= scr.content <= 0xDF:
             for dest in warp_row:
