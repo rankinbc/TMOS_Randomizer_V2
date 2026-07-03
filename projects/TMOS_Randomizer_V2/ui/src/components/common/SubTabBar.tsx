@@ -26,7 +26,7 @@ export function SubTabBar<T extends string>({ tabs, active, onSelect }: SubTabBa
             onClick={() => onSelect(t.id)}
             className={`whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               active === t.id
-                ? 'text-blue-400 border-blue-400 bg-slate-700/40'
+                ? 'text-amber-400 border-amber-500 bg-slate-700/40'
                 : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-700/20'
             }`}
           >

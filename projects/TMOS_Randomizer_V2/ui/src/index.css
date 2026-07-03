@@ -1,12 +1,78 @@
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
 @import "tailwindcss";
+
+/* ==========================================================================
+   "Moonlit Workshop" — the TMOS Editor identity.
+
+   Palette drawn from the game's own world (The Magic of Scheherazade,
+   NES 1989): night-indigo desert skies for the surfaces, brass (lamps,
+   astrolabes) for the primary/active accent, lapis for information, warm
+   parchment for text, terracotta for danger.
+
+   Implementation note: the app's components use Tailwind's slate/blue/
+   amber/green/red utilities throughout. Rather than touching every view,
+   we redefine those ramps here — slate becomes the night ramp (dark end)
+   and parchment grays (light end), blue becomes lapis, amber becomes
+   brass, green/red get desaturated toward oasis/terracotta. Any new
+   component written with the same utilities inherits the identity.
+   ========================================================================== */
+
+@theme {
+  /* Type — display face for chrome/headings, mono for bytes and seeds. */
+  --font-display: "Bricolage Grotesque Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Night ramp (dark end) + parchment grays (light end) replacing slate. */
+  --color-slate-50: #f4f1e6;
+  --color-slate-100: #e9e4d2;
+  --color-slate-200: #d6d1bf;
+  --color-slate-300: #bab6a6;
+  --color-slate-400: #93917f;
+  --color-slate-500: #6f6e64;
+  --color-slate-600: #3a3e63;
+  --color-slate-700: #292d52;
+  --color-slate-800: #1b1e36;
+  --color-slate-900: #131529;
+  --color-slate-950: #0c0d1c;
+
+  /* Lapis replacing blue (info, links, primary buttons). */
+  --color-blue-300: #8fb3e8;
+  --color-blue-400: #6b9be0;
+  --color-blue-500: #4e7fcb;
+  --color-blue-600: #3d69b4;
+  --color-blue-700: #315394;
+
+  /* Brass replacing amber (active states, warnings, expert tags). */
+  --color-amber-300: #e0c274;
+  --color-amber-400: #d4b055;
+  --color-amber-500: #c9a24b;
+  --color-amber-600: #a9853a;
+
+  /* Highlight ring (find results) — brass-leaning yellow. */
+  --color-yellow-300: #f0d478;
+  --color-yellow-400: #e8c35a;
+
+  /* Oasis green (success, Patch ROM). */
+  --color-green-400: #63c08b;
+  --color-green-500: #3e9b6e;
+  --color-green-600: #348157;
+
+  /* Terracotta red (danger). */
+  --color-red-300: #e29a8e;
+  --color-red-400: #d97a6c;
+  --color-red-500: #c7594c;
+  --color-red-600: #a94539;
+}
 
 :root {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0f172a;
+  color: #e9e4d2;
+  background-color: #0c0d1c;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -22,4 +88,29 @@ body {
 #root {
   width: 100%;
   height: 100vh;
+}
+
+/* Keyboard focus — brass, visible on every surface. */
+:focus-visible {
+  outline: 2px solid #c9a24b;
+  outline-offset: 1px;
+}
+
+/* Scrollbars tuned to the night surfaces (WebKit + Firefox). */
+* {
+  scrollbar-color: #292d52 #131529;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #131529;
+}
+::-webkit-scrollbar-thumb {
+  background: #292d52;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3e63;
 }

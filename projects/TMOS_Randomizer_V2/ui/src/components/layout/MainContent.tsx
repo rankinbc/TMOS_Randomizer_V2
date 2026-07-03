@@ -57,7 +57,7 @@ export function MainContent() {
                 onClick={() => setSelectedTab(tab.id)}
                 className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${
                   selectedTab === tab.id
-                    ? 'text-blue-400 border-blue-400 bg-slate-700/50'
+                    ? 'text-amber-400 border-amber-500 bg-slate-700/40'
                     : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-700/30'
                 }`}
               >
@@ -92,7 +92,7 @@ export function MainContent() {
         {!romLoaded ? (
           <div className="flex items-center justify-center h-full p-8">
             <div className="max-w-md w-full">
-              <h2 className="text-xl font-semibold text-slate-200 mb-4 text-center">
+              <h2 className="font-display text-2xl font-semibold tracking-wide text-slate-100 mb-4 text-center">
                 Welcome to TMOS Editor
               </h2>
               <p className="text-slate-400 text-center mb-6">

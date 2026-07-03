@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRandomizerStore } from '../../store';
 import { formatSeed } from '../../utils/formatters';
+import { StarMark } from '../shared/StarMark';
 
 export function Header() {
   const plan = useRandomizerStore(s => s.plan);
@@ -65,12 +66,13 @@ export function Header() {
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-4 py-3">
       <div className="flex items-center justify-between">
-        {/* Logo and Title */}
+        {/* Wordmark */}
         <div className="flex items-center gap-3">
-          <div className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-            TMOS Editor
+          <StarMark size={20} className="text-amber-500" />
+          <div className="font-display text-xl font-semibold tracking-wide text-slate-100">
+            TMOS <span className="text-amber-500">Editor</span>
           </div>
-          <span className="text-xs text-slate-500 bg-slate-700 px-2 py-0.5 rounded">
+          <span className="text-xs font-mono text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded">
             v2.0.0
           </span>
         </div>
@@ -165,12 +167,12 @@ export function Header() {
             </button>
           )}
 
-          {/* Randomize Button */}
+          {/* Randomize Button — the product's primary action gets the brass. */}
           <button
             onClick={() => setModalOpen('randomize')}
-            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded transition-colors flex items-center gap-2"
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-medium text-sm rounded transition-colors flex items-center gap-2"
           >
-            <span>&#9881;</span>
+            <StarMark size={13} className="text-slate-950" />
             Randomize
           </button>
 
