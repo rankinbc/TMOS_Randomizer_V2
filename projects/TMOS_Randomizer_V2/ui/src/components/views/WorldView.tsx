@@ -5,6 +5,9 @@ import { ScreenGrid } from '../screen/ScreenGrid';
 import { ScreenDetailPanel } from '../screen/ScreenDetailPanel';
 import { ScreenEditorModal } from '../screen/ScreenEditorModal';
 import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
+import { WarpTableModal } from '../screen/WarpTableModal';
+import { ValidationPanel } from '../screen/ValidationPanel';
+import { BulkEditBar } from '../screen/BulkEditBar';
 import type { ScreenLinkActions } from '../screen/screenLinks';
 
 /**
@@ -31,10 +34,19 @@ export function WorldView() {
   const copyScreen = useRandomizerStore(s => s.copyScreen);
   const pasteScreen = useRandomizerStore(s => s.pasteScreen);
   const revertScreenToVanilla = useRandomizerStore(s => s.revertScreenToVanilla);
+  const undoEdit = useRandomizerStore(s => s.undoEdit);
+  const redoEdit = useRandomizerStore(s => s.redoEdit);
+  const undoDepth = useRandomizerStore(s => s.undoStack.length);
+  const redoDepth = useRandomizerStore(s => s.redoStack.length);
+  const multiSelected = useRandomizerStore(s => s.multiSelected);
+  const toggleMultiSelect = useRandomizerStore(s => s.toggleMultiSelect);
+  const clearMultiSelect = useRandomizerStore(s => s.clearMultiSelect);
 
   const [editor, setEditor] = useState<{ index: number; half: 'top' | 'bottom' } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [warpTableOpen, setWarpTableOpen] = useState(false);
+  const [validationOpen, setValidationOpen] = useState(false);
 
   const screens = useMemo(() => chapterData?.screens ?? [], [chapterData]);
   const byIndex = useMemo(() => new Map(screens.map((s) => [s.index, s])), [screens]);
@@ -102,6 +114,24 @@ export function WorldView() {
       if (editor || menu) return;
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      // Undo/redo work regardless of selection.
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        undoEdit().catch(() => {});
+        return;
+      }
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === 'y' || (e.shiftKey && (e.key === 'Z' || e.key === 'z')))
+      ) {
+        e.preventDefault();
+        redoEdit().catch(() => {});
+        return;
+      }
+      if (e.key === 'Escape' && multiSelected.size > 0) {
+        clearMultiSelect();
+        return;
+      }
       if (selectedScreen == null || !byIndex.has(selectedScreen)) return;
       const screen = byIndex.get(selectedScreen)!;
 
@@ -136,7 +166,7 @@ export function WorldView() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editor, menu, selectedScreen, byIndex, setSelectedScreen, openEditor, copyScreen, pasteScreen]);
+  }, [editor, menu, selectedScreen, byIndex, setSelectedScreen, openEditor, copyScreen, pasteScreen, undoEdit, redoEdit, multiSelected, clearMultiSelect]);
 
   if (!chapterData) {
     return (
@@ -180,6 +210,8 @@ export function WorldView() {
             onScreenContextMenu={onScreenContextMenu}
             tileSize={48}
             highlightSet={highlightSet}
+            multiSelected={multiSelected}
+            onScreenMultiToggle={toggleMultiSelect}
           />
         ) : (
           <ScreenGrid
@@ -189,8 +221,48 @@ export function WorldView() {
             onScreenContextMenu={onScreenContextMenu}
             gridWidth={16}
             highlightSet={highlightSet}
+            multiSelected={multiSelected}
+            onScreenMultiToggle={toggleMultiSelect}
           />
         )}
+      </div>
+
+      {/* Undo/redo */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
+        <button
+          onClick={() => undoEdit().catch(() => {})}
+          disabled={undoDepth === 0}
+          title={`Undo (Ctrl+Z) — ${undoDepth} step${undoDepth === 1 ? '' : 's'} available`}
+          className="px-2.5 py-1.5 text-xs bg-slate-800/90 border border-slate-600 rounded text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          ↩ Undo{undoDepth > 0 ? ` (${undoDepth})` : ''}
+        </button>
+        <button
+          onClick={() => redoEdit().catch(() => {})}
+          disabled={redoDepth === 0}
+          title="Redo (Ctrl+Y / Ctrl+Shift+Z)"
+          className="px-2.5 py-1.5 text-xs bg-slate-800/90 border border-slate-600 rounded text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          ↪ Redo{redoDepth > 0 ? ` (${redoDepth})` : ''}
+        </button>
+        <button
+          onClick={() => setWarpTableOpen(true)}
+          title="Edit the $98C0 warp/time-door destination table"
+          className="px-2.5 py-1.5 text-xs bg-slate-800/90 border border-slate-600 rounded text-slate-200 hover:bg-slate-700"
+        >
+          Warp table
+        </button>
+        <button
+          onClick={() => setValidationOpen((v) => !v)}
+          title="Run all validators against the current edited state; findings jump to their screen"
+          className={`px-2.5 py-1.5 text-xs border rounded hover:bg-slate-700 ${
+            validationOpen
+              ? 'bg-slate-700 border-amber-500 text-amber-300'
+              : 'bg-slate-800/90 border-slate-600 text-slate-200'
+          }`}
+        >
+          Validate
+        </button>
       </div>
 
       {/* Find/highlight box */}
@@ -227,6 +299,18 @@ export function WorldView() {
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       )}
+
+      {warpTableOpen && <WarpTableModal onClose={() => setWarpTableOpen(false)} />}
+
+      {validationOpen && (
+        <ValidationPanel
+          chapterNum={chapterData.chapter_num}
+          onJump={setSelectedScreen}
+          onClose={() => setValidationOpen(false)}
+        />
+      )}
+
+      <BulkEditBar />
 
       {editor && editorScreen && (
         <ScreenEditorModal

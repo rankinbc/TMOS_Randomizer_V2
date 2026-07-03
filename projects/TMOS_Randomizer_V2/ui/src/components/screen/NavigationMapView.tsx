@@ -67,6 +67,9 @@ interface NavigationMapViewProps {
   tileSize?: number;
   /** Screens to highlight (find results); non-matches are dimmed. Null = off. */
   highlightSet?: Set<number> | null;
+  /** Multi-selection (Ctrl+click) for bulk edits. */
+  multiSelected?: Set<number>;
+  onScreenMultiToggle?: (index: number) => void;
 }
 
 interface Position {
@@ -353,6 +356,8 @@ export function NavigationMapView({
   onScreenContextMenu,
   tileSize = 64,
   highlightSet = null,
+  multiSelected,
+  onScreenMultiToggle,
 }: NavigationMapViewProps) {
   // Store actions and data
   const updateScreenNavigation = useRandomizerStore(s => s.updateScreenNavigation);
@@ -1488,6 +1493,7 @@ export function NavigationMapView({
               const isBeingDragged = dragState.screenIndex === screen.index;
               const isHighlighted = highlightSet?.has(screen.index) ?? false;
               const isDimmed = highlightSet != null && !isHighlighted;
+              const isMultiSelected = multiSelected?.has(screen.index) ?? false;
 
               // Per-screen overlay data
               const collisions = showCollisions
@@ -1505,7 +1511,16 @@ export function NavigationMapView({
                   key={screen.index}
                   className={`absolute cursor-grab active:cursor-grabbing select-none transition-opacity ${
                     isBeingDragged ? 'opacity-50' : isDimmed ? 'opacity-25' : ''
-                  } ${isHighlighted ? 'ring-2 ring-yellow-400 z-30' : ''}`}
+                  } ${isHighlighted ? 'ring-2 ring-yellow-400 z-30' : ''} ${
+                    isMultiSelected ? 'ring-2 ring-blue-400 z-30' : ''
+                  }`}
+                  onClickCapture={(e) => {
+                    if ((e.ctrlKey || e.metaKey) && onScreenMultiToggle) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onScreenMultiToggle(screen.index);
+                    }
+                  }}
                   style={{
                     left: (pos.x + 1) * tileWidth,
                     top: (pos.y + 1) * tileHeight,

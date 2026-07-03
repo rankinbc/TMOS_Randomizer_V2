@@ -24,6 +24,7 @@ import {
   type ChapterGroups,
   type EncounterGroupPatch,
   type EnemyStatPatch,
+  type ScreenData,
   type ScreenFieldsUpdate,
   type ScreenVanilla,
   type ShopEconomyResponse,
@@ -54,6 +55,79 @@ export interface EditLogEntry {
 }
 export type ModalType = 'settings' | 'load' | 'export' | 'randomize' | null;
 export type ViewMode = 'grid' | 'navigation';
+
+// ---------------------------------------------------------------------------
+// Undo/redo journal for screen edits.
+// Each entry is one user-level edit (possibly touching several screens) with
+// the ops needed to restore the BEFORE state (undo) and AFTER state (redo).
+// Ops replay through the raw API, then the current chapter is reloaded.
+// ---------------------------------------------------------------------------
+
+type JournalOp =
+  | { kind: 'fields'; chapter: number; screen: number; fields: ScreenFieldsUpdate }
+  | { kind: 'tiles'; chapter: number; screen: number; top_tiles: number; bottom_tiles: number }
+  | { kind: 'nav'; chapter: number; screen: number; nav: { right: number; left: number; down: number; up: number } };
+
+export interface EditJournalEntry {
+  label: string;
+  undo: JournalOp[];
+  redo: JournalOp[];
+}
+
+const JOURNAL_CAP = 100;
+// Suppress journaling while replaying ops (module-level; not UI state).
+let journalSuppressed = false;
+// When set, wrapped actions append here instead of pushing entries —
+// lets composite ops (paste, revert, bulk edit) undo as one step.
+let journalGroup: EditJournalEntry | null = null;
+
+function pushJournal(
+  set: (fn: (s: RandomizerState) => Partial<RandomizerState>) => void,
+  entry: EditJournalEntry
+): void {
+  if (journalSuppressed) return;
+  if (journalGroup) {
+    // Group undo ops PREPEND (must restore in reverse order of application).
+    journalGroup.undo.unshift(...entry.undo);
+    journalGroup.redo.push(...entry.redo);
+    return;
+  }
+  set((s) => ({
+    undoStack: [...s.undoStack.slice(-(JOURNAL_CAP - 1)), entry],
+    redoStack: [],
+  }));
+}
+
+async function applyJournalOp(op: JournalOp): Promise<void> {
+  if (op.kind === 'fields') {
+    await api.updateScreenFields(op.chapter, op.screen, op.fields);
+  } else if (op.kind === 'tiles') {
+    await api.updateScreenTiles(op.chapter, op.screen, {
+      top_tiles: op.top_tiles,
+      bottom_tiles: op.bottom_tiles,
+    });
+  } else {
+    // Nav bytes: 0xFF = disconnect (-1 on the wire); 0xFE (building
+    // entrance) can't be recreated via this endpoint — skip those.
+    const wire = (v: number) => (v === 0xff ? -1 : v === 0xfe ? undefined : v);
+    await api.updateScreenNavigation(op.chapter, op.screen, {
+      nav_right: wire(op.nav.right),
+      nav_left: wire(op.nav.left),
+      nav_down: wire(op.nav.down),
+      nav_up: wire(op.nav.up),
+      bidirectional: false,
+    });
+  }
+}
+
+function navSnapshot(screen: ScreenData) {
+  return {
+    right: screen.nav_right,
+    left: screen.nav_left,
+    down: screen.nav_down,
+    up: screen.nav_up,
+  };
+}
 
 // Generic cross-view focus: a link sets this to switch tab AND land on a
 // section/item. Destination views consume it once on mount/update.
@@ -251,6 +325,19 @@ interface RandomizerState {
     fields: ScreenFieldsUpdate
   ) => Promise<void>;
 
+  // Undo/redo journal for screen edits (fields, tiles, nav). Entries hold
+  // inverse ops replayed through the raw API; capped at 100.
+  undoStack: EditJournalEntry[];
+  redoStack: EditJournalEntry[];
+  undoEdit: () => Promise<void>;
+  redoEdit: () => Promise<void>;
+
+  // Multi-select (Ctrl+click) for bulk field edits; cleared on chapter switch.
+  multiSelected: Set<number>;
+  toggleMultiSelect: (screenIndex: number) => void;
+  clearMultiSelect: () => void;
+  bulkUpdateFields: (fields: ScreenFieldsUpdate) => Promise<void>;
+
   // Screen clipboard (copy/paste editable bytes between screens; survives
   // chapter switches — pasting cross-chapter is allowed and useful)
   screenClipboard: {
@@ -403,6 +490,9 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   planProgress: null,
   lastNavigability: null,
   lastSeedSummary: null,
+  undoStack: [],
+  redoStack: [],
+  multiSelected: new Set<number>(),
   sectionMap: null,
   selectedChapter: 1,
   selectedTab: 'world',
@@ -503,7 +593,12 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   setPlanLoading: (loading) => set({ planLoading: loading }),
 
   setSelectedChapter: (chapter) =>
-    set({ selectedChapter: chapter, selectedSection: null, selectedScreen: null }),
+    set({
+      selectedChapter: chapter,
+      selectedSection: null,
+      selectedScreen: null,
+      multiSelected: new Set<number>(),
+    }),
 
   setSelectedTab: (tab) => set({ selectedTab: tab }),
 
@@ -813,10 +908,17 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     if (!state.chapterData) {
       throw new Error('No chapter data loaded');
     }
+    const chapter = state.selectedChapter;
+    // Snapshot every screen's nav bytes: bidirectional edits also touch the
+    // new target and the displaced old neighbour, and we only learn which
+    // from the response.
+    const before = new Map(
+      state.chapterData.screens.map((s) => [s.index, navSnapshot(s)])
+    );
 
     try {
       const response = await api.updateScreenNavigation(
-        state.selectedChapter,
+        chapter,
         screenIndex,
         update
       );
@@ -833,6 +935,22 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
           screens: updatedScreens,
         },
       });
+
+      const changed = response.screens.filter((s) => {
+        const b = before.get(s.index);
+        return b && JSON.stringify(b) !== JSON.stringify(navSnapshot(s));
+      });
+      if (changed.length) {
+        pushJournal(set, {
+          label: `nav edit #${screenIndex}`,
+          undo: changed.map((s) => ({
+            kind: 'nav' as const, chapter, screen: s.index, nav: before.get(s.index)!,
+          })),
+          redo: changed.map((s) => ({
+            kind: 'nav' as const, chapter, screen: s.index, nav: navSnapshot(s),
+          })),
+        });
+      }
     } catch (error) {
       set({
         apiError: error instanceof Error ? error.message : 'Failed to update navigation',
@@ -846,9 +964,11 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     if (!state.chapterData) {
       throw new Error('No chapter data loaded');
     }
+    const chapter = state.selectedChapter;
+    const prev = state.chapterData.screens.find((s) => s.index === screenIndex);
     try {
       const response = await api.updateScreenTiles(
-        state.selectedChapter,
+        chapter,
         screenIndex,
         update
       );
@@ -858,6 +978,24 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       set({
         chapterData: { ...state.chapterData, screens: updatedScreens },
       });
+      if (
+        prev &&
+        (prev.top_tiles !== response.screen.top_tiles ||
+          prev.bottom_tiles !== response.screen.bottom_tiles)
+      ) {
+        pushJournal(set, {
+          label: `tiles #${screenIndex}`,
+          undo: [{
+            kind: 'tiles', chapter, screen: screenIndex,
+            top_tiles: prev.top_tiles, bottom_tiles: prev.bottom_tiles,
+          }],
+          redo: [{
+            kind: 'tiles', chapter, screen: screenIndex,
+            top_tiles: response.screen.top_tiles,
+            bottom_tiles: response.screen.bottom_tiles,
+          }],
+        });
+      }
       return {
         datapointer_changed: response.datapointer_changed,
         chr_changed: response.chr_changed,
@@ -875,9 +1013,11 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     if (!state.chapterData) {
       throw new Error('No chapter data loaded');
     }
+    const chapter = state.selectedChapter;
+    const prev = state.chapterData.screens.find((s) => s.index === screenIndex);
     try {
       const response = await api.updateScreenFields(
-        state.selectedChapter,
+        chapter,
         screenIndex,
         fields
       );
@@ -887,12 +1027,96 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       set({
         chapterData: { ...state.chapterData, screens: updatedScreens },
       });
+      if (prev) {
+        const keys = Object.keys(fields) as (keyof ScreenFieldsUpdate)[];
+        const changed = keys.filter(
+          (k) => fields[k] !== undefined && prev[k] !== fields[k]
+        );
+        if (changed.length) {
+          const pick = (src: ScreenData | typeof fields) =>
+            Object.fromEntries(changed.map((k) => [k, src[k]])) as ScreenFieldsUpdate;
+          pushJournal(set, {
+            label: `fields #${screenIndex}`,
+            undo: [{ kind: 'fields', chapter, screen: screenIndex, fields: pick(prev) }],
+            redo: [{ kind: 'fields', chapter, screen: screenIndex, fields: pick(fields) }],
+          });
+        }
+      }
     } catch (error) {
       set({
         apiError: error instanceof Error ? error.message : 'Failed to update fields',
       });
       throw error;
     }
+  },
+
+  toggleMultiSelect: (screenIndex) => {
+    set((s) => {
+      const next = new Set(s.multiSelected);
+      if (next.has(screenIndex)) next.delete(screenIndex);
+      else next.add(screenIndex);
+      return { multiSelected: next };
+    });
+  },
+
+  clearMultiSelect: () => set({ multiSelected: new Set<number>() }),
+
+  bulkUpdateFields: async (fields) => {
+    const state = get();
+    const targets = [...state.multiSelected].sort((a, b) => a - b);
+    if (!targets.length) return;
+    journalGroup = {
+      label: `bulk edit ${targets.length} screens`,
+      undo: [],
+      redo: [],
+    };
+    try {
+      for (const idx of targets) {
+        await state.updateScreenFields(idx, fields);
+      }
+    } finally {
+      const group = journalGroup;
+      journalGroup = null;
+      if (group && group.redo.length) pushJournal(set, group);
+    }
+  },
+
+  undoEdit: async () => {
+    const state = get();
+    const entry = state.undoStack[state.undoStack.length - 1];
+    if (!entry) return;
+    journalSuppressed = true;
+    try {
+      for (const op of entry.undo) {
+        await applyJournalOp(op);
+      }
+    } finally {
+      journalSuppressed = false;
+    }
+    set({
+      undoStack: state.undoStack.slice(0, -1),
+      redoStack: [...state.redoStack, entry],
+    });
+    await get().loadChapterData(get().selectedChapter);
+  },
+
+  redoEdit: async () => {
+    const state = get();
+    const entry = state.redoStack[state.redoStack.length - 1];
+    if (!entry) return;
+    journalSuppressed = true;
+    try {
+      for (const op of entry.redo) {
+        await applyJournalOp(op);
+      }
+    } finally {
+      journalSuppressed = false;
+    }
+    set({
+      undoStack: [...state.undoStack, entry],
+      redoStack: state.redoStack.slice(0, -1),
+    });
+    await get().loadChapterData(get().selectedChapter);
   },
 
   screenClipboard: null,
@@ -927,11 +1151,18 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     const state = get();
     const clip = state.screenClipboard;
     if (!clip) return;
-    await state.updateScreenFields(screenIndex, clip.fields);
-    await state.updateScreenTiles(screenIndex, {
-      top_tiles: clip.top_tiles,
-      bottom_tiles: clip.bottom_tiles,
-    });
+    journalGroup = { label: `paste #${screenIndex}`, undo: [], redo: [] };
+    try {
+      await state.updateScreenFields(screenIndex, clip.fields);
+      await state.updateScreenTiles(screenIndex, {
+        top_tiles: clip.top_tiles,
+        bottom_tiles: clip.bottom_tiles,
+      });
+    } finally {
+      const group = journalGroup;
+      journalGroup = null;
+      if (group && group.redo.length) pushJournal(set, group);
+    }
   },
 
   revertScreenToVanilla: async (screenIndex) => {
@@ -939,6 +1170,8 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
     if (!state.chapterData) return;
     const chapterNum = state.chapterData.chapter_num;
     const v = await api.getScreenVanilla(chapterNum, screenIndex);
+    journalGroup = { label: `revert #${screenIndex}`, undo: [], redo: [] };
+    try {
     await state.updateScreenFields(screenIndex, {
       objectset: v.objectset,
       content: v.content,
@@ -972,6 +1205,11 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       nav_up: navValue(v.nav_up, current?.nav_up),
       bidirectional: false,
     });
+    } finally {
+      const group = journalGroup;
+      journalGroup = null;
+      if (group && group.redo.length) pushJournal(set, group);
+    }
   },
 
   // Tile Bank actions

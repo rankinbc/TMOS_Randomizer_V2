@@ -181,3 +181,8 @@ class WeaponDamageUpdate(BaseModel):
 class MpEntryUpdate(BaseModel):
     """Set the Max-MP byte for one level (1-25)."""
     value: int
+
+
+class WarpSlotUpdate(BaseModel):
+    """Set one $98C0 warp/time-door destination byte (chapter-relative)."""
+    dest: int

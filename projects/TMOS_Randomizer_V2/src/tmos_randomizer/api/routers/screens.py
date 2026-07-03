@@ -10,9 +10,14 @@ from fastapi import APIRouter, HTTPException
 
 from .. import state
 from ..deps import _require_rom, _require_rom_data, _screen_api_dict, _flush_screens
-from ..schemas import NavigationUpdate, ScreenFieldsUpdate, TileSectionUpdate
+from ..schemas import NavigationUpdate, ScreenFieldsUpdate, TileSectionUpdate, WarpSlotUpdate
 from ...io.rom_reader import load_rom
-from ...core.constants import get_chr_index
+from ...core.constants import (
+    WARP_DEST_GROUPS,
+    WARP_DEST_SLOTS_PER_GROUP,
+    WARP_DEST_TABLE,
+    get_chr_index,
+)
 from ...core.enums import is_past_screen_index
 from ...logic.navigation import connect_screens, disconnect_screens
 
@@ -460,3 +465,74 @@ async def get_screen_tile_grid(chapter_num: int, screen_index: int):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to build tile grid: {str(e)}")
+
+
+# =============================================================================
+# Warp / time-door destination table ($98C0, file 0x198D0)
+# =============================================================================
+
+@router.get("/api/rom/warp-table")
+async def get_warp_table():
+    """The $98C0 warp/time-door destination table: 5 chapter groups x 8 door
+    sub-indices -> chapter-relative destination screen index. This is THE
+    only present<->past pairing mechanism (pure data); the progression
+    validator checks these destinations stay in range."""
+    _require_rom()
+    rom = _require_rom_data()
+
+    groups = []
+    for chapter_num in range(1, WARP_DEST_GROUPS + 1):
+        off = WARP_DEST_TABLE + (chapter_num - 1) * WARP_DEST_SLOTS_PER_GROUP
+        chapter = state._game_world.chapters.get(chapter_num)
+        screen_count = chapter.screen_count if chapter else 0
+        dests = list(rom[off:off + WARP_DEST_SLOTS_PER_GROUP])
+        groups.append({
+            "chapter": chapter_num,
+            "rom_offset": f"0x{off:05X}",
+            "screen_count": screen_count,
+            "destinations": [
+                {
+                    "slot": slot,
+                    "dest": dest,
+                    "in_range": dest < screen_count,
+                }
+                for slot, dest in enumerate(dests)
+            ],
+        })
+    return {"rom_offset": f"0x{WARP_DEST_TABLE:05X}", "groups": groups}
+
+
+@router.patch("/api/rom/warp-table/{chapter_num}/{slot}")
+async def update_warp_slot(chapter_num: int, slot: int, update: WarpSlotUpdate):
+    """Set one $98C0 destination byte. Destination must be a valid
+    chapter-relative screen index (0x00 is legal — vanilla uses it for
+    unused slots)."""
+    _require_rom()
+    rom = _require_rom_data()
+
+    if not 1 <= chapter_num <= WARP_DEST_GROUPS:
+        raise HTTPException(status_code=400, detail="chapter must be 1-5")
+    if not 0 <= slot < WARP_DEST_SLOTS_PER_GROUP:
+        raise HTTPException(status_code=400, detail=f"slot must be 0-{WARP_DEST_SLOTS_PER_GROUP - 1}")
+
+    chapter = state._game_world.chapters.get(chapter_num)
+    screen_count = chapter.screen_count if chapter else 0
+    if not 0 <= update.dest < max(screen_count, 1):
+        raise HTTPException(
+            status_code=400,
+            detail=f"dest must be a chapter-relative screen index 0-{screen_count - 1}",
+        )
+
+    off = WARP_DEST_TABLE + (chapter_num - 1) * WARP_DEST_SLOTS_PER_GROUP + slot
+    buf = bytearray(rom)
+    old = buf[off]
+    buf[off] = update.dest
+    state._rom_data = bytes(buf)
+    return {
+        "status": "updated",
+        "chapter": chapter_num,
+        "slot": slot,
+        "old_dest": old,
+        "dest": update.dest,
+        "rom_offset": f"0x{off:05X}",
+    }

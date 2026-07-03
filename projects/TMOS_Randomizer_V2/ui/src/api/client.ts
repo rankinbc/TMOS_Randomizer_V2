@@ -191,6 +191,16 @@ export interface NavigationUpdateRequest {
   parent_world?: number;  // Update parent_world for cross-section moves
 }
 
+export interface WarpTableResponse {
+  rom_offset: string;
+  groups: {
+    chapter: number;
+    rom_offset: string;
+    screen_count: number;
+    destinations: { slot: number; dest: number; in_range: boolean }[];
+  }[];
+}
+
 export interface NavigationUpdateResponse {
   status: string;
   modified_count: number;
@@ -775,7 +785,9 @@ class ApiClient {
   }
 
   async validateRom(): Promise<ValidateResponse> {
-    return this.fetch<ValidateResponse>('/api/debug/validate');
+    // Runs every validator over all 5 chapters — can exceed the default
+    // 60s budget on slow machines.
+    return this.fetch<ValidateResponse>('/api/debug/validate', {}, LONG_TIMEOUT_MS);
   }
 
   async applyPlanPreview(): Promise<ApplyPreviewResult> {
@@ -989,6 +1001,21 @@ class ApiClient {
         body: JSON.stringify(update),
       }
     );
+  }
+
+  async getWarpTable(): Promise<WarpTableResponse> {
+    return this.fetch<WarpTableResponse>('/api/rom/warp-table');
+  }
+
+  async updateWarpSlot(
+    chapterNum: number,
+    slot: number,
+    dest: number
+  ): Promise<{ status: string; old_dest: number; dest: number }> {
+    return this.fetch(`/api/rom/warp-table/${chapterNum}/${slot}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ dest }),
+    });
   }
 
   // Tile section operations. top_tiles/bottom_tiles are GLOBAL section indices (0-470).

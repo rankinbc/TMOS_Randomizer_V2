@@ -9,6 +9,9 @@ interface ScreenGridProps {
   gridWidth?: number;
   /** Screens to highlight (find results); non-matches are dimmed. Null = off. */
   highlightSet?: Set<number> | null;
+  /** Multi-selection (Ctrl+click) for bulk edits. */
+  multiSelected?: Set<number>;
+  onScreenMultiToggle?: (index: number) => void;
 }
 
 // Parent world colors
@@ -25,7 +28,7 @@ function getScreenColor(parentWorld: number): string {
   return PARENT_WORLD_COLORS[parentWorld] || '#64748b';
 }
 
-export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenContextMenu, gridWidth = 16, highlightSet = null }: ScreenGridProps) {
+export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenContextMenu, gridWidth = 16, highlightSet = null, multiSelected, onScreenMultiToggle }: ScreenGridProps) {
   // Organize screens into a grid based on navigation
   const gridData = useMemo(() => {
     // For now, just display in order - navigation-based layout would be more complex
@@ -66,11 +69,19 @@ export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenCo
                   ${selectedScreen === screen?.index ? 'ring-2 ring-yellow-400 z-20' : ''}
                   ${screen && highlightSet?.has(screen.index) ? 'ring-2 ring-yellow-400 z-10' : ''}
                   ${screen && highlightSet != null && !highlightSet.has(screen.index) ? 'opacity-25' : ''}
+                  ${screen && multiSelected?.has(screen.index) ? 'ring-2 ring-blue-400 z-10' : ''}
                 `}
                 style={{
                   backgroundColor: screen ? getScreenColor(screen.parent_world) : undefined,
                 }}
-                onClick={() => screen && onScreenSelect(screen.index)}
+                onClick={(e) => {
+                  if (!screen) return;
+                  if ((e.ctrlKey || e.metaKey) && onScreenMultiToggle) {
+                    onScreenMultiToggle(screen.index);
+                  } else {
+                    onScreenSelect(screen.index);
+                  }
+                }}
                 onContextMenu={(e) => {
                   if (screen && onScreenContextMenu) {
                     e.preventDefault();
