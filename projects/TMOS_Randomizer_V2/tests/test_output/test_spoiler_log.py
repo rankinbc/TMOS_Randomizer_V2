@@ -334,17 +334,73 @@ class TestSpoilerLogBuilder:
             builder.add_chapter_shops(ChapterShopData(chapter_num=1, inventories=[]))
         assert "items-economy-re-answers.md" in str(excinfo.value)
 
-    def test_shop_section_emits_not_supported_notice(self):
-        """The spoiler text must carry the fixed 'not yet supported' notice,
-        not fabricated shop inventory data."""
+    def test_shop_section_notice_when_no_shop_data(self):
+        """Without shop post-pass data, the section says so instead of
+        fabricating inventory."""
         builder = SpoilerLogBuilder(seed=12345)
         builder.set_rom_hash("abc")
         log = builder.build()
         text = generate_text_spoiler(log)
         assert "SHOP INVENTORIES" in text
-        assert "Shop randomization is not yet supported" in text
+        assert "Shop randomization was not applied to this seed" in text
         # Must NOT contain the old fabricated output like "Sword Level 2 ... 500 gold"
         assert " gold" not in text.split("SHOP INVENTORIES")[1].split("MAP LAYOUT")[0]
+
+    def test_shop_section_renders_shop_plan_spoiler(self):
+        """apply_shop_spoiler folds ShopRandomizationPlan.to_spoiler() output
+        into the log and the text section renders it."""
+        from tmos_randomizer.output.spoiler_log import apply_shop_spoiler
+
+        builder = SpoilerLogBuilder(seed=12345)
+        log = builder.build()
+        apply_shop_spoiler(log, {
+            "seed": 12345,
+            "shops": [
+                {
+                    "shop_index": 0,
+                    "slots": [
+                        {"item_label": "BREAD", "item_code": "0x33", "price": 20},
+                        {"item_label": "KEY", "item_code": "0x18", "price": 80},
+                    ],
+                },
+                {
+                    "shop_index": 7,
+                    "slots": [
+                        {"item_label": "CARPET", "item_code": "0x52", "price": 50},
+                    ],
+                },
+            ],
+            "magic_base_prices": [20, 30, 40],
+        })
+        assert len(log.shops) == 2
+        assert log.magic_base_prices == [20, 30, 40]
+
+        text = generate_text_spoiler(log)
+        section = text.split("SHOP INVENTORIES")[1].split("MAP LAYOUT")[0]
+        assert "Shop 0" in section
+        assert "Shop 7" in section
+        assert "KEY" in section
+        assert "0x18" in section
+        assert "Magic shop base prices" in section
+        assert "not applied" not in section
+
+    def test_shop_spoiler_json_round_trip(self):
+        """Shops and magic base prices survive to_dict/from_dict."""
+        from tmos_randomizer.output.spoiler_log import apply_shop_spoiler
+
+        log = SpoilerLogBuilder(seed=99).build()
+        apply_shop_spoiler(log, {
+            "shops": [{
+                "shop_index": 3,
+                "slots": [{"item_label": "HORN", "item_code": "0x53", "price": 100}],
+            }],
+            "magic_base_prices": [20, 30, 40, 20, 40, 30, 20, 40, 30, 40, 50],
+        })
+        restored = SpoilerLog.from_dict(log.to_dict())
+        assert len(restored.shops) == 1
+        assert restored.shops[0].location_desc == "Shop 3"
+        assert restored.shops[0].items[0]["name"] == "HORN"
+        assert restored.magic_base_prices == log.magic_base_prices
 
     def test_add_chapter_map(self):
         """Test adding chapter map info."""

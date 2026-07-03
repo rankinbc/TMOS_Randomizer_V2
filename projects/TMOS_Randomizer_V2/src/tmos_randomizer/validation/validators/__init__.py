@@ -21,6 +21,7 @@ from .edge_compatibility import EdgeCompatibilityValidator
 from .interior_exterior_segregation import InteriorExteriorSegregationValidator
 from .navigation_consistency import NavigationConsistencyValidator
 from .objectset import DataPointerObjectSetValidator
+from .parent_world_consistency import ParentWorldConsistencyValidator
 from .section_flow import SectionFlowValidator
 from .spatial_consistency import SpatialConsistencyValidator
 from .time_period_isolation import TimePeriodIsolationValidator
@@ -32,6 +33,7 @@ __all__ = [
     "EdgeCompatibilityValidator",
     "InteriorExteriorSegregationValidator",
     "NavigationConsistencyValidator",
+    "ParentWorldConsistencyValidator",
     "ScreenTraversabilityValidator",
     "SectionFlowValidator",
     "SpatialConsistencyValidator",

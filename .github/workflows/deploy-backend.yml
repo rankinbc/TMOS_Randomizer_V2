@@ -1,12 +1,8 @@
 name: Deploy Backend to Azure App Service
 
+# Manual-only: deploys are triggered from the Actions tab (or `gh workflow run`),
+# never automatically on push.
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'projects/TMOS_Randomizer_V2/src/**'
-      - 'projects/TMOS_Randomizer_V2/config/**'
-      - 'projects/TMOS_Randomizer_V2/pyproject.toml'
   workflow_dispatch:
 
 permissions:
@@ -22,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: azure/login@v2
         with:

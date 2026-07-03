@@ -1,10 +1,8 @@
 name: Deploy Frontend to Azure Static Web Apps
 
+# Manual-only: deploys are triggered from the Actions tab (or `gh workflow run`),
+# never automatically on push.
 on:
-  push:
-    branches: [master]
-    paths:
-      - 'projects/TMOS_Randomizer_V2/ui/**'
   workflow_dispatch:
 
 jobs:
@@ -12,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install and Build
         working-directory: projects/TMOS_Randomizer_V2/ui

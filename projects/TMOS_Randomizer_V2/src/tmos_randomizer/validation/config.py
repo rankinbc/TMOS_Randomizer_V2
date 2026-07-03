@@ -168,6 +168,32 @@ class TimePeriodIsolationConfig:
 
 
 @dataclass
+class ParentWorldConsistencyConfig:
+    """Configuration for ParentWorld consistency validation.
+
+    ParentWorld (WorldScreen byte 0) is cosmetic + time-period only
+    (RE round-2), but two cheap consistency rules are worth flagging:
+    the past-flag (hi4 >= $E) must agree with the screen's index-based
+    time period, and the RING-teleport lo4 should not drift from the
+    vanilla byte at the same slot.
+
+    Attributes:
+        enabled: Whether to run this validator
+        severity: Default severity for issues (error, warning, info)
+        max_issues: Maximum issues to report (0=unlimited)
+        check_past_flag: Verify hi4 past-flag matches slot time period
+        check_ring_lo4: Verify lo4 matches vanilla ROM at the same slot
+    """
+
+    enabled: bool = True
+    severity: str = "warning"
+    max_issues: int = 100
+
+    check_past_flag: bool = True
+    check_ring_lo4: bool = True
+
+
+@dataclass
 class EdgeAlignmentConfig:
     """Configuration for edge-alignment validation.
 
@@ -274,6 +300,9 @@ class ValidationConfig:
     edge_alignment: EdgeAlignmentConfig = field(
         default_factory=EdgeAlignmentConfig
     )
+    parent_world_consistency: ParentWorldConsistencyConfig = field(
+        default_factory=ParentWorldConsistencyConfig
+    )
 
     # Validator enable/disable overrides
     enabled_validators: Optional[Set[str]] = None  # None = all enabled
@@ -309,6 +338,7 @@ class ValidationConfig:
             "section_flow": self.section_flow,
             "time_period_isolation": self.time_period_isolation,
             "edge_alignment": self.edge_alignment,
+            "parent_world_consistency": self.parent_world_consistency,
         }
 
         if validator_id in config_map:
@@ -339,6 +369,7 @@ class ValidationConfig:
             "section_flow": self.section_flow,
             "time_period_isolation": self.time_period_isolation,
             "edge_alignment": self.edge_alignment,
+            "parent_world_consistency": self.parent_world_consistency,
         }
 
         if validator_id in config_map:
@@ -366,6 +397,7 @@ class ValidationConfig:
             "section_flow": self.section_flow,
             "time_period_isolation": self.time_period_isolation,
             "edge_alignment": self.edge_alignment,
+            "parent_world_consistency": self.parent_world_consistency,
         }
 
         if validator_id not in config_map:
@@ -433,6 +465,10 @@ class ValidationConfig:
             )
         if "edge_alignment" in data:
             config.edge_alignment = EdgeAlignmentConfig(**data["edge_alignment"])
+        if "parent_world_consistency" in data:
+            config.parent_world_consistency = ParentWorldConsistencyConfig(
+                **data["parent_world_consistency"]
+            )
 
         return config
 
@@ -458,4 +494,5 @@ class ValidationConfig:
             "section_flow": vars(self.section_flow),
             "time_period_isolation": vars(self.time_period_isolation),
             "edge_alignment": vars(self.edge_alignment),
+            "parent_world_consistency": vars(self.parent_world_consistency),
         }

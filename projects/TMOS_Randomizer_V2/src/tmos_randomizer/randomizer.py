@@ -138,6 +138,36 @@ class Randomizer:
             "bytes_written": written,
             "spoiler": shop_plan.to_spoiler(),
         }
+        self._refresh_spoiler_files(result, shop_plan)
+
+    def _refresh_spoiler_files(self, result: RandomizationResult, shop_plan) -> None:
+        """Fold the shop plan into the spoiler log the strategy already wrote,
+        and rewrite the spoiler files in place (same paths)."""
+        if result.spoiler_log is None:
+            return
+        from .output.spoiler_log import apply_shop_spoiler, write_spoiler_log
+
+        apply_shop_spoiler(result.spoiler_log, shop_plan.to_spoiler())
+        result.spoiler_log.rom_sha256 = result.rom_sha256
+        target = result.spoiler_text_path or result.spoiler_json_path
+        if target is None:
+            return
+        write_spoiler_log(
+            result.spoiler_log,
+            Path(target).parent,
+            text_filename=(
+                Path(result.spoiler_text_path).name
+                if result.spoiler_text_path
+                else "spoiler.txt"
+            ),
+            json_filename=(
+                Path(result.spoiler_json_path).name
+                if result.spoiler_json_path
+                else "spoiler.json"
+            ),
+            write_text=result.spoiler_text_path is not None,
+            write_json=result.spoiler_json_path is not None,
+        )
 
     # ------------------------------------------------------------------
     # Internals

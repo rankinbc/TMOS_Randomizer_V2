@@ -222,6 +222,7 @@ class SpoilerLog:
     all_items: List[ItemLocation] = field(default_factory=list)
     allies: List[AllyLocation] = field(default_factory=list)
     shops: List[ShopInventory] = field(default_factory=list)
+    magic_base_prices: List[int] = field(default_factory=list)
     map_layout: List[ChapterMapInfo] = field(default_factory=list)
     spheres: List[Sphere] = field(default_factory=list)
     playthrough: List[PlaythroughStep] = field(default_factory=list)
@@ -242,6 +243,7 @@ class SpoilerLog:
             "all_items": [i.to_dict() for i in self.all_items],
             "allies": [a.to_dict() for a in self.allies],
             "shops": [s.to_dict() for s in self.shops],
+            "magic_base_prices": self.magic_base_prices,
             "map": {f"chapter_{m.chapter_num}": m.to_dict() for m in self.map_layout},
             "spheres": [s.to_dict() for s in self.spheres],
             "playthrough": [p.to_dict() for p in self.playthrough],
@@ -302,6 +304,7 @@ class SpoilerLog:
                 location_desc=shop_data["location"],
                 items=shop_data.get("items", []),
             ))
+        log.magic_base_prices = list(data.get("magic_base_prices", []))
 
         # Load map layout
         for key, map_data in data.get("map", {}).items():
@@ -415,8 +418,8 @@ def generate_text_spoiler(log: SpoilerLog, include_sections: Optional[Dict[str, 
     if include_sections.get("allies", True) and log.allies:
         lines.extend(_generate_allies_section(log))
 
-    # Shops — always emit (Phase 0: the section renders a fixed "not yet
-    # supported" notice, intentionally visible even when log.shops is empty).
+    # Shops — always emit; renders randomized Bank 1 shop tables, or a
+    # "not applied" notice when the post-pass didn't run for this seed.
     if include_sections.get("shops", True):
         lines.extend(_generate_shops_section(log))
 
@@ -551,24 +554,37 @@ def _generate_allies_section(log: SpoilerLog) -> List[str]:
 
 
 def _generate_shops_section(log: SpoilerLog) -> List[str]:
-    """Generate shops section.
+    """Generate shops section from the randomized Bank 1 shop tables.
 
-    Currently emits a fixed "not supported" notice. Real shop data lives in
-    an undecoded Bank 2 bytecode interpreter; randomizing it would corrupt
-    the inventory cap table at 0xD544. See TMOS_AI/docs/human/items-economy-re-answers.md.
+    Prices shown are the raw slot price bytes; shops 4-7 apply extra price
+    post-processing in-game, and magic shops ignore slot prices entirely
+    (price = base table x (chapter+1)). See knowledge/systems/shops-and-economy.md.
     """
-    return [
+    lines = [
         SEPARATOR,
         _center("SHOP INVENTORIES"),
         SEPARATOR,
         "",
-        "  Shop randomization is not yet supported.",
-        "  Real shop data lives in an undecoded Bank 2 bytecode interpreter.",
-        "  See TMOS_AI/docs/human/items-economy-re-answers.md.",
-        "",
-        SEPARATOR,
-        "",
     ]
+
+    if not log.shops:
+        lines.append("  Shop randomization was not applied to this seed.")
+        lines.append("")
+    else:
+        for shop in log.shops:
+            lines.append(shop.location_desc)
+            for item in shop.items:
+                code = item.get("code", "")
+                lines.append(f"  {item['name']:<22} {code:<6} {item['price']:>3}")
+            lines.append("")
+        if log.magic_base_prices:
+            lines.append("Magic shop base prices (price in-game = base x (chapter+1)):")
+            lines.append("  " + ", ".join(str(p) for p in log.magic_base_prices))
+            lines.append("")
+
+    lines.append(SEPARATOR)
+    lines.append("")
+    return lines
 
 
 def _generate_map_section(log: SpoilerLog) -> List[str]:
@@ -773,6 +789,32 @@ def write_spoiler_log(
         written["json"] = json_path
 
     return written
+
+
+def apply_shop_spoiler(log: SpoilerLog, spoiler: Dict[str, Any]) -> None:
+    """Populate log.shops from ShopRandomizationPlan.to_spoiler() output.
+
+    Used by the strategy-agnostic shop post-pass in Randomizer.apply, which
+    runs after the strategy has already built the spoiler log.
+    """
+    log.shops = [
+        ShopInventory(
+            chapter=0,
+            screen=0,
+            shop_type="bank1",
+            location_desc=f"Shop {entry['shop_index']}",
+            items=[
+                {
+                    "name": slot["item_label"],
+                    "code": slot["item_code"],
+                    "price": slot["price"],
+                }
+                for slot in entry["slots"]
+            ],
+        )
+        for entry in spoiler.get("shops", [])
+    ]
+    log.magic_base_prices = list(spoiler.get("magic_base_prices", []))
 
 
 def load_spoiler_log(json_path: Union[str, Path]) -> SpoilerLog:
