@@ -717,9 +717,9 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       // randomization on small cloud tiers can't hit a gateway/request timeout.
       try {
         set({ planProgress: 'Starting randomization…' });
-        const previewResult = await pollApplyPreview((sec) =>
+        const previewResult = await pollApplyPreview((sec, phase) =>
           set({
-            planProgress: `Randomizing… ${sec}s — this can take a couple of minutes on the server.`,
+            planProgress: `${phase ?? 'Randomizing'}… ${sec}s — this can take a couple of minutes on the server.`,
           })
         );
         set({
@@ -1714,7 +1714,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
 // Reports elapsed seconds via onProgress so the UI can show a live counter
 // instead of a frozen spinner. Throws on job error (surfaced in the modal).
 async function pollApplyPreview(
-  onProgress: (elapsedSeconds: number) => void
+  onProgress: (elapsedSeconds: number, phase: string | null) => void
 ): Promise<ApplyPreviewResult> {
   const { job_id } = await api.applyPlanPreviewAsync();
   const POLL_MS = 2000;
@@ -1731,7 +1731,7 @@ async function pollApplyPreview(
     if (status.status === 'error') {
       throw new Error(status.error || 'Randomization failed on the server.');
     }
-    onProgress(Math.round(status.elapsed_seconds));
+    onProgress(Math.round(status.elapsed_seconds), status.phase ?? null);
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
   throw new Error('Randomization timed out. Try another seed or strategy.');

@@ -223,13 +223,16 @@ def _prune_preview_jobs() -> None:
         state._preview_jobs.pop(jid, None)
 
 
-def _apply_preview_compute() -> Dict[str, Any]:
+def _apply_preview_compute(progress_cb=None) -> Dict[str, Any]:
     """Synchronous core of apply-preview.
 
     Mutates module state (_game_world, _current_plan, _randomizer) and returns
     the result dict. Assumes preconditions (plan created, ROM loaded) were
     already checked by the caller. Raises on internal failure; callers map that
     to an HTTP 500 (sync endpoint) or a job error (async endpoint).
+
+    progress_cb, if given, is called with a human-readable phase name as the
+    pipeline advances (forwarded into strategies that support it).
     """
     if state._randomizer is None:
         state._randomizer = Randomizer(get_default_config())
@@ -259,11 +262,24 @@ def _apply_preview_compute() -> Dict[str, Any]:
         strategy = state._randomizer.strategy
         logger.info(f"Dispatching preview through strategy: {strategy.name}")
 
+        # Forward the phase callback only to strategies that accept it, so
+        # third-party/lab strategies with the old signature keep working.
+        import inspect
+
+        preview_kwargs: Dict[str, Any] = {}
+        if progress_cb is not None:
+            try:
+                if "progress" in inspect.signature(strategy.preview_plan).parameters:
+                    preview_kwargs["progress"] = progress_cb
+            except (TypeError, ValueError):
+                pass
+
         try:
             strategy.preview_plan(
                 plan=state._current_plan,
                 game_world=state._game_world,
                 rom_data=state._rom_data or b"",
+                **preview_kwargs,
             )
         except NotImplementedError:
             # Legacy path for any strategy that hasn't adopted preview_plan.
@@ -472,12 +488,18 @@ async def apply_plan_preview_async():
         "result": None,
         "error": None,
         "started_at": time.time(),
+        "phase": "Starting",
     }
     _prune_preview_jobs()
 
+    def _set_phase(phase: str) -> None:
+        job = state._preview_jobs.get(job_id)
+        if job is not None:
+            job["phase"] = phase
+
     def _run() -> None:
         try:
-            res = _apply_preview_compute()
+            res = _apply_preview_compute(progress_cb=_set_phase)
             job = state._preview_jobs.get(job_id)
             if job is not None:
                 job["status"] = "done"
@@ -505,6 +527,7 @@ async def apply_plan_preview_status(job_id: str):
         "result": job["result"],
         "error": job["error"],
         "elapsed_seconds": round(time.time() - job["started_at"], 1),
+        "phase": job.get("phase"),
     }
 
 

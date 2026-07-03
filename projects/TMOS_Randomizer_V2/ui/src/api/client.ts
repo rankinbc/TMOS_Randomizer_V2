@@ -93,6 +93,8 @@ export interface ApplyPreviewStatus {
   result: ApplyPreviewResult | null;
   error: string | null;
   elapsed_seconds: number;
+  /** Human-readable pipeline phase (e.g. "Placing screens"), when known. */
+  phase?: string | null;
 }
 
 export interface ChapterSummary {

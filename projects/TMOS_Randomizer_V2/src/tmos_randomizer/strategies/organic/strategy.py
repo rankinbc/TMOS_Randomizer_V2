@@ -102,13 +102,18 @@ class OrganicStrategy(RandomizationStrategy):
         plan: RandomizationPlan,
         game_world,
         rom_data: bytes,
+        progress=None,
     ) -> Dict[int, ChapterTemplate]:
         """v4 pipeline: placement → repair → detect → post-fix → optional retry
         → strict-spatial nav-write → forced-warp fallback.
 
         Returns the final templates so ``apply_plan`` can reuse them for
         spoiler generation without re-extracting.
+
+        ``progress``, if given, is called with a short phase name as the
+        pipeline advances (surfaced live in the UI's randomize progress).
         """
+        _phase = progress if callable(progress) else (lambda _msg: None)
         # Abstract flow plan — needed by detect() to know what's "stray".
         abstract_plan = plan_randomization(self.config, seed=plan.seed)
         abstract_shape = shape_world(abstract_plan)
@@ -155,6 +160,8 @@ class OrganicStrategy(RandomizationStrategy):
 
             attempt_seed = plan.seed if attempt == 0 else plan.seed + 1337 * attempt
 
+            attempt_tag = f" (retry {attempt})" if attempt > 0 else ""
+            _phase(f"Placing screens{attempt_tag}")
             templates = extract_world_templates(game_world)
             rng = random.Random(attempt_seed)
             placements: Dict[int, ChapterPlacement] = {}
@@ -171,6 +178,7 @@ class OrganicStrategy(RandomizationStrategy):
             chapters_map = {c.chapter_num: c for c in game_world}
 
             repair_reports: Dict[int, RepairReport] = {}
+            _phase(f"Repairing edges{attempt_tag}")
             if self.config.repair.enabled:
                 repair_reports = run_world_repair(
                     chapters=chapters_map,
@@ -195,6 +203,7 @@ class OrganicStrategy(RandomizationStrategy):
             # blob's screens are moved to the edge of the main blob and given
             # whatever tileset they need to walkably connect. Nothing gets
             # dropped; edges get *made* to match.
+            _phase(f"Merging map blobs{attempt_tag}")
             aggressive_stats = aggressive_blob_merge(
                 chapters=chapters_map,
                 templates=templates,
@@ -258,6 +267,7 @@ class OrganicStrategy(RandomizationStrategy):
         plan.world_plan = _plan_from_templates(plan.seed, templates, placements)
         plan.world_connections = _connections_from_templates(plan.seed, templates)
 
+        _phase("Writing navigation")
         world_nav = write_world_navigation(
             chapters=chapters_map,
             templates=templates,
@@ -269,6 +279,7 @@ class OrganicStrategy(RandomizationStrategy):
         # Final connectivity stitch — closing guarantee on the REAL nav
         # graph: every pristine-reachable screen must be reachable from the
         # chapter's respawn root, or get wired in (with TS-swap alignment).
+        _phase("Stitching connectivity")
         stitch_totals: Dict[str, int] = {}
         for ch_num, chapter in chapters_map.items():
             required = pristine_reachable.get(ch_num, set())
@@ -297,6 +308,7 @@ class OrganicStrategy(RandomizationStrategy):
             )
         self._last_stitch_stats = stitch_totals
 
+        _phase("Validating world")
         # Repair ExitPosition on arrival screens (stairway/warp/respawn/
         # battle-entry): TS-swaps above (and in the stitch) may have put the
         # spawn tile inside a wall. $98C0 warp destinations included.
