@@ -251,6 +251,19 @@ interface RandomizerState {
     fields: ScreenFieldsUpdate
   ) => Promise<void>;
 
+  // Screen clipboard (copy/paste editable bytes between screens; survives
+  // chapter switches — pasting cross-chapter is allowed and useful)
+  screenClipboard: {
+    fields: ScreenFieldsUpdate;
+    top_tiles: number;
+    bottom_tiles: number;
+    sourceChapter: number;
+    sourceIndex: number;
+  } | null;
+  copyScreen: (screenIndex: number) => void;
+  pasteScreen: (screenIndex: number) => Promise<void>;
+  revertScreenToVanilla: (screenIndex: number) => Promise<void>;
+
   // Tile Bank actions
   loadTileBankData: () => Promise<void>;
   setSelectedTileIndex: (index: number | null) => void;
@@ -882,6 +895,85 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
       });
       throw error;
     }
+  },
+
+  screenClipboard: null,
+
+  copyScreen: (screenIndex) => {
+    const state = get();
+    const screen = state.chapterData?.screens.find((s) => s.index === screenIndex);
+    if (!screen || !state.chapterData) return;
+    set({
+      screenClipboard: {
+        fields: {
+          objectset: screen.objectset,
+          content: screen.content,
+          event: screen.event,
+          worldscreen_color: screen.worldscreen_color,
+          sprites_color: screen.sprites_color,
+          parent_world: screen.parent_world,
+          ambient_sound: screen.ambient_sound,
+          datapointer: screen.datapointer,
+          exit_position: screen.exit_position,
+          unknown: screen.unknown,
+        },
+        top_tiles: screen.top_tiles,
+        bottom_tiles: screen.bottom_tiles,
+        sourceChapter: state.chapterData.chapter_num,
+        sourceIndex: screenIndex,
+      },
+    });
+  },
+
+  pasteScreen: async (screenIndex) => {
+    const state = get();
+    const clip = state.screenClipboard;
+    if (!clip) return;
+    await state.updateScreenFields(screenIndex, clip.fields);
+    await state.updateScreenTiles(screenIndex, {
+      top_tiles: clip.top_tiles,
+      bottom_tiles: clip.bottom_tiles,
+    });
+  },
+
+  revertScreenToVanilla: async (screenIndex) => {
+    const state = get();
+    if (!state.chapterData) return;
+    const chapterNum = state.chapterData.chapter_num;
+    const v = await api.getScreenVanilla(chapterNum, screenIndex);
+    await state.updateScreenFields(screenIndex, {
+      objectset: v.objectset,
+      content: v.content,
+      event: v.event,
+      worldscreen_color: v.worldscreen_color,
+      sprites_color: v.sprites_color,
+      parent_world: v.parent_world,
+      ambient_sound: v.ambient_sound,
+      datapointer: v.datapointer,
+      exit_position: v.exit_position,
+      unknown: v.unknown,
+    });
+    await state.updateScreenTiles(screenIndex, {
+      top_tiles: v.top_tiles,
+      bottom_tiles: v.bottom_tiles,
+    });
+    // Restore the 4 nav pointers one-sided (bidirectional=false): we are
+    // reverting THIS screen's bytes, not editing the neighbours. The nav
+    // endpoint only accepts real screen indices or -1 (disconnect =
+    // 0xFF), so vanilla 0xFF/0xFE map to -1 / leave-as-is respectively.
+    const current = state.chapterData.screens.find((s) => s.index === screenIndex);
+    const navValue = (vanillaVal: number, currentVal: number | undefined) => {
+      if (vanillaVal < 0xfe) return vanillaVal;
+      if (currentVal !== undefined && currentVal < 0xfe) return -1;
+      return undefined; // already blocked/building — keep
+    };
+    await state.updateScreenNavigation(screenIndex, {
+      nav_right: navValue(v.nav_right, current?.nav_right),
+      nav_left: navValue(v.nav_left, current?.nav_left),
+      nav_down: navValue(v.nav_down, current?.nav_down),
+      nav_up: navValue(v.nav_up, current?.nav_up),
+      bidirectional: false,
+    });
   },
 
   // Tile Bank actions

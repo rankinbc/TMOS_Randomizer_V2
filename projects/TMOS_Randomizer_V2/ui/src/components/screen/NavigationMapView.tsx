@@ -65,6 +65,8 @@ interface NavigationMapViewProps {
   onScreenSelect: (index: number) => void;
   onScreenContextMenu?: (index: number, x: number, y: number) => void;
   tileSize?: number;
+  /** Screens to highlight (find results); non-matches are dimmed. Null = off. */
+  highlightSet?: Set<number> | null;
 }
 
 interface Position {
@@ -350,6 +352,7 @@ export function NavigationMapView({
   onScreenSelect,
   onScreenContextMenu,
   tileSize = 64,
+  highlightSet = null,
 }: NavigationMapViewProps) {
   // Store actions and data
   const updateScreenNavigation = useRandomizerStore(s => s.updateScreenNavigation);
@@ -1483,6 +1486,8 @@ export function NavigationMapView({
                 screen.nav_right === NAV_BUILDING;
 
               const isBeingDragged = dragState.screenIndex === screen.index;
+              const isHighlighted = highlightSet?.has(screen.index) ?? false;
+              const isDimmed = highlightSet != null && !isHighlighted;
 
               // Per-screen overlay data
               const collisions = showCollisions
@@ -1499,8 +1504,8 @@ export function NavigationMapView({
                 <div
                   key={screen.index}
                   className={`absolute cursor-grab active:cursor-grabbing select-none transition-opacity ${
-                    isBeingDragged ? 'opacity-50' : ''
-                  }`}
+                    isBeingDragged ? 'opacity-50' : isDimmed ? 'opacity-25' : ''
+                  } ${isHighlighted ? 'ring-2 ring-yellow-400 z-30' : ''}`}
                   style={{
                     left: (pos.x + 1) * tileWidth,
                     top: (pos.y + 1) * tileHeight,
@@ -1575,6 +1580,14 @@ export function NavigationMapView({
                     >
                       →0x{screen.content.toString(16).toUpperCase().padStart(2, '0')}
                     </div>
+                  )}
+
+                  {/* Modified badge (orange dot, bottom-right) */}
+                  {screen.modified && (
+                    <div
+                      className="absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full bg-orange-400 ring-1 ring-black/50 pointer-events-none"
+                      title="Screen has been modified (differs from the loaded ROM's original bytes)"
+                    />
                   )}
 
                   {/* Building indicator (existing — only shown when section-exits overlay is OFF, since the dest badge above subsumes it) */}

@@ -7,6 +7,8 @@ interface ScreenGridProps {
   onScreenSelect: (index: number) => void;
   onScreenContextMenu?: (index: number, x: number, y: number) => void;
   gridWidth?: number;
+  /** Screens to highlight (find results); non-matches are dimmed. Null = off. */
+  highlightSet?: Set<number> | null;
 }
 
 // Parent world colors
@@ -23,7 +25,7 @@ function getScreenColor(parentWorld: number): string {
   return PARENT_WORLD_COLORS[parentWorld] || '#64748b';
 }
 
-export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenContextMenu, gridWidth = 16 }: ScreenGridProps) {
+export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenContextMenu, gridWidth = 16, highlightSet = null }: ScreenGridProps) {
   // Organize screens into a grid based on navigation
   const gridData = useMemo(() => {
     // For now, just display in order - navigation-based layout would be more complex
@@ -62,6 +64,8 @@ export function ScreenGrid({ screens, selectedScreen, onScreenSelect, onScreenCo
                   text-xs font-mono cursor-pointer transition-all
                   ${screen ? 'hover:border-white hover:z-10' : 'bg-slate-900'}
                   ${selectedScreen === screen?.index ? 'ring-2 ring-yellow-400 z-20' : ''}
+                  ${screen && highlightSet?.has(screen.index) ? 'ring-2 ring-yellow-400 z-10' : ''}
+                  ${screen && highlightSet != null && !highlightSet.has(screen.index) ? 'opacity-25' : ''}
                 `}
                 style={{
                   backgroundColor: screen ? getScreenColor(screen.parent_world) : undefined,

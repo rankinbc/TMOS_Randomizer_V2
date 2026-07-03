@@ -27,11 +27,49 @@ export function WorldView() {
   const setFocusTarget = useRandomizerStore(s => s.setFocusTarget);
   const navigateToTile = useRandomizerStore(s => s.navigateToTile);
 
+  const screenClipboard = useRandomizerStore(s => s.screenClipboard);
+  const copyScreen = useRandomizerStore(s => s.copyScreen);
+  const pasteScreen = useRandomizerStore(s => s.pasteScreen);
+  const revertScreenToVanilla = useRandomizerStore(s => s.revertScreenToVanilla);
+
   const [editor, setEditor] = useState<{ index: number; half: 'top' | 'bottom' } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const screens = useMemo(() => chapterData?.screens ?? [], [chapterData]);
   const byIndex = useMemo(() => new Map(screens.map((s) => [s.index, s])), [screens]);
+
+  // Find/highlight: `field=value` (content, objectset, palette, chr, event,
+  // parent_world, datapointer; hex 0x.. or decimal), or a bare value that
+  // matches the screen index.
+  const highlightSet = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    const parseNum = (s: string): number | null => {
+      const v = s.startsWith('0x') ? parseInt(s.slice(2), 16) : parseInt(s, 10);
+      return Number.isFinite(v) ? v : null;
+    };
+    const FIELD_MAP: Record<string, (s: (typeof screens)[number]) => number> = {
+      content: (s) => s.content,
+      objectset: (s) => s.objectset,
+      palette: (s) => s.worldscreen_color,
+      chr: (s) => s.chr_index,
+      event: (s) => s.event,
+      parent_world: (s) => s.parent_world,
+      datapointer: (s) => s.datapointer,
+    };
+    const eq = q.indexOf('=');
+    if (eq > 0) {
+      const field = q.slice(0, eq).trim();
+      const value = parseNum(q.slice(eq + 1).trim());
+      const getter = FIELD_MAP[field];
+      if (!getter || value === null) return new Set<number>();
+      return new Set(screens.filter((s) => getter(s) === value).map((s) => s.index));
+    }
+    const value = parseNum(q);
+    if (value === null) return new Set<number>();
+    return new Set(screens.filter((s) => s.index === value).map((s) => s.index));
+  }, [searchQuery, screens]);
   const selectedScreenData = selectedScreen != null ? byIndex.get(selectedScreen) : undefined;
   const editorScreen = editor ? byIndex.get(editor.index) : undefined;
 
@@ -56,6 +94,50 @@ export function WorldView() {
     setMenu({ x, y, index });
   }, [setSelectedScreen]);
 
+  // Keyboard editing flow: arrows follow the selected screen's nav pointers,
+  // E opens the editor, Ctrl+C/Ctrl+V copy/paste the selected screen.
+  // Inactive while the editor modal or a form control has focus.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (editor || menu) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (selectedScreen == null || !byIndex.has(selectedScreen)) return;
+      const screen = byIndex.get(selectedScreen)!;
+
+      const ARROW_NAV: Record<string, number> = {
+        ArrowRight: screen.nav_right,
+        ArrowLeft: screen.nav_left,
+        ArrowDown: screen.nav_down,
+        ArrowUp: screen.nav_up,
+      };
+      if (e.key in ARROW_NAV) {
+        const targetIdx = ARROW_NAV[e.key];
+        if (targetIdx < 0xfe && byIndex.has(targetIdx)) {
+          e.preventDefault();
+          setSelectedScreen(targetIdx);
+        }
+        return;
+      }
+      if (e.key === 'e' || e.key === 'E' || e.key === 'Enter') {
+        e.preventDefault();
+        openEditor(selectedScreen);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault();
+        copyScreen(selectedScreen);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        pasteScreen(selectedScreen).catch(() => {});
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editor, menu, selectedScreen, byIndex, setSelectedScreen, openEditor, copyScreen, pasteScreen]);
+
   if (!chapterData) {
     return (
       <div className="flex items-center justify-center h-full text-slate-500">
@@ -65,7 +147,26 @@ export function WorldView() {
   }
 
   const menuItems: ContextMenuItem[] = menu
-    ? [{ label: `Edit screen #${menu.index}`, onClick: () => openEditor(menu.index) }]
+    ? [
+        { label: `Edit screen #${menu.index}`, onClick: () => openEditor(menu.index) },
+        { label: 'Copy screen', onClick: () => copyScreen(menu.index) },
+        {
+          label: screenClipboard
+            ? `Paste screen (from ch${screenClipboard.sourceChapter} #${screenClipboard.sourceIndex})`
+            : 'Paste screen',
+          disabled: !screenClipboard,
+          onClick: () => {
+            pasteScreen(menu.index).catch(() => {});
+          },
+        },
+        {
+          label: 'Revert to vanilla',
+          danger: true,
+          onClick: () => {
+            revertScreenToVanilla(menu.index).catch(() => {});
+          },
+        },
+      ]
     : [];
 
   return (
@@ -78,6 +179,7 @@ export function WorldView() {
             onScreenSelect={setSelectedScreen}
             onScreenContextMenu={onScreenContextMenu}
             tileSize={48}
+            highlightSet={highlightSet}
           />
         ) : (
           <ScreenGrid
@@ -86,7 +188,25 @@ export function WorldView() {
             onScreenSelect={setSelectedScreen}
             onScreenContextMenu={onScreenContextMenu}
             gridWidth={16}
+            highlightSet={highlightSet}
           />
+        )}
+      </div>
+
+      {/* Find/highlight box */}
+      <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Find: content=0x60, palette=0x29, chr=3, or a screen index"
+          title="Highlight matching screens. Syntax: field=value with fields content, objectset, palette, chr, event, parent_world, datapointer (hex 0x.. or decimal), or a bare screen index."
+          className="w-80 px-2.5 py-1.5 text-xs bg-slate-800/90 border border-slate-600 rounded text-slate-200 placeholder-slate-500 focus:outline-none focus:border-yellow-500"
+        />
+        {highlightSet && (
+          <span className="text-xs text-yellow-300 bg-slate-800/90 border border-slate-600 rounded px-2 py-1.5">
+            {highlightSet.size} match{highlightSet.size === 1 ? '' : 'es'}
+          </span>
         )}
       </div>
 
