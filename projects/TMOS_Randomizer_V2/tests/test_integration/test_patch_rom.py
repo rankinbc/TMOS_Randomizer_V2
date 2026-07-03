@@ -9,6 +9,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from tmos_randomizer.api import server
+from tmos_randomizer.api import state
 from tmos_randomizer.core.constants import CHAPTER_BASES, WORLDSCREEN_SIZE
 
 
@@ -29,20 +30,20 @@ def test_navigation_edit_flushes_into_rom_data(client):
     )
     assert resp.status_code == 200
 
-    screen = server._game_world.chapters[1].get_screen(0)
+    screen = state._game_world.chapters[1].get_screen(0)
     assert screen.parent_world == 7
 
     off = CHAPTER_BASES[1] + 0 * WORLDSCREEN_SIZE
-    assert server._rom_data[off:off + WORLDSCREEN_SIZE] == screen.to_bytes()
+    assert state._rom_data[off:off + WORLDSCREEN_SIZE] == screen.to_bytes()
 
 
 def test_patch_streams_edited_rom(client):
     """Patch returns a full-length ROM reflecting both screen and table edits."""
-    vanilla = bytes(server._rom_vanilla)
+    vanilla = bytes(state._rom_vanilla)
 
     # A screen edit (chapter 1, screen 1).
     client.patch("/api/rom/screen/1/1/navigation", json={"parent_world": 9})
-    screen = server._game_world.chapters[1].get_screen(1)
+    screen = state._game_world.chapters[1].get_screen(1)
 
     # A table edit: tile 0 minitiles -> [1, 2, 3, 4] (4 bytes at TILE_TABLE_ADDR).
     client.patch("/api/rom/tilebank/0", json={"minitiles": [1, 2, 3, 4]})
@@ -102,7 +103,7 @@ def test_patch_filename_strips_header_injection(client):
 
 def test_patch_after_randomization(client):
     """Applying a randomization plan then patching reflects the applied screens."""
-    vanilla = bytes(server._rom_vanilla)
+    vanilla = bytes(state._rom_vanilla)
 
     plan_resp = client.post("/api/plan", json={"seed": 12345, "config": {}})
     if plan_resp.status_code != 200:
@@ -120,12 +121,12 @@ def test_patch_after_randomization(client):
 
 def test_patch_requires_rom():
     """With no ROM loaded, patch returns 400."""
-    saved = (server._rom_data, server._game_world, server._rom_vanilla)
-    server._rom_data = None
-    server._game_world = None
-    server._rom_vanilla = None
+    saved = (state._rom_data, state._game_world, state._rom_vanilla)
+    state._rom_data = None
+    state._game_world = None
+    state._rom_vanilla = None
     try:
         c = TestClient(server.app)
         assert c.post("/api/rom/patch").status_code == 400
     finally:
-        server._rom_data, server._game_world, server._rom_vanilla = saved
+        state._rom_data, state._game_world, state._rom_vanilla = saved

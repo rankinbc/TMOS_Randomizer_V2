@@ -17,7 +17,7 @@ def test_vanilla_endpoint_returns_original_after_edit():
 
 
 def test_vanilla_requires_rom(monkeypatch):
-    import tmos_randomizer.api.server as srv
-    monkeypatch.setattr(srv, "_rom_vanilla", None)
+    from tmos_randomizer.api import state
+    monkeypatch.setattr(state, "_rom_vanilla", None)
     r = client.get("/api/rom/screen/1/0/vanilla")
     assert r.status_code == 400
