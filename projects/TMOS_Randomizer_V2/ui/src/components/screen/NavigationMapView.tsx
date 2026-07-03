@@ -12,7 +12,15 @@ const LS_OVERLAY_COLLISIONS = 'navmap.overlay.collisions';
 const LS_OVERLAY_CONTENT = 'navmap.overlay.content';
 const LS_OVERLAY_EXITS = 'navmap.overlay.exits';
 const LS_OVERLAY_TILES = 'navmap.overlay.tiles';
+const LS_OVERLAY_BIOMES = 'navmap.overlay.biomes';
 const LS_OVERLAY_TILE_OPACITY = 'navmap.overlay.tileOpacity';
+
+// Distinct, stable hue per palette byte (golden-angle spacing) for the
+// biome-colors overlay: identical palettes get identical hues, different
+// palettes land far apart on the wheel.
+function biomeHue(paletteByte: number): number {
+  return Math.round((paletteByte * 137.508) % 360);
+}
 
 function readBoolFlag(key: string, fallback: boolean): boolean {
   try {
@@ -388,6 +396,9 @@ export function NavigationMapView({
   const [showTiles, setShowTiles] = useState<boolean>(() =>
     readBoolFlag(LS_OVERLAY_TILES, true)
   );
+  const [showBiomes, setShowBiomes] = useState<boolean>(() =>
+    readBoolFlag(LS_OVERLAY_BIOMES, false)
+  );
   const [tileOpacity, setTileOpacity] = useState<number>(() => {
     try {
       const v = parseFloat(localStorage.getItem(LS_OVERLAY_TILE_OPACITY) ?? '');
@@ -401,6 +412,7 @@ export function NavigationMapView({
   useEffect(() => writeBoolFlag(LS_OVERLAY_CONTENT, showContent), [showContent]);
   useEffect(() => writeBoolFlag(LS_OVERLAY_EXITS, showSectionExits), [showSectionExits]);
   useEffect(() => writeBoolFlag(LS_OVERLAY_TILES, showTiles), [showTiles]);
+  useEffect(() => writeBoolFlag(LS_OVERLAY_BIOMES, showBiomes), [showBiomes]);
   useEffect(() => {
     try {
       localStorage.setItem(LS_OVERLAY_TILE_OPACITY, String(tileOpacity));
@@ -1043,6 +1055,13 @@ export function NavigationMapView({
             onChange={setShowTiles}
             title="Show the rendered tile graphics on each screen. Uncheck to see only the worldscreen color + index, useful when overlays are crowded."
           />
+          <OverlayToggle
+            label="Biome colors"
+            color="bg-purple-500"
+            checked={showBiomes}
+            onChange={setShowBiomes}
+            title="Tint each screen by its palette byte (worldscreen_color) — same-color regions are one biome. PAST screens get a dashed purple border. Good seeds show contiguous color blobs, not confetti."
+          />
           <label
             className="flex items-center gap-1.5 text-xs text-slate-300"
             title="Opacity of the rendered tile graphics (0.05 - 1.0)"
@@ -1506,6 +1525,19 @@ export function NavigationMapView({
                     onClick={() => onScreenSelect(screen.index)}
                     tileOpacity={effectiveTileOpacity}
                   />
+
+                  {/* Biome tint (palette byte -> hue; dashed border = PAST) */}
+                  {showBiomes && (
+                    <div
+                      className={`absolute inset-0 pointer-events-none ${
+                        screen.is_past ? 'border-2 border-dashed border-purple-300' : ''
+                      }`}
+                      style={{
+                        backgroundColor: `hsla(${biomeHue(screen.worldscreen_color)}, 75%, 55%, 0.4)`,
+                      }}
+                      title={`Palette 0x${screen.worldscreen_color.toString(16).toUpperCase().padStart(2, '0')}${screen.is_past ? ' (PAST)' : ''}`}
+                    />
+                  )}
 
                   {/* Collision edges (red lines on impassable edges) */}
                   {collisions && (

@@ -9,3 +9,5 @@ export { AlliesView } from './AlliesView';
 export { ValidationView } from './ValidationView';
 export { WorldView } from './WorldView';
 export { GraphicsView } from './GraphicsView';
+export { RandomizeView } from './RandomizeView';
+export { SeedSummaryView } from './SeedSummaryView';

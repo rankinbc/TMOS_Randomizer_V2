@@ -104,6 +104,10 @@ interface RandomizerState {
   // Navigability of the last applied plan (warp-aware, vs stock baseline)
   lastNavigability: { ok: boolean; fragmentedChapters: number[] } | null;
 
+  // Full result of the last applied plan (seed summary panel): shop and
+  // enemy spoilers, screen count, per-chapter navigability detail.
+  lastSeedSummary: ApplyPreviewResult | null;
+
   // Section Map (from backend after apply-preview)
   sectionMap: SectionMapData | null;
 
@@ -386,6 +390,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
   planLoading: false,
   planProgress: null,
   lastNavigability: null,
+  lastSeedSummary: null,
   sectionMap: null,
   selectedChapter: 1,
   selectedTab: 'world',
@@ -692,7 +697,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
         },
       };
 
-      set({ plan: transformedPlan, lastNavigability: null });
+      set({ plan: transformedPlan, lastNavigability: null, lastSeedSummary: null });
 
       // Apply the plan to in-memory ROM data so views show randomized world.
       // Runs as a server-side background job we poll, so a slow (minutes-long)
@@ -709,6 +714,7 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
             ok: previewResult.navigability_ok ?? true,
             fragmentedChapters: previewResult.navigability?.fragmented_chapters ?? [],
           },
+          lastSeedSummary: previewResult,
         });
 
         // Re-fetch the plan: strategies like "organic" populate the

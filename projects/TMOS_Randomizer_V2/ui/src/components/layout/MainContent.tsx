@@ -1,7 +1,8 @@
 import { useRandomizerStore } from '../../store';
 import type { TabType, ViewMode } from '../../store';
 import { RomUpload } from '../RomUpload';
-import { ItemsTabView, HeroView, EnemiesView, AlliesView, MapView, WorldView, GraphicsView } from '../views';
+import { ItemsTabView, HeroView, EnemiesView, AlliesView, WorldView, GraphicsView } from '../views';
+import { RandomizeView } from '../views/RandomizeView';
 import { DebugView } from '../debug/DebugView';
 
 const TABS: { id: TabType; label: string }[] = [
@@ -115,21 +116,8 @@ export function MainContent() {
           <div className="flex h-full">
             {/* Main View Area */}
             <div className="flex-1 overflow-hidden">
-              {/* Randomize: plan flow graph + validation report */}
-              {selectedTab === 'randomize' && planChapter && planChapter.sections.length > 0 && (
-                <MapView chapter={planChapter} />
-              )}
-              {selectedTab === 'randomize' && (!planChapter || planChapter.sections.length === 0) && (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center p-8">
-                    <div className="text-4xl mb-4 opacity-50">{'\u{1F50D}'}</div>
-                    <h3 className="text-lg font-medium text-slate-300 mb-2">No Plan Generated</h3>
-                    <p className="text-sm text-slate-500 max-w-sm">
-                      Click the Randomize button to generate a randomization plan.
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* Randomize: plan flow graph + applied-seed summary sub-tabs */}
+              {selectedTab === 'randomize' && <RandomizeView chapter={planChapter} />}
 
               {selectedTab === 'items' && planChapter && <ItemsTabView chapter={planChapter} />}
               {selectedTab === 'hero' && <HeroView />}

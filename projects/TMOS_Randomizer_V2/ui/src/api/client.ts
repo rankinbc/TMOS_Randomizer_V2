@@ -41,10 +41,37 @@ export interface PlanResponse {
   plan: Record<string, unknown>;
 }
 
+export interface ShopSpoilerSlot {
+  item_label: string;
+  item_code: string;
+  price: number;
+}
+
+export interface ShopSpoiler {
+  seed: number;
+  shops: { shop_index: number; slots: ShopSpoilerSlot[] }[];
+  magic_base_prices: number[];
+}
+
+export interface EnemySpoilerLineup {
+  chapter: number;
+  lineup_index: number;
+  slots: { enemy_id: string; name: string }[];
+}
+
+export interface EnemySpoiler {
+  seed: number;
+  lineups: EnemySpoilerLineup[];
+  group_reassignments: Record<string, number>;
+  rate_changes: Record<string, number>;
+}
+
 export interface ApplyPreviewResult {
   status: string;
   seed: number;
   screens_modified: number;
+  shops?: ShopSpoiler | null;
+  enemies?: EnemySpoiler | null;
   navigability_ok: boolean;
   navigability?: {
     ok: boolean;
