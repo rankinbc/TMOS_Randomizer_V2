@@ -149,9 +149,23 @@ class OrganicStrategy(RandomizationStrategy):
             c.chapter_num: len(nav_component(c, 0)) for c in game_world
         }
 
+        # Pristine grid-clustering proxy per chapter — the pre-nav stand-in
+        # for the oracle's same-biome nav-edge ratio. Attempts are compared
+        # against this so retries can rescue clustering, not just criticals.
+        pristine_grid_cluster = _grid_clustering(
+            {c.chapter_num: c for c in game_world},
+            extract_world_templates(game_world),
+            placements=None,
+        )
+
         max_retries = self.config.repair.max_retries
         best_state: Optional[Tuple[Dict[int, ChapterTemplate], Dict[int, ChapterPlacement], Dict[int, RepairReport], Dict[int, FailureReport], int]] = None
-        best_score: float = float("inf")
+        # Lexicographic attempt objective:
+        #   (criticals, trunk-unreached screens, summed clustering deficit).
+        # Criticals always dominate; the rest only break ties among equally
+        # broken attempts, so connectivity can never trade away for biome
+        # coherence.
+        best_score: Tuple[float, float, float] = (float("inf"),) * 3
 
         for attempt in range(max_retries + 1):
             if attempt > 0:
@@ -239,9 +253,24 @@ class OrganicStrategy(RandomizationStrategy):
                 len(r.unreachable_screens) + len(r.disconnected_sections)
                 for r in post_reports.values()
             )
+            # Secondary objectives — cheap grid-level proxies (nav isn't
+            # written yet at this point in the attempt loop):
+            #  - trunk_unreached: screens the trunk-grow pass couldn't
+            #    walkably align (each one is future stitch load, and
+            #    unaligned stitches are exactly the oracle-visible warts);
+            #  - clustering deficit vs the pristine grid ratio (biome
+            #    coherence channel).
+            trunk_unreached = aggressive_stats.get("trunk_unreached", 0)
+            grid_cluster = _grid_clustering(chapters_map, templates, placements)
+            deficits = {
+                ch: max(0.0, pristine_grid_cluster.get(ch, 0.0) - ratio)
+                for ch, ratio in grid_cluster.items()
+            }
+            worst_deficit = max(deficits.values(), default=0.0)
+            attempt_score = (critical, trunk_unreached, round(sum(deficits.values()), 4))
 
-            if best_state is None or critical < best_score:
-                best_score = critical
+            if best_state is None or attempt_score < best_score:
+                best_score = attempt_score
                 best_state = (templates, placements, repair_reports, post_reports, attempt)
                 # Snapshot the WORLD as this attempt left it. Repair,
                 # consolidation and blob-merge mutate WorldScreen tilesets
@@ -250,7 +279,11 @@ class OrganicStrategy(RandomizationStrategy):
                 # every repaired edge (walls everywhere).
                 best_world_snapshot = _snapshot_worldscreens(game_world)
 
-            if critical == 0:
+            # Accept immediately only when the attempt is clean on BOTH
+            # channels; a critical-free attempt with fragmented biomes now
+            # spends the remaining retry budget looking for a better draw
+            # (best-so-far is kept either way).
+            if critical == 0 and worst_deficit <= 0.05:
                 break
 
         assert best_state is not None
@@ -556,6 +589,48 @@ class OrganicStrategy(RandomizationStrategy):
             "shapes preserved from the original ROM, content shuffled."
         )
         return builder.build()
+
+
+def _grid_clustering(
+    chapters: Dict[int, "Chapter"],
+    templates: Dict[int, ChapterTemplate],
+    placements: Optional[Dict[int, ChapterPlacement]],
+) -> Dict[int, float]:
+    """Same-biome ratio over grid-adjacent placed pairs, per chapter.
+
+    Pre-nav proxy for validation.coherence.same_biome_adjacency_ratio: the
+    nav writer turns exactly these grid adjacencies into nav edges (stitch
+    adds a handful more). ``placements=None`` scores the pristine layout
+    (every original screen at its own template cell).
+    """
+    from ...validation.coherence import biome_key
+
+    scores: Dict[int, float] = {}
+    for ch_num, template in templates.items():
+        chapter = chapters.get(ch_num)
+        if chapter is None:
+            continue
+        same = 0
+        total = 0
+        for sec in template.sections:
+            if placements is not None:
+                placed = placements[ch_num].section_positions(sec.section_id)
+            else:
+                placed = {pos: idx for idx, pos in sec.positions.items()}
+            for (x, y), idx_a in placed.items():
+                for npos in ((x + 1, y), (x, y + 1)):
+                    idx_b = placed.get(npos)
+                    if idx_b is None:
+                        continue
+                    scr_a = chapter.get_screen(idx_a)
+                    scr_b = chapter.get_screen(idx_b)
+                    if scr_a is None or scr_b is None:
+                        continue
+                    total += 1
+                    if biome_key(scr_a) == biome_key(scr_b):
+                        same += 1
+        scores[ch_num] = 1.0 if total == 0 else same / total
+    return scores
 
 
 _SNAPSHOT_FIELDS = (

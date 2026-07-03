@@ -86,7 +86,7 @@ def plan_placement(
     # section it originally belonged to. This guarantees screen 0 lives at
     # the most-connected cell of its section, so the player boots into a
     # screen with the maximum opportunity for walkably-aligned neighbours.
-    _anchor_chapter_entry(template, result, assigned)
+    _anchor_chapter_entry(template, result, assigned, chapter)
 
     # Pass 2 — fill remaining positions per section with pool candidates.
     for section in template.sections:
@@ -108,6 +108,7 @@ def _anchor_chapter_entry(
     template: ChapterTemplate,
     result: ChapterPlacement,
     assigned: Set[int],
+    chapter: Optional[Chapter] = None,
 ) -> None:
     """Anchor the chapter's REAL start/respawn screen (bank 4 $8136 table —
     what the engine loads at every level start), plus screen 0 for legacy
@@ -117,7 +118,7 @@ def _anchor_chapter_entry(
     the seed position itself)."""
     respawn = CHAPTER_RESPAWN_SCREENS[template.chapter_num - 1]
     for entry_screen in (respawn, 0):
-        _anchor_screen(template, result, assigned, entry_screen)
+        _anchor_screen(template, result, assigned, entry_screen, chapter)
 
 
 def _anchor_screen(
@@ -125,6 +126,7 @@ def _anchor_screen(
     result: ChapterPlacement,
     assigned: Set[int],
     screen_idx: int,
+    chapter: Optional[Chapter] = None,
 ) -> None:
     if screen_idx in assigned:
         return
@@ -141,9 +143,21 @@ def _anchor_screen(
         return
     section_id = target_section.section_id
 
-    # Pick any unoccupied cell of this section. Prefer the lexicographically
-    # smallest (usually the top-left / BFS-seed neighbourhood).
-    for cand_pos in sorted(positions_set):
+    # Prefer the screen's OWN original cell, then any cell whose pristine
+    # occupant shared its palette (keeps the palette-zoned fill intact),
+    # then any free cell (lexicographically smallest for determinism).
+    own_pos = target_section.positions.get(screen_idx)
+    preferred: List[Tuple[int, int]] = []
+    if own_pos is not None:
+        preferred.append(own_pos)
+    if chapter is not None:
+        scr = chapter.get_screen(screen_idx)
+        if scr is not None:
+            for orig_idx, pos in sorted(target_section.positions.items()):
+                other = chapter.get_screen(orig_idx)
+                if other is not None and other.worldscreen_color == scr.worldscreen_color:
+                    preferred.append(pos)
+    for cand_pos in preferred + sorted(positions_set):
         key = (section_id, cand_pos)
         if key not in result.placements:
             result.placements[key] = screen_idx
@@ -172,6 +186,27 @@ def _place_section(
         section=section,
         assigned=assigned,
     )
+
+    # Palette zoning — each grid position's pristine occupant defines the
+    # palette the shuffle should put back there. Filling palette-X cells
+    # from palette-X candidates reproduces the vanilla biome geometry by
+    # construction (the oracle's clustering channel keys on
+    # (section_type, worldscreen_color); pool membership already fixes
+    # section_type). The content shuffle is a permutation of the same
+    # screen multiset, so a palette-respecting assignment always exists;
+    # when a class runs dry (fixed/excluded screens skew counts) we fall
+    # back to the whole pool rather than leave holes.
+    pos_palette: Dict[Tuple[int, int], int] = {}
+    for orig_idx, orig_pos in section.positions.items():
+        scr = chapter.get_screen(orig_idx)
+        if scr is not None:
+            pos_palette[orig_pos] = scr.worldscreen_color
+    pool_by_palette: Dict[int, List[int]] = {}
+    for idx in pool:
+        scr = chapter.get_screen(idx)
+        if scr is None:
+            continue
+        pool_by_palette.setdefault(scr.worldscreen_color, []).append(idx)
 
     # Visit positions in a BFS order seeded from the lowest-index fixed pos
     # (if any) — so placement grows outward from anchors, giving the edge
@@ -206,8 +241,14 @@ def _place_section(
         if not pool:
             break  # Nothing left; the truncation above should prevent this.
 
+        # Palette zone first — only widen to the full pool when the zone's
+        # class is exhausted.
+        target_pal = pos_palette.get(pos)
+        class_pool = pool_by_palette.get(target_pal, []) if target_pal is not None else []
+        candidates = class_pool if class_pool else pool
+
         best_idx = _best_candidate(
-            pool=pool,
+            pool=candidates,
             pos=pos,
             section=section,
             result=result,
@@ -219,11 +260,19 @@ def _place_section(
         # Fall back to any pool member rather than skip the cell — the repair
         # loop will swap to a better candidate later.
         if best_idx is None:
-            best_idx = pool[0]
+            best_idx = candidates[0]
 
         result.placements[key] = best_idx
         assigned.add(best_idx)
         pool.remove(best_idx)
+        chosen = chapter.get_screen(best_idx)
+        if chosen is not None:
+            cls = pool_by_palette.get(chosen.worldscreen_color)
+            if cls is not None:
+                try:
+                    cls.remove(best_idx)
+                except ValueError:
+                    pass
 
     # Also drop any grid positions from the template that ended up outside
     # our truncated visit_order — the navigation writer inspects

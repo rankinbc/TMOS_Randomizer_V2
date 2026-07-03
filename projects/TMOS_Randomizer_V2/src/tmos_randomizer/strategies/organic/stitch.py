@@ -260,13 +260,28 @@ def _pick_stitch_pair(
                     return (tgt, r_dir, m)
         m_free = _free_dirs(chapter, m)
         # Directions on the missing screen we may claim: free ones first;
-        # otherwise (island loop) ones currently pointing at another missing
-        # screen — that link is intra-island and expendable.
-        m_sacrifice = [
-            d for d in DIRECTIONS
-            if d not in m_free
-            and getattr(m_scr, f"screen_index_{d}") in missing_set
-        ]
+        # otherwise ones whose current pointer is expendable — either an
+        # intra-island link to another missing screen, or a ONE-WAY outbound
+        # pointer into the reached set (the target doesn't point back, else
+        # this screen would already be reached; a one-way egress from a
+        # screen the player can't stand on protects nothing).
+        m_sacrifice: List[str] = []
+        for d in DIRECTIONS:
+            if d in m_free:
+                continue
+            tgt = getattr(m_scr, f"screen_index_{d}")
+            if tgt in missing_set:
+                m_sacrifice.append(d)
+                continue
+            tgt_scr = (
+                chapter.get_screen(tgt)
+                if 0 <= tgt < chapter.screen_count else None
+            )
+            if (
+                tgt_scr is not None
+                and getattr(tgt_scr, f"screen_index_{OPPOSITE_DIRECTIONS[d]}") != m
+            ):
+                m_sacrifice.append(d)
         if not m_free and not m_sacrifice:
             continue
         m_info = placement_by_idx.get(m)
