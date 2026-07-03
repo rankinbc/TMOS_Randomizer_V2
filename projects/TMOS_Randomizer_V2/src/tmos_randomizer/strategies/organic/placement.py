@@ -339,10 +339,27 @@ def _best_candidate(
         return None
 
     # Sample a subset of the pool for scoring to keep placement O(N) rather
-    # than O(N*pool_size). 32 candidates is plenty to find a well-aligned fit.
+    # than O(N*pool_size). 32 random candidates is plenty to find a
+    # well-aligned fit; up to 16 EXTRA palette-matching candidates are added
+    # on top so the palette tie-breaker in _score_candidate always has
+    # same-biome material to work with. The extras are additive — shrinking
+    # the random sample to make room for them cost alignment diversity and
+    # collapsed Ch5 reachability.
     sample_size = min(32, len(pool))
     if sample_size < len(pool):
         sample = rng.sample(pool, sample_size)
+        neighbor_palettes = _neighbor_palettes(pos, section, result, chapter)
+        if neighbor_palettes:
+            in_sample = set(sample)
+            matching = [
+                idx for idx in pool
+                if idx not in in_sample
+                and (scr := chapter.get_screen(idx)) is not None
+                and scr.worldscreen_color in neighbor_palettes
+            ]
+            take = min(len(matching), 16)
+            if take:
+                sample += rng.sample(matching, take)
     else:
         sample = list(pool)
 
@@ -371,6 +388,26 @@ def _best_candidate(
     return rng.choice(best_candidates)
 
 
+def _neighbor_palettes(
+    pos: Tuple[int, int],
+    section: SectionTemplate,
+    result: ChapterPlacement,
+    chapter: Chapter,
+) -> Set[int]:
+    """Palettes of already-placed grid neighbours of ``pos``."""
+    placed = result.section_positions(section.section_id)
+    palettes: Set[int] = set()
+    x, y = pos
+    for dx, dy in DIRECTION_DELTAS.values():
+        neighbor_idx = placed.get((x + dx, y + dy))
+        if neighbor_idx is None:
+            continue
+        scr = chapter.get_screen(neighbor_idx)
+        if scr is not None:
+            palettes.add(scr.worldscreen_color)
+    return palettes
+
+
 def _score_candidate(
     *,
     candidate: int,
@@ -383,9 +420,17 @@ def _score_candidate(
 ) -> int:
     """Score a candidate screen for a grid position.
 
-    +2 for each neighbour where edges align (both sides walkable at same row/col)
-    -1 for each neighbour where the candidate has zero walkable tiles on that edge
-     0 for neighbours not yet placed
+    +16 for each neighbour where edges align (both sides walkable at same row/col)
+    +1  for each neighbour sharing the candidate's palette (biome clustering —
+        pool membership already fixes section_type, so palette is the only
+        remaining biome_key component; see validation/coherence.py)
+    -8  for each neighbour where the candidate has zero walkable tiles on that edge
+     0  for neighbours not yet placed
+
+    Alignment terms are scaled 8x so the palette bonus (max +4 across four
+    neighbours) is strictly a tie-breaker: it can never flip an alignment
+    decision. An earlier +2/-1/+1 weighting let palette trade against
+    alignment and collapsed Ch5 reachability.
     """
     cand_screen = chapter.get_screen(candidate)
     if cand_screen is None:
@@ -411,12 +456,14 @@ def _score_candidate(
         if direction not in original_exits:
             a_tiles = cand_edges.get_edge(direction)
             if any(is_walkable(t) for t in a_tiles):
-                score -= 1
+                score -= 8
             continue
 
         neighbor_screen = chapter.get_screen(neighbor_idx)
         if neighbor_screen is None:
             continue
+        if neighbor_screen.worldscreen_color == cand_screen.worldscreen_color:
+            score += 1
         neighbor_edges = cached_edges(neighbor_screen, rom_data, edge_cache)
         if neighbor_edges is None:
             continue
@@ -432,9 +479,9 @@ def _score_candidate(
             for i in range(pair_count)
         )
         if aligned:
-            score += 2
+            score += 16
         else:
-            score -= 1
+            score -= 8
 
     return score
 

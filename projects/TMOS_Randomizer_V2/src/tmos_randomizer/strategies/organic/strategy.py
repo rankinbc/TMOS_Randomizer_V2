@@ -54,13 +54,18 @@ from .detect import (
     detect_world_failures,
 )
 from .exitpos import repair_exit_positions
-from .stitch import stitch_chapter_connectivity
+from .stitch import (
+    grow_screen0_component,
+    nav_component,
+    stitch_chapter_connectivity,
+)
 from .fallbacks import (
     aggressive_blob_merge,
     apply_section_consolidation,
     drop_unmergeable_orphans,
 )
 from .navigation import write_world_navigation
+from .palette_cluster import improve_palette_clustering
 from .placement import ChapterPlacement, plan_placement
 from .repair import RepairReport, run_world_repair
 from .template import ChapterTemplate, extract_world_templates
@@ -133,6 +138,11 @@ class OrganicStrategy(RandomizationStrategy):
         # pristine" is the validity bar; screens vanilla itself never
         # reaches (battle/sub-world interiors) are not gate failures.
         self._last_pristine_reachable = pristine_reachable
+        # Vanilla size of screen 0's nav-only component per chapter — the
+        # reachability oracle's bar. game_world is still pristine here.
+        pristine_nav0_sizes = {
+            c.chapter_num: len(nav_component(c, 0)) for c in game_world
+        }
 
         max_retries = self.config.repair.max_retries
         best_state: Optional[Tuple[Dict[int, ChapterTemplate], Dict[int, ChapterPlacement], Dict[int, RepairReport], Dict[int, FailureReport], int]] = None
@@ -194,6 +204,18 @@ class OrganicStrategy(RandomizationStrategy):
                 seed=attempt_seed,
             )
             self._last_aggressive_stats = aggressive_stats
+
+            # Biome coherence — reorder equal-alignment layouts inside mixed
+            # sections into contiguous palette runs (oracle clustering
+            # channel). Score weighting guarantees connectivity never trades
+            # away for coherence.
+            self._last_palette_stats = improve_palette_clustering(
+                chapters=chapters_map,
+                templates=templates,
+                placements=placements,
+                rom_data=rom_data,
+                seed=attempt_seed,
+            )
 
             post_reports = detect_world_failures(
                 chapters=chapters_map,
@@ -257,6 +279,18 @@ class OrganicStrategy(RandomizationStrategy):
                 template=templates[ch_num],
                 placement=placements[ch_num],
                 required=required,
+                rom_data=rom_data,
+                seed=plan.seed,
+                totals=stitch_totals,
+            )
+        # Grow screen 0's nav-only component to at least vanilla size —
+        # the differential oracle measures reachability as exactly that
+        # component's share of the chapter (BFS from screen 0, nav only).
+        for ch_num, chapter in chapters_map.items():
+            grow_screen0_component(
+                chapter=chapter,
+                placement=placements[ch_num],
+                target_size=pristine_nav0_sizes.get(ch_num, 0),
                 rom_data=rom_data,
                 seed=plan.seed,
                 totals=stitch_totals,

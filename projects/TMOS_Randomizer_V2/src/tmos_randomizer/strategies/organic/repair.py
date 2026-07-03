@@ -464,11 +464,22 @@ def _score_section(
                 rom_data=rom_data,
                 edge_cache=edge_cache,
             ):
-                score += 2
+                score += 20
             else:
-                score -= 20
+                score -= 200
+            # Palette affinity (biome clustering) — tie-breaker only; the
+            # alignment terms are scaled 10x so accumulated palette points
+            # can never outweigh a single alignment or orphan change.
+            scr_a = chapter.get_screen(idx)
+            scr_b = chapter.get_screen(placed[npos])
+            if (
+                scr_a is not None
+                and scr_b is not None
+                and scr_a.worldscreen_color == scr_b.worldscreen_color
+            ):
+                score += 1
     # Orphan penalty.
-    score -= 50 * len(_find_orphans(chapter, section, placement, rom_data, edge_cache))
+    score -= 500 * len(_find_orphans(chapter, section, placement, rom_data, edge_cache))
     return score
 
 

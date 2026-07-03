@@ -113,6 +113,91 @@ def stitch_chapter_connectivity(
     return stitched
 
 
+def nav_component(chapter: Chapter, root: int) -> Set[int]:
+    """Nav-pointer-only connected component of ``root`` (no stairs/warps).
+
+    This is the graph the reachability oracle walks from screen 0, and what
+    a player can browse without taking a stairway.
+    """
+    total = chapter.screen_count
+    comp: Set[int] = {root}
+    queue: deque = deque([root])
+    while queue:
+        idx = queue.popleft()
+        scr = chapter.get_screen(idx)
+        if scr is None:
+            continue
+        for d in DIRECTIONS:
+            tgt = getattr(scr, f"screen_index_{d}")
+            if not (0 <= tgt < total) or tgt in comp:
+                continue
+            comp.add(tgt)
+            queue.append(tgt)
+    return comp
+
+
+def grow_screen0_component(
+    *,
+    chapter: Chapter,
+    placement: ChapterPlacement,
+    target_size: int,
+    rom_data: bytes,
+    seed: int,
+    totals: Optional[Dict[str, int]] = None,
+) -> int:
+    """Wire screens into screen 0's nav-only component until it is at least
+    as large as vanilla's (the oracle's reachability bar is exactly that
+    component's relative size).
+
+    Runs after the respawn-root stitch, reusing its pair picker — so pairs
+    keep the same tier preferences (reciprocate, grid-adjacent, same
+    section, same palette). Returns edges wired.
+    """
+    totals = totals if totals is not None else {}
+    totals.setdefault("trunk_ts_swaps", 0)
+    totals.setdefault("trunk_unreached", 0)
+    rng = random.Random(seed ^ 0x0C0117)
+    edge_cache: Dict[int, ScreenEdges] = {}
+
+    placement_by_idx: Dict[int, Tuple[int, Tuple[int, int]]] = {}
+    for (sid, pos), idx in placement.placements.items():
+        placement_by_idx[idx] = (sid, pos)
+
+    wired = 0
+    for _ in range(32):
+        comp = nav_component(chapter, 0)
+        if len(comp) >= target_size:
+            break
+        missing = sorted(i for i in range(chapter.screen_count) if i not in comp)
+        pair = _pick_stitch_pair(chapter, placement_by_idx, comp, missing)
+        if pair is None:
+            logger.warning(
+                "grow0: ch%s screen-0 component stuck at %d/%d (no legal pair)",
+                chapter.chapter_num, len(comp), target_size,
+            )
+            break
+        src_idx, direction, dst_idx = pair
+        _ensure_edge_walkable(
+            src_idx=src_idx,
+            direction=direction,
+            dst_idx=dst_idx,
+            chapter=chapter,
+            rom_data=rom_data,
+            edge_cache=edge_cache,
+            rng=rng,
+            totals=totals,
+        )
+        src = chapter.get_screen(src_idx)
+        dst = chapter.get_screen(dst_idx)
+        setattr(src, f"screen_index_{direction}", dst_idx)
+        setattr(dst, f"screen_index_{OPPOSITE_DIRECTIONS[direction]}", src_idx)
+        src.mark_modified()
+        dst.mark_modified()
+        wired += 1
+        totals["grow0_edges"] = totals.get("grow0_edges", 0) + 1
+    return wired
+
+
 def _free_dirs(chapter: Chapter, idx: int) -> List[str]:
     scr = chapter.get_screen(idx)
     if scr is None:
@@ -145,6 +230,14 @@ def _pick_stitch_pair(
     tier3: Optional[Tuple[int, str, int]] = None
     tier4: Optional[Tuple[int, str, int]] = None
     missing_set = set(missing)
+
+    def _same_palette(a: int, b: int) -> bool:
+        sa, sb = chapter.get_screen(a), chapter.get_screen(b)
+        return (
+            sa is not None
+            and sb is not None
+            and sa.worldscreen_color == sb.worldscreen_color
+        )
 
     for m in missing:
         m_scr = chapter.get_screen(m)
@@ -183,9 +276,18 @@ def _pick_stitch_pair(
                         dx, dy = DIRECTION_DELTAS[d]
                         if (rx + dx, ry + dy) == (mx, my):
                             return (r, d, m)  # tier 1 — take immediately
-                    if tier2 is None:
+                    # Prefer same-palette pairs within the tier (biome
+                    # clustering); a plain pair still fills the slot if no
+                    # palette match ever shows up.
+                    if tier2 is None or (
+                        _same_palette(r, m)
+                        and not _same_palette(tier2[0], tier2[2])
+                    ):
                         tier2 = (r, usable[0], m)
-                elif tier3 is None:
+                elif tier3 is None or (
+                    _same_palette(r, m)
+                    and not _same_palette(tier3[0], tier3[2])
+                ):
                     tier3 = (r, usable[0], m)
             elif tier4 is None and m_sacrifice:
                 sacrificial = [
