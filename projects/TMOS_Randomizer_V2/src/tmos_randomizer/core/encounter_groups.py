@@ -1,14 +1,19 @@
 """Read/write for the per-chapter encounter group tables.
 
 Each chapter has a list of 3-byte entries describing which screens trigger
-random encounters and how:
+random encounters and how (semantics corrected by RETMOS round 3,
+disassembly-verified — see RETMOS/REVERSE.md "Encounter Records, Reward
+Groups, and Global Monster Lineups"):
 
   byte 0: screen_index (relative to chapter)
-  byte 1: monster_group / lineup selector
-            For Ch1-2: low 7 bits = lineup index (0-6); high bit = behavior flag
-            For Ch3-5: low 7 bits can exceed lineup count — semantic differs;
-                       high bit still present
-  byte 2: encounter rate / difficulty flag (0=low, 1=med, 2=high, 3=very high)
+  byte 1: bit7 = special-encounter flag ($05CC);
+          low 7 bits = GLOBAL lineup index into the 18-record table at
+          bank 3 $8129 (file 0xC139, 12B records) — shared by ALL chapters;
+          vanilla chapters freely reuse lineups. Legal range 0-17.
+  byte 2: REWARD GROUP (0-3) — selects the drop table row via the $9524
+          indexer -> $9534 records in inv_pickup ($94B0). This byte was
+          previously mislabeled "encounter rate"; values > 3 index past
+          the table (undefined behavior).
 
 ROM addresses (ROM_VERIFIED, source: encounter_tables.json):
   Ch1: $C02A, 15 entries
@@ -17,7 +22,8 @@ ROM addresses (ROM_VERIFIED, source: encounter_tables.json):
   Ch4: $C0BD, 22 entries
   Ch5: $C100, 19 entries
 
-Source: GameAnalysis2 raw_research/screen_exp_mapping.md (ROM_VERIFIED).
+The DTO field is still named ``flag`` for API stability; treat it as the
+reward group everywhere.
 """
 
 from __future__ import annotations

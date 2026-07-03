@@ -54,7 +54,6 @@ export function RandomizeModal() {
     randomize_prices: true,
     price_variance: 0.25,
     randomize_magic_prices: false,
-    sell_keys: 0,
   };
   const setShopSettings = (patch: Partial<typeof shopSettings>) =>
     setSettings({ shop_randomization: { ...shopSettings, ...patch } });
@@ -63,7 +62,7 @@ export function RandomizeModal() {
     enabled: false,
     shuffle_lineups: true,
     reassign_groups: false,
-    rate_jitter: false,
+    reward_jitter: false,
   };
   const setEnemySettings = (patch: Partial<typeof enemySettings>) =>
     setSettings({ enemy_randomization: { ...enemySettings, ...patch } });
@@ -312,20 +311,6 @@ export function RandomizeModal() {
                     <span className="text-sm text-slate-300">Randomize magic-shop prices</span>
                   </label>
 
-                  <label className="flex items-center gap-3">
-                    <span className="text-sm text-slate-300 w-40">Keys sold in shops</span>
-                    <select
-                      value={shopSettings.sell_keys}
-                      onChange={(e) => setShopSettings({ sell_keys: Number(e.target.value) })}
-                      className="px-2 py-1 bg-slate-700 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                    >
-                      {[0, 1, 2, 3, 4].map((n) => (
-                        <option key={n} value={n}>
-                          {n === 0 ? 'None' : `${n} shop${n > 1 ? 's' : ''}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
                 </div>
               )}
             </div>
@@ -369,19 +354,19 @@ export function RandomizeModal() {
                       className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
                     />
                     <span className="text-sm text-slate-300">
-                      Re-roll screen encounters (chapters 1–2)
+                      Re-roll screen encounters (within each chapter&apos;s enemy pool)
                     </span>
                   </label>
 
                   <label className="flex items-center gap-3">
                     <input
                       type="checkbox"
-                      checked={enemySettings.rate_jitter}
-                      onChange={(e) => setEnemySettings({ rate_jitter: e.target.checked })}
+                      checked={enemySettings.reward_jitter}
+                      onChange={(e) => setEnemySettings({ reward_jitter: e.target.checked })}
                       className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
                     />
                     <span className="text-sm text-slate-300">
-                      Jitter encounter rates (±1 step)
+                      Jitter drop rewards (±1 reward group)
                     </span>
                   </label>
                 </div>

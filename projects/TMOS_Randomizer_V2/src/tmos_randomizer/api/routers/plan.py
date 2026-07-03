@@ -148,8 +148,6 @@ def create_plan(request: PlanRequest):
                 shop_cfg.price_variance = max(0.0, min(1.0, float(sr["price_variance"])))
             if "randomize_magic_prices" in sr:
                 shop_cfg.randomize_magic_prices = bool(sr["randomize_magic_prices"])
-            if "sell_keys" in sr:
-                shop_cfg.sell_keys = max(0, min(8, int(sr["sell_keys"])))
 
         # Apply enemy randomization settings (bank 3 battle tables —
         # within-chapter only, see logic/enemy_randomization.py)
@@ -162,8 +160,8 @@ def create_plan(request: PlanRequest):
                 enemy_cfg.shuffle_lineups = bool(er["shuffle_lineups"])
             if "reassign_groups" in er:
                 enemy_cfg.reassign_groups = bool(er["reassign_groups"])
-            if "rate_jitter" in er:
-                enemy_cfg.rate_jitter = bool(er["rate_jitter"])
+            if "reward_jitter" in er:
+                enemy_cfg.reward_jitter = bool(er["reward_jitter"])
 
         # Strategy override — accepts either top-level `strategy` or
         # `general.strategy`. Without this the UI button silently fell
@@ -395,7 +393,6 @@ def _apply_preview_compute(progress_cb=None) -> Dict[str, Any]:
                 ),
                 price_multiplier=shop_cfg.price_multiplier,
                 randomize_magic_prices=shop_cfg.randomize_magic_prices,
-                sell_keys=shop_cfg.sell_keys,
             )
             shop_plan.apply(rom_array)
             state._rom_data = bytes(rom_array)
@@ -414,7 +411,7 @@ def _apply_preview_compute(progress_cb=None) -> Dict[str, Any]:
                 state._current_plan.seed,
                 shuffle_lineups=enemy_cfg.shuffle_lineups,
                 reassign_groups=enemy_cfg.reassign_groups,
-                rate_jitter=enemy_cfg.rate_jitter,
+                reward_jitter=enemy_cfg.reward_jitter,
             )
             enemy_plan.apply(rom_array)
             state._rom_data = bytes(rom_array)

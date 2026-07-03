@@ -241,18 +241,16 @@ export interface ShopRandomizationSettings {
   price_variance: number;
   /** Also jitter the $8AAC magic-shop base table */
   randomize_magic_prices: boolean;
-  /** Replace up to N slots with shop-sellable KEYs (code $18); 0-8 */
-  sell_keys: number;
 }
 
 export interface EnemyRandomizationSettings {
   enabled: boolean;
   /** Remix who-appears-with-whom per chapter (multiset preserved) */
   shuffle_lineups: boolean;
-  /** Re-roll Ch1-2 screen-to-lineup selectors */
+  /** Re-roll screen-to-lineup selectors within each chapter's vanilla set */
   reassign_groups: boolean;
-  /** +/-1 drift on encounter rate flags (0-3) */
-  rate_jitter: boolean;
+  /** +/-1 drift on drop reward groups (0-3) */
+  reward_jitter: boolean;
 }
 
 export interface RandomizerSettings {

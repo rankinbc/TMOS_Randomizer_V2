@@ -63,7 +63,7 @@ export interface EnemySpoiler {
   seed: number;
   lineups: EnemySpoilerLineup[];
   group_reassignments: Record<string, number>;
-  rate_changes: Record<string, number>;
+  reward_changes: Record<string, number>;
 }
 
 export interface ApplyPreviewResult {

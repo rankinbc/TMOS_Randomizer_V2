@@ -128,7 +128,6 @@ class Randomizer:
             ),
             price_multiplier=shop_cfg.price_multiplier,
             randomize_magic_prices=shop_cfg.randomize_magic_prices,
-            sell_keys=shop_cfg.sell_keys,
         )
         written = shop_plan.apply(rom)
         out_path.write_bytes(bytes(rom))
@@ -199,7 +198,7 @@ class Randomizer:
             plan.seed,
             shuffle_lineups=enemy_cfg.shuffle_lineups,
             reassign_groups=enemy_cfg.reassign_groups,
-            rate_jitter=enemy_cfg.rate_jitter,
+            reward_jitter=enemy_cfg.reward_jitter,
         )
         written = enemy_plan.apply(rom)
         out_path.write_bytes(bytes(rom))

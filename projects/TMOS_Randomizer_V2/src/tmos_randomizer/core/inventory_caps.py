@@ -39,7 +39,7 @@ RAM_LABELS: dict[int, dict[str, str]] = {
     0x0305: {"label": "HolyRobe",                 "notes": "boolean (0/1)"},
     0x0306: {"label": "BREAD",                    "notes": "carried, vanilla cap 10; auto-restores 50 HP on death"},
     0x0307: {"label": "MASHROOB",                 "notes": "carried, vanilla cap 10; auto-restores 50 MP on empty"},
-    0x0308: {"label": "KEY",                      "notes": "vanilla cap 9 (cap also enforced in code at $F2CB)"},
+    0x0308: {"label": "PENDING GOLD",             "notes": "payout accumulator drained to gold BCD $89-$8B by $F2C6 tick — NOT a key (RETMOS round 3)"},
     0x0309: {"label": "AMULET",                   "notes": "vanilla cap 9 (cap also enforced in code at $87F4)"},
     0x030E: {"label": "Player level",             "notes": "2..6"},
     0x030F: {"label": "ROD charges",              "notes": "vanilla cap 1 in this table; max 5 in gameplay"},

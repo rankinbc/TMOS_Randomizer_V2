@@ -250,7 +250,7 @@ difficulty:
     price_variance: 0.25        # +/- fraction applied to each price
     price_multiplier: 1.0       # global scale (also see shop_price_multiplier)
     randomize_magic_prices: false  # jitter the $8AAC magic base table too
-    sell_keys: 0                # replace up to N slots with shop-sellable KEYs ($18)
+    # (sell_keys removed: RETMOS round 3 proved code $18 = +1 pending gold, not a key)
 
   # Enemy/encounter randomization (bank 3 battle tables). Within-chapter
   # only — encounter groups/formations/CHR are chapter-keyed, so enemies
@@ -258,8 +258,8 @@ difficulty:
   enemy_randomization:
     enabled: false
     shuffle_lineups: true       # remix who-appears-with-whom per chapter
-    reassign_groups: false      # re-roll Ch1-2 screen->lineup selectors
-    rate_jitter: false          # +/-1 drift on encounter rate flags (0-3)
+    reassign_groups: false      # re-roll screen->lineup selectors (vanilla sets, all chapters)
+    reward_jitter: false        # +/-1 drift on drop reward groups (0-3)
 
   # Progression
   progression:

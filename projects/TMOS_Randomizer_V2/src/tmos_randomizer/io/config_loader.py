@@ -186,7 +186,8 @@ class ShopRandomizationConfig:
     price_variance: float = 0.25  # +/- 25% from base price
     price_multiplier: float = 1.0  # Global price multiplier
     randomize_magic_prices: bool = False  # jitter the $8AAC magic base table
-    sell_keys: int = 0  # replace up to N slots with shop-sellable KEYs ($18)
+    # NOTE: the former sell_keys option was removed — RETMOS round 3 proved
+    # code $18 credits +1 pending GOLD ($0308), not a key; no KEY item exists.
 
     # Progression settings
     exclude_progression_items: bool = True  # Exclude swords/rods from shops
@@ -207,8 +208,8 @@ class EnemyRandomizationConfig:
     enabled: bool = False
 
     shuffle_lineups: bool = True      # remix who-appears-with-whom per chapter
-    reassign_groups: bool = False     # re-roll Ch1-2 screen->lineup selectors
-    rate_jitter: bool = False         # +/-1 drift on encounter rate flags
+    reassign_groups: bool = False     # re-roll screen->lineup selectors (all chapters, vanilla sets)
+    reward_jitter: bool = False       # +/-1 drift on drop reward groups (0-3)
 
 
 @dataclass
@@ -535,7 +536,6 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             price_variance=sr.get("price_variance", 0.25),
             price_multiplier=sr.get("price_multiplier", 1.0),
             randomize_magic_prices=sr.get("randomize_magic_prices", False),
-            sell_keys=sr.get("sell_keys", 0),
             exclude_progression_items=sr.get("exclude_progression_items", True),
             ensure_bread_available=sr.get("ensure_bread_available", True),
             ensure_mashroob_available=sr.get("ensure_mashroob_available", True),
@@ -548,7 +548,7 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             enabled=er.get("enabled", False),
             shuffle_lineups=er.get("shuffle_lineups", True),
             reassign_groups=er.get("reassign_groups", False),
-            rate_jitter=er.get("rate_jitter", False),
+            reward_jitter=er.get("reward_jitter", False),
         )
 
         config.difficulty = DifficultyConfig(

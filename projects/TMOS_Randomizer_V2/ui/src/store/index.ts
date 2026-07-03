@@ -340,13 +340,12 @@ function getDefaultSettings(): RandomizerSettings {
       randomize_prices: true,
       price_variance: 0.25,
       randomize_magic_prices: false,
-      sell_keys: 0,
     },
     enemy_randomization: {
       enabled: false,
       shuffle_lineups: true,
       reassign_groups: false,
-      rate_jitter: false,
+      reward_jitter: false,
     },
     section_planning: {
       overworld_count_weights: { 1: 35, 2: 50, 3: 15 },
@@ -679,13 +678,12 @@ export const useRandomizerStore = create<RandomizerState>((set, get) => ({
           randomize_prices: state.settings.shop_randomization?.randomize_prices ?? true,
           price_variance: state.settings.shop_randomization?.price_variance ?? 0.25,
           randomize_magic_prices: state.settings.shop_randomization?.randomize_magic_prices ?? false,
-          sell_keys: state.settings.shop_randomization?.sell_keys ?? 0,
         },
         enemy_randomization: {
           enabled: state.settings.enemy_randomization?.enabled ?? false,
           shuffle_lineups: state.settings.enemy_randomization?.shuffle_lineups ?? true,
           reassign_groups: state.settings.enemy_randomization?.reassign_groups ?? false,
-          rate_jitter: state.settings.enemy_randomization?.rate_jitter ?? false,
+          reward_jitter: state.settings.enemy_randomization?.reward_jitter ?? false,
         },
       };
 

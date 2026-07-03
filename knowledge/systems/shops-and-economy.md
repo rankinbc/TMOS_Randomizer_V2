@@ -50,13 +50,17 @@ Slot `code` bytes are **bank 1 state-command bytes** (the `$8746` processor spac
 | $34 | $3x -> $0303+4 | $0307 | 10 | MASHROOB (quantity-purchasable) | — (same path as $33) |
 | $10 | $1x -> $0300+0 | $0300 | 9 | **GORTRAT BREAD** (NOT keys) | YES (+1; at cap 9 aborts) |
 | $11 | $1x -> $0300+1 | $0301 | 9 | Gortrat-paired consumable | — |
-| **$18** | $1x -> $0300+8 | **$0308** | 9 | **KEY — shop-sellable keys work** | YES (+1) |
+| **$18** | $1x -> $0300+8 | **$0308** | — | **+1 PENDING GOLD — never sell** (see correction below) | YES (+1 to $0308) |
 | $51 | $5x lo4=1 | $0310 | 5 | R.SEED (charge refill) | — |
 | $52 | $5x lo4=2 | $0311 | 15 | CARPET (charge refill) | YES (write at $87D0) |
 | $53 | $5x one-time | $0312 | init 5 | HORN (reject if owned; init from $87F2) | YES (fresh=5, owned=rejected) |
 | $58 | $5x lo4=8 | $030D | 1 | RING | YES (=1) |
 
-**RESOLVED (2026-07-02, emulator round 2)**: the old "$10 = KEY" conflict is settled. `$0300` = Gortrat bread counter; real door keys live at `$0308` and the shop-sellable code for them is **$18** (never appears in vanilla shops, but the delivery path works — randomizer may emit it). Pickup credits confirm: KEY +1 -> $0308 (bank5 $8BCA); Gortrat +1 cap 9 -> $0300 ($8C18).
+**CORRECTED (2026-07-03, RETMOS round 3 — supersedes the round-2 "$18 = KEY" reading)**: **the KEY item does not exist.** `$0308` is the action-mode **pending-gold accumulator**: coin/moneybag drops credit it (+1/+20 at bank5 `$8BCA`), and the `$F2C6` payout tick drains it into the gold BCD at `$89-$8B` (1 unit per 2 frames, coin sound). Round 2 verified the right BYTE behavior ($18 increments `$0308`) but inherited the wrong LABEL from the old RAM map. Consequences:
+- Shop code **$18 sells "+1 gold"** for the slot price — which is exactly why no vanilla shop uses it. **A randomizer must never emit $18** (the sell_keys feature built on the KEY reading was removed).
+- The former `$F2CB` "door unlock consume" is the payout tick's DEC, unrelated to doors. Door blockers are type-6 ObjectSet entities opened by script/Oprin paths.
+- `$0300` = Gortrat bread stands (round 1/2, unchanged).
+See RETMOS/REVERSE.md "Vanilla Key Source Hunt ($0308)".
 
 - Ownership/rebuy check: `$03C0 + (code & $0F) * 2` (11 logical entries, stride 2); one-time items reject if nonzero.
 - At-cap purchase aborts with error $0E and gold is NOT spent.

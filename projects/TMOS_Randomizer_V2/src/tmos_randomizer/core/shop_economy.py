@@ -52,12 +52,15 @@ TROOPER_PRICE_OFFSET = 0x4577
 
 # Labels for shop slot codes. Names are NOT in a ROM lookup table (item names
 # are pre-rendered CHR tiles); mapping emulator-verified via RETMOS
-# tools/emu.py unit-mode 2026-07-02 (knowledge/systems/shops-and-economy.md).
-# Real door KEYS are code $18 -> $0308; $10 credits the $0300 bread counter.
+# tools/emu.py unit-mode 2026-07-02, corrected round 3 2026-07-03:
+# $0308 is the PENDING-GOLD accumulator (drained into gold BCD $89-$8B by
+# the $F2C6 payout tick) — there is no KEY item. Code $18 credits +1 pending
+# gold, which is why no vanilla shop uses it; never emit it as a slot code.
+# $10 credits the $0300 Gortrat bread counter.
 _ITEM_CODE_LABELS: dict[int, str] = {
     0x10: "GORTRAT BREAD",
     0x11: "GORTRAT-paired ($0301)",
-    0x18: "KEY",
+    0x18: "GOLD +1 (pending — do not sell)",
     0x33: "BREAD",
     0x34: "MASHROOB",
     0x51: "R.SEED",

@@ -45,11 +45,11 @@ def _chapter_enemy_multiset(rom: bytes, chapter: int) -> list[int]:
 
 
 def test_plan_is_deterministic(rom):
-    a = create_enemy_plan(rom, 555, shuffle_lineups=True, reassign_groups=True, rate_jitter=True)
-    b = create_enemy_plan(rom, 555, shuffle_lineups=True, reassign_groups=True, rate_jitter=True)
+    a = create_enemy_plan(rom, 555, shuffle_lineups=True, reassign_groups=True, reward_jitter=True)
+    b = create_enemy_plan(rom, 555, shuffle_lineups=True, reassign_groups=True, reward_jitter=True)
     assert a.lineup_slots == b.lineup_slots
     assert a.group_bytes == b.group_bytes
-    assert a.rate_flags == b.rate_flags
+    assert a.reward_bytes == b.reward_bytes
 
 
 def test_shuffle_preserves_per_chapter_enemy_multiset(rom):
@@ -77,7 +77,7 @@ def test_empty_and_crash_slots_never_move(rom):
 
 
 def test_start_bytes_untouched(rom):
-    plan = create_enemy_plan(rom, 23, shuffle_lineups=True, reassign_groups=True, rate_jitter=True)
+    plan = create_enemy_plan(rom, 23, shuffle_lineups=True, reassign_groups=True, reward_jitter=True)
     out = bytearray(rom)
     plan.apply(out)
     for chapter in LINEUP_BASE:
@@ -86,33 +86,40 @@ def test_start_bytes_untouched(rom):
             assert out[base] == rom[base]
 
 
-def test_group_reassignment_ch12_only_and_in_range(rom):
+def test_group_reassignment_all_chapters_within_vanilla_pool(rom):
+    """RETMOS round 3: the low-7 selector is a GLOBAL lineup index (0-17)
+    shared by all chapters; re-rolls stay within the lineup set the
+    chapter's own entries use in the source ROM."""
+    from tmos_randomizer.logic.enemy_randomization import vanilla_lineup_pool
+
     plan = create_enemy_plan(rom, 88, shuffle_lineups=False, reassign_groups=True)
-    assert set(plan.group_bytes) <= {1, 2}
+    assert set(plan.group_bytes) == {1, 2, 3, 4, 5}
     out = bytearray(rom)
     plan.apply(out)
-    for chapter in (1, 2):
+    for chapter in range(1, 6):
+        allowed = set(vanilla_lineup_pool(rom, chapter))
+        assert allowed <= set(range(18))
         for entry in read_chapter_groups(bytes(out), chapter)["entries"]:
-            assert entry["monster_group_low"] < LINEUP_COUNT[chapter]
+            assert entry["monster_group_low"] in allowed
         # High bit preserved per entry.
         for entry_idx, new_byte in plan.group_bytes[chapter].items():
             base = GROUP_BASE[chapter] + entry_idx * ENTRY_SIZE
             assert (new_byte & 0x80) == (rom[base + 1] & 0x80)
 
 
-def test_rate_jitter_bounded(rom):
-    plan = create_enemy_plan(rom, 3, shuffle_lineups=False, rate_jitter=True)
-    for chapter, entries in plan.rate_flags.items():
-        for entry_idx, new_flag in entries.items():
+def test_reward_jitter_bounded(rom):
+    plan = create_enemy_plan(rom, 3, shuffle_lineups=False, reward_jitter=True)
+    for chapter, entries in plan.reward_bytes.items():
+        for entry_idx, new_reward in entries.items():
             base = GROUP_BASE[chapter] + entry_idx * ENTRY_SIZE
             old = rom[base + 2]
-            assert 0 <= new_flag <= 3
-            assert abs(new_flag - old) <= 1
+            assert 0 <= new_reward <= 3
+            assert abs(new_reward - old) <= 1
 
 
 def test_apply_writes_only_battle_table_regions(rom):
     """Byte diff confined to the lineup slot bytes + group entry bytes."""
-    plan = create_enemy_plan(rom, 7, shuffle_lineups=True, reassign_groups=True, rate_jitter=True)
+    plan = create_enemy_plan(rom, 7, shuffle_lineups=True, reassign_groups=True, reward_jitter=True)
     out = bytearray(rom)
     plan.apply(out)
 
@@ -134,7 +141,7 @@ def test_apply_writes_only_battle_table_regions(rom):
 
 def test_disabled_options_write_nothing(rom):
     plan = create_enemy_plan(
-        rom, 7, shuffle_lineups=False, reassign_groups=False, rate_jitter=False
+        rom, 7, shuffle_lineups=False, reassign_groups=False, reward_jitter=False
     )
     out = bytearray(rom)
     written = plan.apply(out)

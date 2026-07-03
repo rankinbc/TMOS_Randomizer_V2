@@ -69,11 +69,13 @@ def test_gameplay_ram_addresses_match_inventory_caps_labels():
         )
 
 
-def test_key_has_correct_ram_address():
-    """Regression: Key was previously claimed at $0300 (Gortrat bread). Should be $0308."""
-    key = GAMEPLAY_ITEMS[6]
-    assert key.name == "Key"
-    assert key.ram_address == 0x0308
+def test_pending_gold_slot_at_0308():
+    """Two corrections deep: $0300 is Gortrat bread (round 1), and $0308 is
+    the PENDING-GOLD payout accumulator, not a Key (RETMOS round 3 — the
+    KEY item does not exist)."""
+    slot = GAMEPLAY_ITEMS[6]
+    assert slot.name == "Pending Gold"
+    assert slot.ram_address == 0x0308
 
 
 def test_amulet_has_ram_address():
@@ -111,8 +113,8 @@ def test_namespaces_are_distinct_at_id_17():
 
 
 def test_namespaces_are_distinct_at_id_6():
-    """ID 6 is Key in GAMEPLAY, ISFA in BATTLE."""
-    assert GAMEPLAY_ITEMS[6].name == "Key"
+    """ID 6 is Pending Gold in GAMEPLAY, ISFA in BATTLE."""
+    assert GAMEPLAY_ITEMS[6].name == "Pending Gold"
     assert BATTLE_ITEMS[6].name == "ISFA"
 
 

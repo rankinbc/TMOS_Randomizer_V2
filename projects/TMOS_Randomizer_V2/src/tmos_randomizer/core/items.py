@@ -119,9 +119,14 @@ GAMEPLAY_ITEMS: dict[int, GameplayItem] = {
         effect="HP restoration (rare drop)",
     ),
     6: GameplayItem(
-        id=6, name="Key", category=ItemCategory.CONSUMABLE,
-        effect="Open palace doors; auto-DEC on use at $F2CB",
-        max_count=9, ram_address=0x0308,
+        id=6, name="Pending Gold", category=ItemCategory.SPECIAL,
+        # RETMOS round 3: no KEY item exists. $0308 is the pending-gold
+        # accumulator; $F2C6/$F2CB is the payout tick draining it into the
+        # gold BCD at $89-$8B (1/2 frames, coin sound). The old "Key /
+        # palace doors" reading was a label error. Doors are type-6
+        # ObjectSet blockers opened by script/Oprin paths.
+        effect="Gold awaiting payout; drained to gold BCD by $F2C6 tick",
+        max_count=None, ram_address=0x0308,
     ),
     7: GameplayItem(
         id=7, name="Map", category=ItemCategory.CONSUMABLE,

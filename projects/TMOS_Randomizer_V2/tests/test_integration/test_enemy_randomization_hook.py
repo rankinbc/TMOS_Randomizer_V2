@@ -93,7 +93,7 @@ def _battle_table_bytes() -> set[int]:
 
 def test_hook_writes_only_battle_regions(tmp_path):
     result, out = _run(
-        tmp_path, enabled=True, reassign_groups=True, rate_jitter=True
+        tmp_path, enabled=True, reassign_groups=True, reward_jitter=True
     )
     assert result.success
     vanilla = ROM_PATH.read_bytes()

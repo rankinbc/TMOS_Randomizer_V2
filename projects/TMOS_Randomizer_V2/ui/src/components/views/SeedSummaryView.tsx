@@ -57,7 +57,7 @@ function parseSpoilerJson(fileName: string, raw: unknown): SummaryData {
     ? (data.enemy_lineups as EnemySpoiler['lineups'])
     : [];
   const enemies: EnemySpoiler | null = lineups.length
-    ? { seed, lineups, group_reassignments: {}, rate_changes: {} }
+    ? { seed, lineups, group_reassignments: {}, reward_changes: {} }
     : null;
 
   return {
