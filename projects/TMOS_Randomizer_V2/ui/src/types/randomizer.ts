@@ -245,6 +245,16 @@ export interface ShopRandomizationSettings {
   sell_keys: number;
 }
 
+export interface EnemyRandomizationSettings {
+  enabled: boolean;
+  /** Remix who-appears-with-whom per chapter (multiset preserved) */
+  shuffle_lineups: boolean;
+  /** Re-roll Ch1-2 screen-to-lineup selectors */
+  reassign_groups: boolean;
+  /** +/-1 drift on encounter rate flags (0-3) */
+  rate_jitter: boolean;
+}
+
 export interface RandomizerSettings {
   strategy?: RandomizationStrategy;
   preset?: 'standard' | 'chaos' | 'beginner' | 'custom';
@@ -253,6 +263,7 @@ export interface RandomizerSettings {
   shuffle_dungeons: boolean;
   randomize_mazes: boolean;
   shop_randomization?: ShopRandomizationSettings;
+  enemy_randomization?: EnemyRandomizationSettings;
   section_planning: {
     overworld_count_weights: Record<number, number>;
     town_count_weights: Record<number, number>;

@@ -252,6 +252,15 @@ difficulty:
     randomize_magic_prices: false  # jitter the $8AAC magic base table too
     sell_keys: 0                # replace up to N slots with shop-sellable KEYs ($18)
 
+  # Enemy/encounter randomization (bank 3 battle tables). Within-chapter
+  # only — encounter groups/formations/CHR are chapter-keyed, so enemies
+  # never cross chapters.
+  enemy_randomization:
+    enabled: false
+    shuffle_lineups: true       # remix who-appears-with-whom per chapter
+    reassign_groups: false      # re-roll Ch1-2 screen->lineup selectors
+    rate_jitter: false          # +/-1 drift on encounter rate flags (0-3)
+
   # Progression
   progression:
     key_item_bias: "balanced"  # early, balanced, late

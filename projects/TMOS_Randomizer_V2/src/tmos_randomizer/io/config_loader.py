@@ -198,6 +198,20 @@ class ShopRandomizationConfig:
 
 
 @dataclass
+class EnemyRandomizationConfig:
+    """Enemy/encounter randomization settings (bank 3 battle tables).
+
+    Within-chapter only: encounter groups/formations/CHR are chapter-keyed,
+    so enemies never move across chapters (RE round-2 constraint).
+    """
+    enabled: bool = False
+
+    shuffle_lineups: bool = True      # remix who-appears-with-whom per chapter
+    reassign_groups: bool = False     # re-roll Ch1-2 screen->lineup selectors
+    rate_jitter: bool = False         # +/-1 drift on encounter rate flags
+
+
+@dataclass
 class DifficultyConfig:
     """Difficulty and balance settings."""
     preset: str = "normal"
@@ -211,6 +225,9 @@ class DifficultyConfig:
     )
     shop_randomization: ShopRandomizationConfig = field(
         default_factory=ShopRandomizationConfig
+    )
+    enemy_randomization: EnemyRandomizationConfig = field(
+        default_factory=EnemyRandomizationConfig
     )
 
 
@@ -525,6 +542,15 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             ensure_keys_available=sr.get("ensure_keys_available", True),
         )
 
+        # Parse Enemy randomization config
+        er = d.get("enemy_randomization", {})
+        enemy_config = EnemyRandomizationConfig(
+            enabled=er.get("enabled", False),
+            shuffle_lineups=er.get("shuffle_lineups", True),
+            reassign_groups=er.get("reassign_groups", False),
+            rate_jitter=er.get("rate_jitter", False),
+        )
+
         config.difficulty = DifficultyConfig(
             preset=d.get("preset", "normal"),
             enemy_hp_multiplier=combat.get("enemy_hp_multiplier", 1.0),
@@ -534,6 +560,7 @@ def _parse_config(raw: Dict[str, Any]) -> RandomizerConfig:
             key_item_bias=progression.get("key_item_bias", "balanced"),
             objectset_randomization=objectset_config,
             shop_randomization=shop_config,
+            enemy_randomization=enemy_config,
         )
 
     # Output

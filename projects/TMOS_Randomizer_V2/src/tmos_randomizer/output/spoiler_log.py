@@ -223,6 +223,7 @@ class SpoilerLog:
     allies: List[AllyLocation] = field(default_factory=list)
     shops: List[ShopInventory] = field(default_factory=list)
     magic_base_prices: List[int] = field(default_factory=list)
+    enemy_lineups: List[Dict[str, Any]] = field(default_factory=list)
     map_layout: List[ChapterMapInfo] = field(default_factory=list)
     spheres: List[Sphere] = field(default_factory=list)
     playthrough: List[PlaythroughStep] = field(default_factory=list)
@@ -244,6 +245,7 @@ class SpoilerLog:
             "allies": [a.to_dict() for a in self.allies],
             "shops": [s.to_dict() for s in self.shops],
             "magic_base_prices": self.magic_base_prices,
+            "enemy_lineups": self.enemy_lineups,
             "map": {f"chapter_{m.chapter_num}": m.to_dict() for m in self.map_layout},
             "spheres": [s.to_dict() for s in self.spheres],
             "playthrough": [p.to_dict() for p in self.playthrough],
@@ -305,6 +307,7 @@ class SpoilerLog:
                 items=shop_data.get("items", []),
             ))
         log.magic_base_prices = list(data.get("magic_base_prices", []))
+        log.enemy_lineups = list(data.get("enemy_lineups", []))
 
         # Load map layout
         for key, map_data in data.get("map", {}).items():
@@ -394,6 +397,7 @@ def generate_text_spoiler(log: SpoilerLog, include_sections: Optional[Dict[str, 
             "all_items": True,
             "allies": True,
             "shops": True,
+            "enemy_lineups": True,
             "map_layout": True,
             "spheres": True,
             "playthrough": True,
@@ -422,6 +426,10 @@ def generate_text_spoiler(log: SpoilerLog, include_sections: Optional[Dict[str, 
     # "not applied" notice when the post-pass didn't run for this seed.
     if include_sections.get("shops", True):
         lines.extend(_generate_shops_section(log))
+
+    # Encounter lineups — only when the enemy post-pass ran.
+    if include_sections.get("enemy_lineups", True) and log.enemy_lineups:
+        lines.extend(_generate_enemy_lineups_section(log))
 
     # Map Layout
     if include_sections.get("map_layout", True) and log.map_layout:
@@ -582,6 +590,27 @@ def _generate_shops_section(log: SpoilerLog) -> List[str]:
             lines.append("  " + ", ".join(str(p) for p in log.magic_base_prices))
             lines.append("")
 
+    lines.append(SEPARATOR)
+    lines.append("")
+    return lines
+
+
+def _generate_enemy_lineups_section(log: SpoilerLog) -> List[str]:
+    """Randomized encounter lineups per chapter (bank 3 battle tables)."""
+    lines = [
+        SEPARATOR,
+        _center("ENCOUNTER LINEUPS"),
+        SEPARATOR,
+        "",
+    ]
+    current_chapter = None
+    for entry in log.enemy_lineups:
+        if entry["chapter"] != current_chapter:
+            current_chapter = entry["chapter"]
+            lines.append(f"CHAPTER {current_chapter}")
+        names = ", ".join(s["name"] for s in entry["slots"]) or "(empty)"
+        lines.append(f"  Lineup {entry['lineup_index']}: {names}")
+    lines.append("")
     lines.append(SEPARATOR)
     lines.append("")
     return lines
@@ -789,6 +818,11 @@ def write_spoiler_log(
         written["json"] = json_path
 
     return written
+
+
+def apply_enemy_spoiler(log: SpoilerLog, spoiler: Dict[str, Any]) -> None:
+    """Populate log.enemy_lineups from EnemyRandomizationPlan.to_spoiler()."""
+    log.enemy_lineups = list(spoiler.get("lineups", []))
 
 
 def apply_shop_spoiler(log: SpoilerLog, spoiler: Dict[str, Any]) -> None:

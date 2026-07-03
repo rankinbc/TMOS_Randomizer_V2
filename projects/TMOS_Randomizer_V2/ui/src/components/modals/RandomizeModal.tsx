@@ -59,6 +59,15 @@ export function RandomizeModal() {
   const setShopSettings = (patch: Partial<typeof shopSettings>) =>
     setSettings({ shop_randomization: { ...shopSettings, ...patch } });
 
+  const enemySettings = settings.enemy_randomization ?? {
+    enabled: false,
+    shuffle_lineups: true,
+    reassign_groups: false,
+    rate_jitter: false,
+  };
+  const setEnemySettings = (patch: Partial<typeof enemySettings>) =>
+    setSettings({ enemy_randomization: { ...enemySettings, ...patch } });
+
   const activeStrategy = settings.strategy ?? 'organic';
   const activeStrategyInfo = strategies.find((s) => s.name === activeStrategy);
 
@@ -316,6 +325,64 @@ export function RandomizeModal() {
                         </option>
                       ))}
                     </select>
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Enemies Section */}
+          <div className="border-t border-slate-700 pt-4">
+            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
+              Enemies
+            </h3>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={enemySettings.enabled}
+                  onChange={(e) => setEnemySettings({ enabled: e.target.checked })}
+                  className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                />
+                <span className="text-sm text-slate-300">Randomize Encounters</span>
+              </label>
+
+              {enemySettings.enabled && (
+                <div className="ml-6 space-y-3">
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={enemySettings.shuffle_lineups}
+                      onChange={(e) => setEnemySettings({ shuffle_lineups: e.target.checked })}
+                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-slate-300">
+                      Shuffle battle lineups (same enemies per chapter, remixed groups)
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={enemySettings.reassign_groups}
+                      onChange={(e) => setEnemySettings({ reassign_groups: e.target.checked })}
+                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-slate-300">
+                      Re-roll screen encounters (chapters 1–2)
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={enemySettings.rate_jitter}
+                      onChange={(e) => setEnemySettings({ rate_jitter: e.target.checked })}
+                      className="rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-slate-300">
+                      Jitter encounter rates (±1 step)
+                    </span>
                   </label>
                 </div>
               )}

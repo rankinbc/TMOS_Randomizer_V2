@@ -151,6 +151,20 @@ def create_plan(request: PlanRequest):
             if "sell_keys" in sr:
                 shop_cfg.sell_keys = max(0, min(8, int(sr["sell_keys"])))
 
+        # Apply enemy randomization settings (bank 3 battle tables —
+        # within-chapter only, see logic/enemy_randomization.py)
+        if "enemy_randomization" in request.config:
+            er = request.config["enemy_randomization"]
+            enemy_cfg = config.difficulty.enemy_randomization
+            if "enabled" in er:
+                enemy_cfg.enabled = bool(er["enabled"])
+            if "shuffle_lineups" in er:
+                enemy_cfg.shuffle_lineups = bool(er["shuffle_lineups"])
+            if "reassign_groups" in er:
+                enemy_cfg.reassign_groups = bool(er["reassign_groups"])
+            if "rate_jitter" in er:
+                enemy_cfg.rate_jitter = bool(er["rate_jitter"])
+
         # Strategy override — accepts either top-level `strategy` or
         # `general.strategy`. Without this the UI button silently fell
         # through to whatever the default is.
@@ -371,11 +385,31 @@ def _apply_preview_compute() -> Dict[str, Any]:
             state._rom_data = bytes(rom_array)
             shops_result = shop_plan.to_spoiler()
 
+        # Enemy randomization post-pass, same shape (bank 3 battle tables;
+        # within-chapter only — see logic/enemy_randomization.py).
+        enemies_result = None
+        enemy_cfg = state._randomizer.config.difficulty.enemy_randomization
+        if enemy_cfg.enabled and state._rom_data:
+            from ...logic.enemy_randomization import create_enemy_plan
+
+            rom_array = bytearray(state._rom_data)
+            enemy_plan = create_enemy_plan(
+                bytes(rom_array),
+                state._current_plan.seed,
+                shuffle_lineups=enemy_cfg.shuffle_lineups,
+                reassign_groups=enemy_cfg.reassign_groups,
+                rate_jitter=enemy_cfg.rate_jitter,
+            )
+            enemy_plan.apply(rom_array)
+            state._rom_data = bytes(rom_array)
+            enemies_result = enemy_plan.to_spoiler()
+
         return {
             "status": "applied",
             "seed": state._current_plan.seed,
             "strategy": strategy.name,
             "shops": shops_result,
+            "enemies": enemies_result,
             "screens_modified": modified_count,
             "navigability_ok": nav_ok,
             "navigability": {

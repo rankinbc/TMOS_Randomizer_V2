@@ -20,6 +20,7 @@ from .spoiler_log import (
     write_spoiler_log,
     load_spoiler_log,
     apply_shop_spoiler,
+    apply_enemy_spoiler,
     create_spoiler_from_config,
 )
 
@@ -43,5 +44,6 @@ __all__ = [
     "write_spoiler_log",
     "load_spoiler_log",
     "apply_shop_spoiler",
+    "apply_enemy_spoiler",
     "create_spoiler_from_config",
 ]

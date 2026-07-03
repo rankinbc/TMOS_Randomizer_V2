@@ -102,6 +102,7 @@ class Randomizer:
         )
         if result.success and result.output_rom_path:
             self._apply_shop_randomization(result, plan)
+            self._apply_enemy_randomization(result, plan)
         return result
 
     def _apply_shop_randomization(
@@ -145,9 +146,18 @@ class Randomizer:
         and rewrite the spoiler files in place (same paths)."""
         if result.spoiler_log is None:
             return
-        from .output.spoiler_log import apply_shop_spoiler, write_spoiler_log
+        from .output.spoiler_log import apply_shop_spoiler
 
         apply_shop_spoiler(result.spoiler_log, shop_plan.to_spoiler())
+        self._rewrite_spoiler_files(result)
+
+    def _rewrite_spoiler_files(self, result: RandomizationResult) -> None:
+        """Re-render the spoiler files from result.spoiler_log at the paths
+        the strategy originally wrote them to, stamping the current hash."""
+        if result.spoiler_log is None:
+            return
+        from .output.spoiler_log import write_spoiler_log
+
         result.spoiler_log.rom_sha256 = result.rom_sha256
         target = result.spoiler_text_path or result.spoiler_json_path
         if target is None:
@@ -168,6 +178,43 @@ class Randomizer:
             write_text=result.spoiler_text_path is not None,
             write_json=result.spoiler_json_path is not None,
         )
+
+    def _apply_enemy_randomization(
+        self, result: RandomizationResult, plan: RandomizationPlan
+    ) -> None:
+        """Strategy-agnostic post-pass: shuffle the bank 3 encounter lineup
+        slots (within-chapter multiset) and optionally re-roll Ch1-2 group
+        selectors / jitter rate flags. Runs only after the strategy reported
+        success. See knowledge docs: bank 3 tables are chapter-keyed, so no
+        enemy ever crosses a chapter boundary."""
+        enemy_cfg = self.config.difficulty.enemy_randomization
+        if not enemy_cfg.enabled:
+            return
+        from .logic.enemy_randomization import create_enemy_plan
+
+        out_path = Path(result.output_rom_path)
+        rom = bytearray(out_path.read_bytes())
+        enemy_plan = create_enemy_plan(
+            bytes(rom),
+            plan.seed,
+            shuffle_lineups=enemy_cfg.shuffle_lineups,
+            reassign_groups=enemy_cfg.reassign_groups,
+            rate_jitter=enemy_cfg.rate_jitter,
+        )
+        written = enemy_plan.apply(rom)
+        out_path.write_bytes(bytes(rom))
+        result.rom_sha256 = hashlib.sha256(bytes(rom)).hexdigest()
+        result.stats["enemies"] = {
+            "bytes_written": written,
+            "spoiler": enemy_plan.to_spoiler(),
+        }
+        if result.spoiler_log is not None:
+            from .output.spoiler_log import apply_enemy_spoiler
+
+            apply_enemy_spoiler(result.spoiler_log, enemy_plan.to_spoiler())
+        # Rewrite the spoiler files the shop pass (or strategy) already
+        # wrote, now with the lineup section and the final hash.
+        self._rewrite_spoiler_files(result)
 
     # ------------------------------------------------------------------
     # Internals
