@@ -1,4 +1,4 @@
-# TMOS_AI
+# TMOS_Randomizer_V2
 
 **The Magic of Scheherazade - ROM Reverse Engineering & Randomizer Project**
 
@@ -21,7 +21,7 @@ A comprehensive AI-assisted project for reverse engineering the NES game "The Ma
 ## Project Structure
 
 ```
-TMOS_AI/
+TMOS_Randomizer_V2/
 ├── projects/
 │   └── TMOS_Randomizer_V2/     # Main randomizer application
 │       ├── src/                 # Python backend (FastAPI)
@@ -68,7 +68,7 @@ TMOS_AI/
 ```bash
 # Clone the repository
 git clone https://github.com/rankinbc/TMOS_Randomizer_V2.git
-cd TMOS_AI
+cd TMOS_Randomizer_V2
 
 # Create virtual environment
 python -m venv venv
