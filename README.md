@@ -4,6 +4,10 @@
 
 A comprehensive AI-assisted project for reverse engineering the NES game "The Magic of Scheherazade" (1987) and building a sophisticated map randomizer.
 
+![TMOS Editor — Chapter 3 navigation map with screen properties panel](docs/human/images/tmos-editor.png)
+
+*TMOS Editor: browse and edit WorldScreens per chapter, inspect exits/collision/tiles, then randomize and patch the ROM.*
+
 ---
 
 ## Overview
